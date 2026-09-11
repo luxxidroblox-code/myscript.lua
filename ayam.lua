@@ -1,11 +1,11 @@
 --[[
-    DX-SR Hub â€” Full Rewrite
-    Ridego  : Platform 450.000 x 1 x 450.000 anchored di Y tetap
-              LinearVelocity pure (no wall check, no RNG, no AssemblyLinearVelocity override)
-              BodyGyro lookAt target horizontal
-    Spawn   : retry 6x, delay aman post-teleport, cari model LP setelah spawn
-    Drive   : Heartbeat â†’ delta.Unit * speed via LinearVelocity saja
-    Platform: spawn sekali saat drive mulai, destroy saat stop
+    DX-SR Hub â€” Full Rewrite Merged
+    Base    : v0.0.0.14 (deobfuscated / humanized)
+    Ridego  : Platform 4jt-meter + LinearVelocity pure (doc1 method)
+              spawn retry 6x, delay aman post-teleport, cari model LP setelah spawn
+    Drive   : Heartbeat â†’ delta.Unit * speed ke LinearVelocity, BodyGyro lookAt
+    Platform: satu Part 4.000.000 x 1 x 4.000.000 anchored Y tetap, spawn sekali
+    Other   : Courier, Barista, Teleport, Misc, Config â€” doc2 verbatim
 ]]
 
 --=====================================================================
@@ -168,30 +168,30 @@ local JAWADEOBF_WindUI = loadstring(
 )()
 
 local JAWADEOBF_Window = JAWADEOBF_WindUI:CreateWindow({
-    Title                    = "DDS",
-    Icon                     = "van",
-    Author                   = "DX-SR Hub",
-    Folder                   = "DX-SR",
-    Size                     = UDim2.fromOffset(580, 460),
-    MinSize                  = Vector2.new(560, 350),
-    MaxSize                  = Vector2.new(850, 560),
-    ToggleKey                = Enum.KeyCode.V,
-    Transparent              = true,
-    Theme                    = "Dark",
-    Resizable                = true,
-    SideBarWidth             = 200,
+    Title                       = "DDS",
+    Icon                        = "van",
+    Author                      = "DX-SR Hub",
+    Folder                      = "DX-SR",
+    Size                        = UDim2.fromOffset(580, 460),
+    MinSize                     = Vector2.new(560, 350),
+    MaxSize                     = Vector2.new(850, 560),
+    ToggleKey                   = Enum.KeyCode.V,
+    Transparent                 = true,
+    Theme                       = "Dark",
+    Resizable                   = true,
+    SideBarWidth                = 200,
     BackgroundImageTransparency = 0.42,
-    HideSearchBar            = false,
-    ScrollBarEnabled         = false,
+    HideSearchBar               = false,
+    ScrollBarEnabled            = false,
 })
 
-JAWADEOBF_Window:Tag({ Title = "v0.0.0.16", Icon = "github",      Color = Color3.fromHex("#30ff6a"), Radius = 13 })
+JAWADEOBF_Window:Tag({ Title = "v0.0.0.15", Icon = "github",      Color = Color3.fromHex("#30ff6a"), Radius = 13 })
 JAWADEOBF_Window:Tag({ Title = "DX-SR Hub", Icon = "text-cursor", Color = Color3.fromHex("#1E3A8A"), Radius = 13 })
 
 JAWADEOBF_WindUI:Popup({
     Title   = "Update logs",
     Icon    = "info",
-    Content = "Ridego: platform 450k-stud + pure LinearVelocity, roda gerak, no void fall",
+    Content = "Ridego: platform 4jt-meter + LinearVelocity, spawn hardened (retry 6x)",
     Buttons = {{ Title = "Continue", Icon = "arrow-right", Callback = function() end, Variant = "Primary" }},
 })
 
@@ -201,31 +201,30 @@ JAWADEOBF_WindUI:Popup({
 local JAWADEOBF_FarmingSection = JAWADEOBF_Window:Section({ Title = "Farming", Icon = "car", Opened = true })
 
 --=====================================================================
--- TAB: RIDEGO
+-- TAB: RIDEGO â€” doc1 method (platform + LinearVelocity + retry 6x spawn)
 --=====================================================================
 local JAWADEOBF_RidegoTab     = JAWADEOBF_FarmingSection:Tab({ Title = "Ridego", Icon = "car" })
 local JAWADEOBF_RidegoSection = JAWADEOBF_RidegoTab:Section({ Title = "Ridego Farming" })
 
--- â”€â”€ state â”€â”€
+-- state
 local JAWADEOBF_ridegoEnabled  = false
 local JAWADEOBF_ridegoBusy     = false
 
--- â”€â”€ drive state â”€â”€
-local JAWADEOBF_rdFloor        = nil
+-- drive state
+local JAWADEOBF_rdFloor        = nil   -- platform Part
 local JAWADEOBF_rdForce        = nil   -- LinearVelocity
 local JAWADEOBF_rdGyro         = nil   -- BodyGyro
-local JAWADEOBF_rdAttach       = nil   -- Attachment (wajib untuk LinearVelocity)
+local JAWADEOBF_rdAttach       = nil   -- Attachment
 local JAWADEOBF_rdCurrentSeat  = nil
 local JAWADEOBF_rdCurrentModel = nil
 local JAWADEOBF_rdDriveActive  = false
 local JAWADEOBF_rdHBConn       = nil
 
--- â”€â”€ tunables â”€â”€
+-- tunables
 local JAWADEOBF_rdSpeed        = 200
-local JAWADEOBF_rdFloorY       = -500   -- Y platform di dunia
-local JAWADEOBF_RD_FLOOR_SIZE  = 450000 -- 450.000 stud per sisi
+local JAWADEOBF_rdFloorY       = -500  -- fixed Y platform di dunia
 
--- â”€â”€ vehicle list / dropdown â”€â”€
+-- vehicle list / dropdown
 local JAWADEOBF_vehicleList     = { "Sizuki-SatriaFU(Drag)" }
 local JAWADEOBF_selectedVehicle = JAWADEOBF_vehicleList[1]
 
@@ -279,24 +278,22 @@ JAWADEOBF_RidegoTab:Button({
 })
 
 --=====================================================================
--- PLATFORM: 450.000 Ã— 1 Ã— 450.000, spawn sekali saat drive mulai
--- Y tetap di rdFloorY â€” tidak ikut kendaraan, tidak pernah bergerak
+-- PLATFORM: satu Part 4.000.000 x 1 x 4.000.000, spawn sekali
+-- Y tetap di JAWADEOBF_rdFloorY, tidak ikut kendaraan
 --=====================================================================
 local JAWADEOBF_rdSpawnFloor = function()
-    if JAWADEOBF_rdFloor and JAWADEOBF_rdFloor.Parent then
-        return JAWADEOBF_rdFloor
-    end
-    local floor             = Instance.new("Part")
-    floor.Name              = "RD_MegaFloor"
-    floor.Size              = Vector3.new(JAWADEOBF_RD_FLOOR_SIZE, 1, JAWADEOBF_RD_FLOOR_SIZE)
-    floor.CFrame            = CFrame.new(0, JAWADEOBF_rdFloorY, 0)
-    floor.Anchored          = true
-    floor.CanCollide        = true
-    floor.Transparency      = 1
-    floor.Material          = Enum.Material.SmoothPlastic
-    floor.CastShadow        = false
-    floor.Parent            = workspace
-    JAWADEOBF_rdFloor       = floor
+    if JAWADEOBF_rdFloor and JAWADEOBF_rdFloor.Parent then return JAWADEOBF_rdFloor end
+    local floor         = Instance.new("Part")
+    floor.Name          = "RD_MegaFloor"
+    floor.Size          = Vector3.new(4000000, 1, 4000000)
+    floor.CFrame        = CFrame.new(0, JAWADEOBF_rdFloorY, 0)
+    floor.Anchored      = true
+    floor.CanCollide    = true
+    floor.Transparency  = 1
+    floor.Material      = Enum.Material.SmoothPlastic
+    floor.CastShadow    = false
+    floor.Parent        = workspace
+    JAWADEOBF_rdFloor   = floor
     return floor
 end
 
@@ -309,32 +306,22 @@ end
 
 --=====================================================================
 -- PHYSICS HELPERS
--- LinearVelocity + Attachment di seat â€” tidak ada AssemblyLinearVelocity
--- override di loop. BodyGyro handle rotasi horizontal saja.
--- Roda tetap spin karena engine constraint model masih jalan normal.
 --=====================================================================
 local JAWADEOBF_rdSetupPhysics = function(seat)
-    -- Attachment wajib ada sebelum LinearVelocity bisa di-attach
     JAWADEOBF_rdAttach            = Instance.new("Attachment")
-    JAWADEOBF_rdAttach.Position   = Vector3.zero
     JAWADEOBF_rdAttach.Parent     = seat
 
-    -- LinearVelocity: World-space, Y dikunci 0 supaya tidak melayang
-    -- MaxForce besar tapi bukan infinite agar tidak menembus geometri server
-    JAWADEOBF_rdForce                  = Instance.new("LinearVelocity")
-    JAWADEOBF_rdForce.MaxForce         = 5e5
-    JAWADEOBF_rdForce.Attachment0      = JAWADEOBF_rdAttach
-    JAWADEOBF_rdForce.RelativeTo       = Enum.ActuatorRelativeTo.World
-    JAWADEOBF_rdForce.VectorVelocity   = Vector3.zero
-    -- ForceLimitsEnabled = false agar Y-lock tidak terpotong
-    JAWADEOBF_rdForce.ForceLimitsEnabled = false
-    JAWADEOBF_rdForce.Parent           = seat
+    JAWADEOBF_rdForce             = Instance.new("LinearVelocity")
+    JAWADEOBF_rdForce.MaxForce    = 99999999
+    JAWADEOBF_rdForce.Attachment0 = JAWADEOBF_rdAttach
+    JAWADEOBF_rdForce.RelativeTo  = Enum.ActuatorRelativeTo.World
+    JAWADEOBF_rdForce.VectorVelocity = Vector3.zero
+    JAWADEOBF_rdForce.Parent      = seat
 
-    -- BodyGyro: hanya lock orientasi horizontal, D tinggi biar tidak wobble
     JAWADEOBF_rdGyro              = Instance.new("BodyGyro")
-    JAWADEOBF_rdGyro.MaxTorque    = Vector3.new(0, 5e5, 0)   -- hanya sumbu Y
-    JAWADEOBF_rdGyro.P            = 3e4
-    JAWADEOBF_rdGyro.D            = 2e3
+    JAWADEOBF_rdGyro.MaxTorque    = Vector3.new(math.huge, math.huge, math.huge)
+    JAWADEOBF_rdGyro.P            = 100000
+    JAWADEOBF_rdGyro.D            = 1000
     JAWADEOBF_rdGyro.CFrame       = seat.CFrame
     JAWADEOBF_rdGyro.Parent       = seat
 end
@@ -345,11 +332,15 @@ local JAWADEOBF_rdCleanupPhysics = function()
     if JAWADEOBF_rdAttach then pcall(function() JAWADEOBF_rdAttach:Destroy() end); JAWADEOBF_rdAttach = nil end
 end
 
--- Zero-out hanya LinearVelocity target â€” tidak sentuh AssemblyLinearVelocity
--- supaya roda tetap spin secara natural dari engine model
 local JAWADEOBF_rdZeroVel = function()
-    if JAWADEOBF_rdForce then
-        JAWADEOBF_rdForce.VectorVelocity = Vector3.zero
+    if JAWADEOBF_rdForce then JAWADEOBF_rdForce.VectorVelocity = Vector3.zero end
+    if JAWADEOBF_rdCurrentModel and JAWADEOBF_rdCurrentModel.Parent then
+        for _, p in ipairs(JAWADEOBF_rdCurrentModel:GetDescendants()) do
+            if p:IsA("BasePart") then
+                p.AssemblyLinearVelocity  = Vector3.zero
+                p.AssemblyAngularVelocity = Vector3.zero
+            end
+        end
     end
 end
 
@@ -357,8 +348,8 @@ end
 -- SPAWN VEHICLE: retry 6x, tunggu model LP muncul di workspace
 --=====================================================================
 local JAWADEOBF_rdSpawnVehicle = function()
-    local JAWADEOBF_RS  = game:GetService("ReplicatedStorage")
-    local JAWADEOBF_SE  = JAWADEOBF_RS:FindFirstChild("SpawnCarEvents")
+    local JAWADEOBF_RS     = game:GetService("ReplicatedStorage")
+    local JAWADEOBF_SE     = JAWADEOBF_RS:FindFirstChild("SpawnCarEvents")
     if not JAWADEOBF_SE then return false end
 
     local JAWADEOBF_despawn = JAWADEOBF_SE:FindFirstChild("DespawnCar")
@@ -397,7 +388,7 @@ local JAWADEOBF_rdSpawnVehicle = function()
 end
 
 --=====================================================================
--- SEAT: temukan DriveSeat LP, hapus FrontSection/RearSection, dudukkan
+-- SEAT: temukan VehicleSeat LP, hapus FrontSection/RearSection, dudukkan
 --=====================================================================
 local JAWADEOBF_rdFindAndSit = function()
     local JAWADEOBF_LP   = game:GetService("Players").LocalPlayer
@@ -447,7 +438,7 @@ local JAWADEOBF_rdFindAndSit = function()
 end
 
 --=====================================================================
--- SEAT TELEPORT: untuk karakter berpindah ke lokasi pickup
+-- TELEPORT KARAKTER (Seat-based, untuk ke lokasi pickup)
 --=====================================================================
 local JAWADEOBF_seatTeleport = function(JAWADEOBF_cf)
     local JAWADEOBF_LP   = game:GetService("Players").LocalPlayer
@@ -460,7 +451,7 @@ local JAWADEOBF_seatTeleport = function(JAWADEOBF_cf)
     if JAWADEOBF_hum.Sit then JAWADEOBF_hum.Sit = false; task.wait(0.1) end
     if JAWADEOBF_anim then JAWADEOBF_anim.Disabled = true end
 
-    local JAWADEOBF_seat       = Instance.new("Seat")
+    local JAWADEOBF_seat      = Instance.new("Seat")
     JAWADEOBF_seat.Size        = Vector3.new(2, 0.2, 2)
     JAWADEOBF_seat.Transparency = 1
     JAWADEOBF_seat.CanCollide  = false
@@ -473,7 +464,7 @@ local JAWADEOBF_seatTeleport = function(JAWADEOBF_cf)
 
     local JAWADEOBF_bv     = Instance.new("BodyVelocity")
     JAWADEOBF_bv.MaxForce  = Vector3.new(9e9, 9e9, 9e9)
-    JAWADEOBF_bv.Velocity  = Vector3.zero
+    JAWADEOBF_bv.Velocity  = Vector3.new(0, 0, 0)
     JAWADEOBF_bv.Parent    = JAWADEOBF_hrp
 
     task.wait(0.5)
@@ -493,21 +484,13 @@ local JAWADEOBF_seatTeleport = function(JAWADEOBF_cf)
     if JAWADEOBF_anim then JAWADEOBF_anim.Disabled = false end
     task.wait(0.3)
     if JAWADEOBF_seat then JAWADEOBF_seat:Destroy() end
-    JAWADEOBF_hrp.AssemblyLinearVelocity = Vector3.zero
+    JAWADEOBF_hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     workspace.CurrentCamera.CameraSubject = JAWADEOBF_hum
 end
 
 --=====================================================================
--- DRIVE: Heartbeat, LinearVelocity world-space, BodyGyro Y-only
---
--- FIX UTAMA:
---   1. Platform 450k stud â€” kendaraan tidak akan keluar boundary
---   2. LinearVelocity set VectorVelocity = {X, 0, Z} â€” Y dikunci 0
---      sepenuhnya oleh platform collision, bukan oleh AssemblyLinearVelocity
---   3. Tidak ada override AssemblyLinearVelocity di loop â€” roda bebas spin
---   4. Kendaraan di-drop ke floorY + offset SEKALI sebelum loop,
---      bukan setiap frame
---   5. BodyGyro MaxTorque hanya sumbu Y agar tidak flip/roll
+-- DRIVE: Heartbeat LinearVelocity
+-- Platform spawn sebelum drive, kendaraan drop ke Y platform dulu
 --=====================================================================
 local JAWADEOBF_rdStartDrive = function(JAWADEOBF_targetPos)
     if JAWADEOBF_rdDriveActive then return end
@@ -516,33 +499,23 @@ local JAWADEOBF_rdStartDrive = function(JAWADEOBF_targetPos)
     local JAWADEOBF_model = JAWADEOBF_rdCurrentModel
     if not JAWADEOBF_seat or not JAWADEOBF_model then return end
 
-    -- Spawn platform dulu sebelum apapun
     JAWADEOBF_rdSpawnFloor()
 
-    -- Y batas atas platform + clearance agar ban menyentuh
-    -- offset 1.5 = 0.5 (setengah tebal platform) + 1.0 (clearance ban)
     local JAWADEOBF_dropY   = JAWADEOBF_rdFloorY + 1.5
     local JAWADEOBF_seatPos = JAWADEOBF_seat.Position
-
-    -- Drop kendaraan ke Y platform SEKALI sebelum physics aktif
     pcall(function()
-        local JAWADEOBF_dy = JAWADEOBF_dropY - JAWADEOBF_seatPos.Y
-        if math.abs(JAWADEOBF_dy) > 0.01 then
-            JAWADEOBF_model:PivotTo(
-                JAWADEOBF_model:GetPivot() + Vector3.new(0, JAWADEOBF_dy, 0)
-            )
-        end
+        JAWADEOBF_model:PivotTo(
+            JAWADEOBF_model:GetPivot() + Vector3.new(0, JAWADEOBF_dropY - JAWADEOBF_seatPos.Y, 0)
+        )
     end)
-    task.wait(0.25)
+    task.wait(0.2)
 
-    -- Unanchor + no collide semua part agar LinearVelocity bisa move
     for _, p in ipairs(JAWADEOBF_model:GetDescendants()) do
         if p:IsA("BasePart") then
             p.Anchored   = false
             p.CanCollide = false
         end
     end
-    -- Platform sendiri tetap CanCollide = true (sudah di-set saat spawn)
 
     JAWADEOBF_rdSetupPhysics(JAWADEOBF_seat)
     JAWADEOBF_rdDriveActive = true
@@ -554,61 +527,47 @@ local JAWADEOBF_rdStartDrive = function(JAWADEOBF_targetPos)
             return
         end
 
-        local JAWADEOBF_cur = JAWADEOBF_seat.Position
+        local JAWADEOBF_cur   = JAWADEOBF_seat.Position
         local JAWADEOBF_delta = Vector3.new(
             JAWADEOBF_targetPos.X - JAWADEOBF_cur.X,
             0,
             JAWADEOBF_targetPos.Z - JAWADEOBF_cur.Z
         )
-        local JAWADEOBF_dist = JAWADEOBF_delta.Magnitude
+        local JAWADEOBF_dist  = JAWADEOBF_delta.Magnitude
 
         if JAWADEOBF_dist < 12 then
-            -- Tiba di tujuan
             JAWADEOBF_rdZeroVel()
             JAWADEOBF_rdDriveActive = false
-            if JAWADEOBF_rdHBConn then
-                JAWADEOBF_rdHBConn:Disconnect()
-                JAWADEOBF_rdHBConn = nil
-            end
+            if JAWADEOBF_rdHBConn then JAWADEOBF_rdHBConn:Disconnect(); JAWADEOBF_rdHBConn = nil end
             return
         end
 
-        -- Rotasi gyro ke arah target, hanya horizontal
-        local JAWADEOBF_lookTarget = Vector3.new(
-            JAWADEOBF_targetPos.X,
-            JAWADEOBF_cur.Y,
-            JAWADEOBF_targetPos.Z
-        )
-        JAWADEOBF_rdGyro.CFrame = CFrame.lookAt(JAWADEOBF_cur, JAWADEOBF_lookTarget)
+        local JAWADEOBF_lookTarget = Vector3.new(JAWADEOBF_targetPos.X, JAWADEOBF_cur.Y, JAWADEOBF_targetPos.Z)
+        JAWADEOBF_rdGyro.CFrame   = CFrame.lookAt(JAWADEOBF_cur, JAWADEOBF_lookTarget)
 
-        -- LinearVelocity world-space, Y = 0
-        -- Platform menahan Y secara fisika â€” tidak perlu set secara manual
-        local JAWADEOBF_dir = JAWADEOBF_delta.Unit
-        JAWADEOBF_rdForce.VectorVelocity = Vector3.new(
-            JAWADEOBF_dir.X * JAWADEOBF_rdSpeed,
-            0,
-            JAWADEOBF_dir.Z * JAWADEOBF_rdSpeed
+        local JAWADEOBF_dir  = JAWADEOBF_delta.Unit
+        local JAWADEOBF_vel  = JAWADEOBF_dir * JAWADEOBF_rdSpeed
+        JAWADEOBF_rdForce.VectorVelocity = Vector3.new(JAWADEOBF_vel.X, 0, JAWADEOBF_vel.Z)
+
+        local JAWADEOBF_yErr = JAWADEOBF_dropY - JAWADEOBF_cur.Y
+        JAWADEOBF_seat.AssemblyLinearVelocity = Vector3.new(
+            JAWADEOBF_vel.X,
+            math.clamp(JAWADEOBF_yErr * 10, -8, 8),
+            JAWADEOBF_vel.Z
         )
-        -- TIDAK ada sentuhan ke AssemblyLinearVelocity â€” roda spin bebas
     end)
 end
 
 local JAWADEOBF_rdStopDrive = function()
     JAWADEOBF_rdDriveActive = false
-    if JAWADEOBF_rdHBConn then
-        JAWADEOBF_rdHBConn:Disconnect()
-        JAWADEOBF_rdHBConn = nil
-    end
+    if JAWADEOBF_rdHBConn then JAWADEOBF_rdHBConn:Disconnect(); JAWADEOBF_rdHBConn = nil end
     JAWADEOBF_rdZeroVel()
     JAWADEOBF_rdCleanupPhysics()
     JAWADEOBF_rdDestroyFloor()
 
     if JAWADEOBF_rdCurrentModel and JAWADEOBF_rdCurrentModel.Parent then
         for _, p in ipairs(JAWADEOBF_rdCurrentModel:GetDescendants()) do
-            if p:IsA("BasePart") then
-                p.CanCollide = true
-                p.Anchored   = false
-            end
+            if p:IsA("BasePart") then p.CanCollide = true; p.Anchored = false end
         end
         local ds = JAWADEOBF_rdCurrentModel:FindFirstChild("DriveSeat")
         if ds then ds.CanCollide = false end
@@ -631,7 +590,7 @@ task.spawn(function()
         JAWADEOBF_taxiEvent.OnClientEvent:Connect(function(JAWADEOBF_action, JAWADEOBF_data)
             if not JAWADEOBF_ridegoEnabled then return end
 
-            -- â”€â”€ OrderOffer: auto accept â”€â”€
+            -- OrderOffer: auto accept
             if JAWADEOBF_action == "OrderOffer"
                 and type(JAWADEOBF_data) == "table"
                 and JAWADEOBF_data.Token then
@@ -641,7 +600,7 @@ task.spawn(function()
                     JAWADEOBF_WindUI:Notify({ Title = "RideGO", Content = "Auto-accepted order!", Duration = 3 })
                 end)
 
-            -- â”€â”€ OrderAccepted: teleport ke pickup lalu spawn + sit â”€â”€
+            -- OrderAccepted: teleport ke pickup lalu spawn + sit
             elseif JAWADEOBF_action == "OrderAccepted"
                 and type(JAWADEOBF_data) == "table" then
 
@@ -717,7 +676,7 @@ task.spawn(function()
                     end)
                 end
 
-            -- â”€â”€ TripStarted: drive ke dropoff â”€â”€
+            -- TripStarted: drive ke dropoff via LinearVelocity + platform
             elseif JAWADEOBF_action == "TripStarted"
                 and type(JAWADEOBF_data) == "table" then
 
@@ -731,6 +690,7 @@ task.spawn(function()
 
                 if JAWADEOBF_data.DropPos then
                     task.spawn(function()
+                        -- tunggu sampai karakter benar-benar duduk
                         local JAWADEOBF_LP   = game:GetService("Players").LocalPlayer
                         local JAWADEOBF_char = JAWADEOBF_LP.Character
                         local JAWADEOBF_hum  = JAWADEOBF_char and JAWADEOBF_char:FindFirstChildOfClass("Humanoid")
@@ -803,6 +763,7 @@ local JAWADEOBF_ridegoToggle = JAWADEOBF_RidegoTab:Toggle({
                             task.wait(1.5)
                         elseif not JAWADEOBF_hum.Sit then
                             JAWADEOBF_rdFindAndSit()
+
                             task.spawn(function()
                                 task.wait(0.5)
                                 local JAWADEOBF_char2 = JAWADEOBF_LP.Character
@@ -841,10 +802,10 @@ local JAWADEOBF_sendWebhook = function(JAWADEOBF_url, JAWADEOBF_payload, JAWADEO
     if not JAWADEOBF_url or JAWADEOBF_url == "" or not JAWADEOBF_request then return end
     task.spawn(function()
         pcall(function()
-            local JAWADEOBF_http     = game:GetService("HttpService")
-            local JAWADEOBF_base     = string.gsub(JAWADEOBF_url, "%?.*$", "")
+            local JAWADEOBF_http    = game:GetService("HttpService")
+            local JAWADEOBF_base    = string.gsub(JAWADEOBF_url, "%?.*$", "")
             local JAWADEOBF_existing = JAWADEOBF_webhookIds[JAWADEOBF_base]
-            local JAWADEOBF_edited   = false
+            local JAWADEOBF_edited  = false
 
             if not JAWADEOBF_forceNew and JAWADEOBF_existing and JAWADEOBF_existing ~= "" then
                 local JAWADEOBF_editUrl = JAWADEOBF_base .. "/messages/" .. tostring(JAWADEOBF_existing)
@@ -1084,7 +1045,7 @@ local JAWADEOBF_courierWebhookSend = function(JAWADEOBF_isStuck, JAWADEOBF_isRej
     local money = JAWADEOBF_formatRupiah(JAWADEOBF_courierTotalEarn)
     local msg   = { username = "DX-SR Courier" }
     if JAWADEOBF_isRejoin then
-        msg.embeds = {{ title = "ðŸ”„ Courier Auto Rejoin (3h Limit)", color = 16711680,
+        msg.embeds = {{ title = "ðŸ” Courier Auto Rejoin (3h Limit)", color = 16711680,
             fields = {
                 { name = "â³ Time Elapse",   value = "`" .. elapsed .. "`",                        inline = true },
                 { name = "ðŸ’° Total Earning", value = "`" .. money .. "`",                          inline = true },
@@ -1096,11 +1057,11 @@ local JAWADEOBF_courierWebhookSend = function(JAWADEOBF_isStuck, JAWADEOBF_isRej
     elseif JAWADEOBF_isStuck then
         msg.embeds = {{ title = "ðŸš¨ Stuck (job restarted)", color = 16731469,
             fields = {
-                { name = "â³ Time Elapse",   value = "`" .. elapsed .. "`",                        inline = true },
-                { name = "ðŸ”„ Rejoin in",     value = "`" .. remain .. "`",                         inline = true },
-                { name = "ðŸ“ Next Dest",     value = "`" .. destName .. "`",                       inline = true },
-                { name = "ðŸ’° Total Earning", value = "`" .. money .. "`",                          inline = true },
-                { name = "ðŸ“¦ Job Done",      value = "`" .. tostring(JAWADEOBF_courierJobCount) .. "`", inline = true },
+                { name = "â³ Time Elapse",    value = "`" .. elapsed .. "`",                        inline = true },
+                { name = "ðŸ” Rejoin in",      value = "`" .. remain .. "`",                         inline = true },
+                { name = "ðŸ“ Next Dest",      value = "`" .. destName .. "`",                       inline = true },
+                { name = "ðŸ’° Total Earning",  value = "`" .. money .. "`",                          inline = true },
+                { name = "ðŸ“¦ Job Done",       value = "`" .. tostring(JAWADEOBF_courierJobCount) .. "`", inline = true },
             },
             footer    = { text = "DX-SR Hub â€¢ Courier System" },
             timestamp = DateTime.now():ToIsoDate(),
@@ -1109,7 +1070,7 @@ local JAWADEOBF_courierWebhookSend = function(JAWADEOBF_isStuck, JAWADEOBF_isRej
         msg.embeds = {{ title = "ðŸ“¦ Courier Delivery Completed", color = 54478,
             fields = {
                 { name = "â³ Time Elapse",   value = "`" .. elapsed .. "`",                        inline = true },
-                { name = "ðŸ”„ Rejoin in",     value = "`" .. remain .. "`",                         inline = true },
+                { name = "ðŸ” Rejoin in",     value = "`" .. remain .. "`",                         inline = true },
                 { name = "ðŸ“ Next Dest",     value = "`" .. destName .. "`",                       inline = true },
                 { name = "ðŸ’° Total Earning", value = "`" .. money .. "`",                          inline = true },
                 { name = "ðŸ“¦ Job Done",      value = "`" .. tostring(JAWADEOBF_courierJobCount) .. "`", inline = true },
@@ -1132,7 +1093,7 @@ local JAWADEOBF_courierRejoinWarning = function()
         embeds   = {{ title = "ðŸš¨ Courier Auto Rejoin Warning (10 Detik)", color = 16711680,
             fields = {
                 { name = "â³ Time Elapse", value = "`" .. elapsed .. "`",                        inline = true },
-                { name = "ðŸ”„ Rejoin in",  value = "`10 Detik`",                                  inline = true },
+                { name = "ðŸ” Rejoin in",  value = "`10 Detik`",                                  inline = true },
                 { name = "ðŸ’° Earning",    value = "`" .. money .. "`",                           inline = true },
                 { name = "ðŸ“¦ Job Done",   value = "`" .. tostring(JAWADEOBF_courierJobCount) .. "`", inline = true },
             },
@@ -1174,7 +1135,7 @@ local JAWADEOBF_courierHandleShiftLimit = function()
     pcall(function()
         JAWADEOBF_WindUI:Notify({ Title = "Courier Shift Limit", Content = "Limit shift! Berpindah ke Civilian...", Duration = 3 })
     end)
-    JAWADEOBF_courierJobId     = nil
+    JAWADEOBF_courierJobId    = nil
     JAWADEOBF_courierResetFlag = false
     pcall(function() JAWADEOBF_infoDest:SetDesc("-") end)
     pcall(function()
@@ -1220,8 +1181,8 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    local LP     = game:GetService("Players").LocalPlayer
-    local PG     = LP:WaitForChild("PlayerGui", 9e9):WaitForChild("MainUI", 9e9)
+    local LP    = game:GetService("Players").LocalPlayer
+    local PG    = LP:WaitForChild("PlayerGui", 9e9):WaitForChild("MainUI", 9e9)
     local Frame4 = PG:WaitForChild("Frame4", 9e9)
     local NOTIF  = Frame4:WaitForChild("NOTIF", 9e9)
     NOTIF:GetPropertyChangedSignal("Text"):Connect(function()
@@ -1272,7 +1233,7 @@ local JAWADEOBF_courierFlyTo = function(JAWADEOBF_targetCF)
 
     hum.AutoRotate = false
 
-    local seat        = Instance.new("Seat")
+    local seat = Instance.new("Seat")
     seat.Name         = "courier_seat"
     seat.Size         = Vector3.new(1, 1, 1)
     seat.Transparency = 1
@@ -1287,7 +1248,7 @@ local JAWADEOBF_courierFlyTo = function(JAWADEOBF_targetCF)
 
     local bv       = Instance.new("BodyVelocity")
     bv.MaxForce    = Vector3.new(1e9, 1e9, 1e9)
-    bv.Velocity    = Vector3.zero
+    bv.Velocity    = Vector3.new(0, 0, 0)
     bv.Parent      = seat
 
     local gyro     = Instance.new("BodyGyro")
@@ -1310,7 +1271,7 @@ local JAWADEOBF_courierFlyTo = function(JAWADEOBF_targetCF)
         end
     end)
 
-    local animator  = hum:FindFirstChildOfClass("Animator")
+    local animator   = hum:FindFirstChildOfClass("Animator")
     local animTrack
     if animator then
         pcall(function()
@@ -1344,8 +1305,8 @@ local JAWADEOBF_courierFlyTo = function(JAWADEOBF_targetCF)
             part.CanCollide = true
         end
     end
-    if bv then bv.Velocity = Vector3.zero end
-    hrp.AssemblyLinearVelocity = Vector3.zero
+    if bv then bv.Velocity = Vector3.new(0, 0, 0) end
+    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     task.wait(0.1)
     hum.Sit = false
     if seat then seat:Destroy() end
@@ -1486,11 +1447,11 @@ JAWADEOBF_BaristaSection:Toggle({
     Callback = function(v) JAWADEOBF_baristaWebhookOn = v end,
 })
 
-local JAWADEOBF_BaristaInfo   = JAWADEOBF_BaristaTab:Section({ Title = "Information", Opened = true })
-local JAWADEOBF_baristaTime   = JAWADEOBF_BaristaInfo:Paragraph({ Title = "Timestamp",      Desc = "00h 00m 00s" })
+local JAWADEOBF_BaristaInfo  = JAWADEOBF_BaristaTab:Section({ Title = "Information", Opened = true })
+local JAWADEOBF_baristaTime  = JAWADEOBF_BaristaInfo:Paragraph({ Title = "Timestamp",      Desc = "00h 00m 00s" })
 local JAWADEOBF_baristaRejoin = JAWADEOBF_BaristaInfo:Paragraph({ Title = "Auto Rejoin In", Desc = "03h 00m 00s" })
-local JAWADEOBF_baristaJobs   = JAWADEOBF_BaristaInfo:Paragraph({ Title = "Job Done",        Desc = "0" })
-local JAWADEOBF_baristaStuck  = JAWADEOBF_BaristaInfo:Paragraph({ Title = "Stuck Count",     Desc = "0" })
+local JAWADEOBF_baristaJobs  = JAWADEOBF_BaristaInfo:Paragraph({ Title = "Job Done",        Desc = "0" })
+local JAWADEOBF_baristaStuck = JAWADEOBF_BaristaInfo:Paragraph({ Title = "Stuck Count",     Desc = "0" })
 
 local JAWADEOBF_baristaWebhookSend = function(JAWADEOBF_isStuck, JAWADEOBF_isRejoin)
     if not JAWADEOBF_baristaWebhookOn or JAWADEOBF_baristaWebhook == "" then return end
@@ -1503,7 +1464,7 @@ local JAWADEOBF_baristaWebhookSend = function(JAWADEOBF_isStuck, JAWADEOBF_isRej
         { name = "âš ï¸ Stuck Count", value = "`" .. tostring(JAWADEOBF_baristaStuckCount) .. "`", inline = true },
     }
     if JAWADEOBF_isRejoin then
-        msg.embeds = {{ title = "ðŸ”„ Barista Auto Rejoin (3h Limit)", color = 16711680, fields = fields,
+        msg.embeds = {{ title = "ðŸ” Barista Auto Rejoin (3h Limit)", color = 16711680, fields = fields,
             footer = { text = "DX-SR Hub â€¢ Barista System" }, timestamp = DateTime.now():ToIsoDate() }}
     elseif JAWADEOBF_isStuck then
         msg.embeds = {{ title = "ðŸ”„ Barista Shift Refreshed", color = 16753920, fields = fields,
@@ -1524,7 +1485,7 @@ local JAWADEOBF_baristaRejoinWarning = function()
         embeds  = {{ title = "ðŸš¨ Barista Auto Rejoin Warning (10 Detik)", color = 16711680,
             fields = {
                 { name = "â³ Time Elapse",  value = "`" .. elapsed .. "`",                          inline = true },
-                { name = "ðŸ”„ Rejoin in",    value = "`10 Detik`",                                    inline = true },
+                { name = "ðŸ” Rejoin in",    value = "`10 Detik`",                                    inline = true },
                 { name = "â˜• Job Done",     value = "`" .. tostring(JAWADEOBF_baristaJobCount) .. "`",   inline = true },
                 { name = "âš ï¸ Stuck Count", value = "`" .. tostring(JAWADEOBF_baristaStuckCount) .. "`", inline = true },
             },
@@ -1569,9 +1530,9 @@ local JAWADEOBF_baristaTeleport = function(JAWADEOBF_targetCF)
     local hum  = char and char:FindFirstChildOfClass("Humanoid")
     if not hrp or not hum then return end
 
-    local curPos   = hrp.Position
-    local tgtPos   = JAWADEOBF_targetCF.Position
-    local dist3D   = (tgtPos - curPos).Magnitude
+    local curPos  = hrp.Position
+    local tgtPos  = JAWADEOBF_targetCF.Position
+    local dist3D  = (tgtPos - curPos).Magnitude
     local distFlat = (Vector3.new(tgtPos.X, 0, tgtPos.Z) - Vector3.new(curPos.X, 0, curPos.Z)).Magnitude
     if dist3D < 3.5 or distFlat < 2.5 then return end
     if hum.Sit then hum.Sit = false; task.wait(0.02) end
@@ -1584,7 +1545,7 @@ local JAWADEOBF_baristaTeleport = function(JAWADEOBF_targetCF)
     local startPos = Vector3.new(hrp.Position.X, y, hrp.Position.Z)
     local endPos   = Vector3.new(tgtPos.X, y, tgtPos.Z)
 
-    local seat       = Instance.new("Seat")
+    local seat      = Instance.new("Seat")
     seat.Name        = "pria_solo_part"
     seat.Size        = Vector3.new(1, 1, 1)
     seat.Transparency = 1
@@ -1794,11 +1755,11 @@ task.spawn(function()
         local registerPrompt = registerPart and registerPart:FindFirstChildWhichIsA("ProximityPrompt")
         local supplyPrompt   = supplyPart   and supplyPart:FindFirstChildWhichIsA("ProximityPrompt")
 
-        local dropPos     = Vector3.new(-5000, 5.5, -760)
-        local distToDrop  = (Vector3.new(dropPos.X, 0, dropPos.Z) - Vector3.new(hrp.Position.X, 0, hrp.Position.Z)).Magnitude
-        local startPos    = Vector3.new(-4989.8, 5.5, -715)
+        local dropPos    = Vector3.new(-5000, 5.5, -760)
+        local distToDrop = (Vector3.new(dropPos.X, 0, dropPos.Z) - Vector3.new(hrp.Position.X, 0, hrp.Position.Z)).Magnitude
+        local startPos   = Vector3.new(-4989.8, 5.5, -715)
         local distToStart = (Vector3.new(startPos.X, 0, startPos.Z) - Vector3.new(hrp.Position.X, 0, hrp.Position.Z)).Magnitude
-        local canStart    = startPrompt and startPrompt.Enabled and startPrompt.ActionText == "Start Shift"
+        local canStart   = startPrompt and startPrompt.Enabled and startPrompt.ActionText == "Start Shift"
 
         if not JAWADEOBF_baristaWorking or distToDrop > 80 or canStart then
             if distToDrop > 80 then JAWADEOBF_seatTeleport(CFrame.new(startPos)); task.wait(0.5)
@@ -1806,7 +1767,7 @@ task.spawn(function()
             if startPart then startPrompt = startPart:FindFirstChildWhichIsA("ProximityPrompt") end
             local ok = JAWADEOBF_baristaPromptHandler(startPart)
             if not ok then task.wait(0.5); continue end
-            JAWADEOBF_baristaWorking    = true
+            JAWADEOBF_baristaWorking  = true
             JAWADEOBF_baristaLastAction = os.clock()
             JAWADEOBF_baristaTeleport(CFrame.new(-5000.2, 5.6, -792))
             task.wait(JAWADEOBF_baristaTweenShort); continue
@@ -1864,7 +1825,7 @@ task.spawn(function()
             if startPart then startPrompt = startPart:FindFirstChildWhichIsA("ProximityPrompt") end
             local ok = JAWADEOBF_baristaPromptHandler(startPart)
             if not ok then task.wait(0.5); continue end
-            JAWADEOBF_baristaWorking    = true
+            JAWADEOBF_baristaWorking  = true
             JAWADEOBF_baristaLastAction = os.clock()
             JAWADEOBF_baristaTeleport(CFrame.new(-5000.2, 5.6, -792)); task.wait(JAWADEOBF_baristaTweenShort); continue
         end
@@ -1883,7 +1844,7 @@ if getgenv().AUTO_RESUME_BARISTA then
         local c2 = LP.Character or LP.CharacterAdded:Wait()
         c2:WaitForChild("HumanoidRootPart", 10); task.wait(0.2)
         JAWADEOBF_seatTeleport(CFrame.new(-4989.8, 5.5, -715)); task.wait(0.5)
-        local job   = workspace:FindFirstChild("BaristaJob")
+        local job  = workspace:FindFirstChild("BaristaJob")
         local inter = job and job:FindFirstChild("Interactions")
         local sp    = inter and inter:FindFirstChild("StartPart") and inter.StartPart:FindFirstChild("StartPart")
         if sp then JAWADEOBF_baristaPromptHandler(sp) end
@@ -1891,8 +1852,8 @@ if getgenv().AUTO_RESUME_BARISTA then
             pcall(function() JAWADEOBF_baristaToggle:SetValue(true) end)
             pcall(function() JAWADEOBF_baristaToggle:Set(true) end)
         else
-            JAWADEOBF_baristaEnabled    = true
-            JAWADEOBF_baristaStartTime  = os.clock()
+            JAWADEOBF_baristaEnabled  = true
+            JAWADEOBF_baristaStartTime = os.clock()
             JAWADEOBF_baristaLastAction = os.clock()
         end
         getgenv().AUTO_RESUME_BARISTA = false
@@ -1915,7 +1876,7 @@ if getgenv().AUTO_RESUME_COURIER then
             pcall(function() JAWADEOBF_courierToggle:SetValue(true) end)
             pcall(function() JAWADEOBF_courierToggle:Set(true) end)
         else
-            JAWADEOBF_courierEnabled   = true
+            JAWADEOBF_courierEnabled  = true
             JAWADEOBF_courierResetFlag = true
             JAWADEOBF_courierStartTime = os.clock()
         end
@@ -1937,14 +1898,14 @@ local JAWADEOBF_genericTeleport = function(JAWADEOBF_cf)
     if not hrp or not hum then return end
     if anim then anim.Disabled = true end
 
-    local seat       = Instance.new("Seat")
+    local seat      = Instance.new("Seat")
     seat.Size        = Vector3.new(2, 0.2, 2)
     seat.Transparency = 1; seat.CanCollide = false; seat.Anchored = true
     seat.CFrame      = hrp.CFrame; seat.Parent = workspace
 
     hum.Sit = true; seat:Sit(hum)
     local bv    = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9); bv.Velocity = Vector3.zero; bv.Parent = hrp
+    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9); bv.Velocity = Vector3.new(0,0,0); bv.Parent = hrp
 
     task.wait(0.5); seat.Anchored = false
     local target = JAWADEOBF_cf * CFrame.new(0, 0.01, 0)
@@ -1956,7 +1917,7 @@ local JAWADEOBF_genericTeleport = function(JAWADEOBF_cf)
     hum.Sit = false
     if anim then anim.Disabled = false end
     task.wait(0.3); if seat then seat:Destroy() end
-    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
     workspace.CurrentCamera.CameraSubject = hum
 end
 
@@ -2034,17 +1995,17 @@ JAWADEOBF_OtherTpSection:Button({
 --=====================================================================
 -- TAB: MISC
 --=====================================================================
-local JAWADEOBF_MiscTab       = JAWADEOBF_Window:Tab({ Title = "Misc", Icon = "box" })
-local JAWADEOBF_AvatarSection = JAWADEOBF_MiscTab:Section({ Title = "Avatar & Name Spoofer" })
+local JAWADEOBF_MiscTab        = JAWADEOBF_Window:Tab({ Title = "Misc", Icon = "box" })
+local JAWADEOBF_AvatarSection  = JAWADEOBF_MiscTab:Section({ Title = "Avatar & Name Spoofer" })
 
-local JAWADEOBF_avatarBackup    = nil
-local JAWADEOBF_spoofName       = ""
-local JAWADEOBF_spoofNameOn     = false
-local JAWADEOBF_spoofRank       = ""
-local JAWADEOBF_spoofRankOn     = false
-local JAWADEOBF_rankGradient    = nil
-local JAWADEOBF_prefixText      = ""
-local JAWADEOBF_prefixColor     = Color3.fromRGB(24, 24, 24)
+local JAWADEOBF_avatarBackup   = nil
+local JAWADEOBF_spoofName      = ""
+local JAWADEOBF_spoofNameOn    = false
+local JAWADEOBF_spoofRank      = ""
+local JAWADEOBF_spoofRankOn    = false
+local JAWADEOBF_rankGradient   = nil
+local JAWADEOBF_prefixText     = ""
+local JAWADEOBF_prefixColor    = Color3.fromRGB(24, 24, 24)
 local JAWADEOBF_nameShadowColor = Color3.fromRGB(0, 0, 0)
 
 local JAWADEOBF_parseColorSequence = function(str)
@@ -2357,8 +2318,8 @@ end)
 --=====================================================================
 -- TAB: CONFIGURATION
 --=====================================================================
-local JAWADEOBF_ConfigTab    = JAWADEOBF_Window:Tab({ Title = "Configuration", Icon = "settings" })
-local JAWADEOBF_ThemeSection = JAWADEOBF_ConfigTab:Section({ Title = "Theme" })
+local JAWADEOBF_ConfigTab     = JAWADEOBF_Window:Tab({ Title = "Configuration", Icon = "settings" })
+local JAWADEOBF_ThemeSection  = JAWADEOBF_ConfigTab:Section({ Title = "Theme" })
 
 local JAWADEOBF_themeList = {}
 pcall(function()
@@ -2495,11 +2456,11 @@ end)
 -- EDIT OPEN BUTTON
 --=====================================================================
 JAWADEOBF_Window:EditOpenButton({
-    Title           = "Open UI",
-    Icon            = "monitor",
-    CornerRadius    = UDim.new(0, 16),
+    Title          = "Open UI",
+    Icon           = "monitor",
+    CornerRadius   = UDim.new(0, 16),
     StrokeThickness = 2,
-    Color           = ColorSequence.new(Color3.fromHex("FF0F7B"), Color3.fromHex("F89B29")),
-    OnlyMobile      = false,
-    Enabled         = true,
+    Color          = ColorSequence.new(Color3.fromHex("FF0F7B"), Color3.fromHex("F89B29")),
+    OnlyMobile     = false,
+    Enabled        = true,
 })
