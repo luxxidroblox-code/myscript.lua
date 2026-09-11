@@ -5,6 +5,7 @@
     Prefix     : JAWADEOBF_
     Note       : Variabel lokal diberi prefix JAWADEOBF_ agar mudah dibedakan
                  dari API/global Roblox.
+    FIX        : vehicleFly hard stop on arrival — no more wall crash / ragdoll
 --]]
 
 --=====================================================================
@@ -12,7 +13,6 @@
 --=====================================================================
 local JAWADEOBF_hookedThreads = {}
 
--- Deteksi thread yang berjalan di Core.Anti / Plugins.Anti_Cheat
 local JAWADEOBF_detectAntiCheat = function()
     if not getreg or not getgc or not isfunctionhooked then
         return false
@@ -36,7 +36,6 @@ local JAWADEOBF_detectAntiCheat = function()
     return JAWADEOBF_found
 end
 
--- Netralkan fungsi anti-cheat dengan hookfunction
 local JAWADEOBF_neutralizeAntiCheat = function()
     for JAWADEOBF_i, JAWADEOBF_thread in JAWADEOBF_hookedThreads do
         pcall(coroutine.close, JAWADEOBF_thread)
@@ -148,7 +147,6 @@ end
 --=====================================================================
 local JAWADEOBF_bypassMainMenu = function()
     pcall(function()
-        -- Matikan blur menu
         local JAWADEOBF_Lighting = game:GetService("Lighting")
         local JAWADEOBF_blur = JAWADEOBF_Lighting:FindFirstChild("menuBlur")
         if JAWADEOBF_blur then
@@ -156,7 +154,6 @@ local JAWADEOBF_bypassMainMenu = function()
             JAWADEOBF_blur.Size = 0
         end
 
-        -- Sembunyikan main menu, tampilkan MainUI
         local JAWADEOBF_Players = game:GetService("Players")
         local JAWADEOBF_LP = JAWADEOBF_Players.LocalPlayer
         local JAWADEOBF_PG = JAWADEOBF_LP and JAWADEOBF_LP:FindFirstChild("PlayerGui")
@@ -187,18 +184,15 @@ local JAWADEOBF_bypassMainMenu = function()
             end
         end
 
-        -- Kamera
         local JAWADEOBF_cam = workspace.CurrentCamera
         if JAWADEOBF_cam then
             JAWADEOBF_cam.CameraType = Enum.CameraType.Custom
         end
 
-        -- Tampilkan CoreGui
         pcall(function()
             game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.All, true)
         end)
 
-        -- Trigger menu toggle
         local JAWADEOBF_toggle = game:GetService("ReplicatedStorage")
             :FindFirstChild("menuToggleRequest")
         if JAWADEOBF_toggle and JAWADEOBF_toggle:IsA("RemoteEvent") then
@@ -459,7 +453,9 @@ local JAWADEOBF_seatTeleport = function(JAWADEOBF_cf)
     workspace.CurrentCamera.CameraSubject = JAWADEOBF_hum
 end
 
--- Fly ke target dengan kendaraan (Ridego)
+--=====================================================================
+-- FIX: vehicleFly — hard stop on arrival, no final approach block
+--=====================================================================
 local JAWADEOBF_vehicleFly = function(JAWADEOBF_targetCF)
     local JAWADEOBF_LP = game:GetService("Players").LocalPlayer
     local JAWADEOBF_char = JAWADEOBF_LP.Character
@@ -547,10 +543,13 @@ local JAWADEOBF_vehicleFly = function(JAWADEOBF_targetCF)
         local JAWADEOBF_delta = JAWADEOBF_targetPos - JAWADEOBF_cur
         local JAWADEOBF_dist = JAWADEOBF_delta.Magnitude
 
+        -- FIX: zero velocity sebelum break, biar mobil bener-bener berhenti
         if JAWADEOBF_dist < 15 then
+            JAWADEOBF_bv.Velocity = Vector3.zero
             break
         end
         if (os.clock() - JAWADEOBF_startTime) > 120 then
+            JAWADEOBF_bv.Velocity = Vector3.zero
             break
         end
 
@@ -563,7 +562,12 @@ local JAWADEOBF_vehicleFly = function(JAWADEOBF_targetCF)
         JAWADEOBF_conn:Disconnect()
     end
 
+    -- FIX: hard stop semua assembly velocity sebelum destroy physics objects
+    -- Final approach block dihapus total — itu yang bikin nabrak dinding + ragdoll
     if JAWADEOBF_primary and JAWADEOBF_primary.Parent then
+        pcall(function() JAWADEOBF_bv.Velocity = Vector3.zero end)
+        pcall(function() JAWADEOBF_primary.AssemblyLinearVelocity = Vector3.zero end)
+        pcall(function() JAWADEOBF_primary.AssemblyAngularVelocity = Vector3.zero end)
         pcall(function() JAWADEOBF_gyro:Destroy() end)
         pcall(function() JAWADEOBF_bv:Destroy() end)
 
@@ -578,55 +582,6 @@ local JAWADEOBF_vehicleFly = function(JAWADEOBF_targetCF)
             local JAWADEOBF_driveSeat = JAWADEOBF_model:FindFirstChild("DriveSeat")
             if JAWADEOBF_driveSeat then
                 JAWADEOBF_driveSeat.CanCollide = false
-            end
-
-            task.wait(0.5)
-
-            -- Final approach: dorong kendaraan agar menempel ke posisi target
-            if JAWADEOBF_primary and JAWADEOBF_primary.Parent then
-                local JAWADEOBF_tpos = JAWADEOBF_targetCF.Position
-                local JAWADEOBF_ppos = JAWADEOBF_primary.Position
-                local JAWADEOBF_flat = (Vector3.new(JAWADEOBF_tpos.X, 0, JAWADEOBF_tpos.Z)
-                    - Vector3.new(JAWADEOBF_ppos.X, 0, JAWADEOBF_ppos.Z)).Magnitude
-
-                if JAWADEOBF_flat > 3 then
-                    local JAWADEOBF_fbv = Instance.new("BodyVelocity")
-                    JAWADEOBF_fbv.MaxForce = Vector3.new(1e9, 0, 1e9)
-                    JAWADEOBF_fbv.Velocity = Vector3.zero
-                    JAWADEOBF_fbv.Parent = JAWADEOBF_primary
-
-                    local JAWADEOBF_fgyro = Instance.new("BodyGyro")
-                    JAWADEOBF_fgyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
-                    JAWADEOBF_fgyro.CFrame = JAWADEOBF_targetCF
-                    JAWADEOBF_fgyro.Parent = JAWADEOBF_primary
-
-                    local JAWADEOBF_t0 = os.clock()
-                    while JAWADEOBF_ridegoEnabled
-                        and JAWADEOBF_primary
-                        and JAWADEOBF_primary.Parent do
-
-                        local JAWADEOBF_p = JAWADEOBF_primary.Position
-                        local JAWADEOBF_d = (Vector3.new(JAWADEOBF_tpos.X, 0, JAWADEOBF_tpos.Z)
-                            - Vector3.new(JAWADEOBF_p.X, 0, JAWADEOBF_p.Z)).Magnitude
-
-                        if JAWADEOBF_d <= 3 or (os.clock() - JAWADEOBF_t0) > 3 then
-                            break
-                        end
-
-                        local JAWADEOBF_delta2 = JAWADEOBF_tpos - JAWADEOBF_p
-                        JAWADEOBF_delta2 = Vector3.new(JAWADEOBF_delta2.X, 0, JAWADEOBF_delta2.Z)
-
-                        if JAWADEOBF_delta2.Magnitude > 0 then
-                            JAWADEOBF_fbv.Velocity = JAWADEOBF_delta2.Unit * 30
-                        end
-
-                        JAWADEOBF_fgyro.CFrame = JAWADEOBF_targetCF
-                        task.wait()
-                    end
-
-                    pcall(function() JAWADEOBF_fbv:Destroy() end)
-                    pcall(function() JAWADEOBF_fgyro:Destroy() end)
-                end
             end
         end
     end
@@ -653,7 +608,6 @@ task.spawn(function()
                 return
             end
 
-            -- Auto-accept order
             if JAWADEOBF_action == "OrderOffer"
                 and type(JAWADEOBF_data) == "table"
                 and JAWADEOBF_data.Token then
@@ -667,7 +621,6 @@ task.spawn(function()
                     })
                 end)
 
-            -- Order diterima: teleport ke pickup, spawn mobil, masuk
             elseif JAWADEOBF_action == "OrderAccepted"
                 and type(JAWADEOBF_data) == "table" then
 
@@ -686,7 +639,6 @@ task.spawn(function()
                     task.spawn(function()
                         JAWADEOBF_ridegoBusy = true
 
-                        -- Despawn mobil lama
                         pcall(function()
                             local JAWADEOBF_rs = game:GetService("ReplicatedStorage")
                             local JAWADEOBF_spawnEvents = JAWADEOBF_rs:FindFirstChild("SpawnCarEvents")
@@ -710,7 +662,6 @@ task.spawn(function()
                         JAWADEOBF_seatTeleport(JAWADEOBF_pickupCF)
                         task.wait(0.5)
 
-                        -- Spawn kendaraan
                         local JAWADEOBF_rs = game:GetService("ReplicatedStorage")
                         local JAWADEOBF_spawnEvents = JAWADEOBF_rs:FindFirstChild("SpawnCarEvents")
                         if JAWADEOBF_spawnEvents
@@ -718,7 +669,6 @@ task.spawn(function()
                             JAWADEOBF_spawnEvents.SpawnCar:FireServer(JAWADEOBF_selectedVehicle)
                         end
 
-                        -- Tunggu mobil muncul
                         local JAWADEOBF_LP = game:GetService("Players").LocalPlayer
                         local JAWADEOBF_myCar = nil
 
@@ -751,6 +701,7 @@ task.spawn(function()
                                         pcall(function() JAWADEOBF_rear:Destroy() end)
                                     end
 
+                                    local JAWADEOBF_char = JAWADEOBF_LP.Character
                                     local JAWADEOBF_hrp = JAWADEOBF_char
                                         and JAWADEOBF_char:FindFirstChild("HumanoidRootPart")
                                     if JAWADEOBF_hrp then
@@ -765,7 +716,6 @@ task.spawn(function()
                     end)
                 end
 
-            -- Trip dimulai: fly ke dropoff
             elseif JAWADEOBF_action == "TripStarted"
                 and type(JAWADEOBF_data) == "table" then
 
@@ -951,7 +901,6 @@ local JAWADEOBF_sendWebhook = function(JAWADEOBF_url, JAWADEOBF_payload, JAWADEO
     end)
 end
 
--- Format detik ke HH:MM:SS
 local JAWADEOBF_formatTime = function(JAWADEOBF_sec)
     local JAWADEOBF_h = math.floor(JAWADEOBF_sec / 3600)
     local JAWADEOBF_m = math.floor((JAWADEOBF_sec % 3600) / 60)
@@ -963,7 +912,6 @@ end
 -- TELEPORT DATA PERSISTENCE (untuk auto-rejoin)
 --=====================================================================
 local JAWADEOBF_rejoinPayload = [[
--- Langsung hilangkan GUI main menu & trigger spawn saat reconnect
 task.spawn(function()
     pcall(function()
         local Lighting = game:GetService("Lighting")
@@ -1021,7 +969,6 @@ if ok and typeof(data) == "CFrame" then
 end
 ]]
 
--- Rejoin server (dengan simpan state auto-resume)
 local JAWADEOBF_rejoinServer = function(JAWADEOBF_reason)
     local JAWADEOBF_TP = game:GetService("TeleportService")
     local JAWADEOBF_Players = game:GetService("Players")
@@ -1087,7 +1034,6 @@ local JAWADEOBF_CourierSection = JAWADEOBF_CourierTab:Section({
     Opened = true,
 })
 
--- State Courier
 local JAWADEOBF_courierEnabled = false
 local JAWADEOBF_courierSpeed = 230
 local JAWADEOBF_courierDropDelay = 5
@@ -1208,12 +1154,10 @@ local JAWADEOBF_infoJobs = JAWADEOBF_CourierInfo:Paragraph({
     Desc = "0",
 })
 
--- Format angka ke Rp. 1,234,567
 local JAWADEOBF_formatRupiah = function(JAWADEOBF_n)
     return "Rp. " .. tostring(JAWADEOBF_n):reverse():gsub("%d%d%d", "%1,"):reverse():gsub("^,", "")
 end
 
--- Kirim notif webhook courier
 local JAWADEOBF_courierWebhookSend = function(JAWADEOBF_isStuck, JAWADEOBF_isRejoin)
     if not JAWADEOBF_courierWebhookOn or JAWADEOBF_courierWebhook == "" then
         return
@@ -1291,7 +1235,6 @@ local JAWADEOBF_courierWebhookSend = function(JAWADEOBF_isStuck, JAWADEOBF_isRej
     JAWADEOBF_sendWebhook(JAWADEOBF_courierWebhook, JAWADEOBF_msg)
 end
 
--- Warning 10 detik sebelum rejoin
 local JAWADEOBF_courierRejoinWarning = function()
     if not JAWADEOBF_courierWebhookOn or JAWADEOBF_courierWebhook == "" then
         return
@@ -1321,7 +1264,6 @@ local JAWADEOBF_courierRejoinWarning = function()
     }, true)
 end
 
--- Timer loop courier
 task.spawn(function()
     while task.wait(1) do
         if JAWADEOBF_courierEnabled and JAWADEOBF_courierStartTime then
@@ -1357,7 +1299,6 @@ task.spawn(function()
     end
 end)
 
--- Handle shift limit courier
 local JAWADEOBF_courierHandleShiftLimit = function()
     if JAWADEOBF_courierShiftLimit then return end
     JAWADEOBF_courierShiftLimit = true
@@ -1411,7 +1352,6 @@ local JAWADEOBF_courierHandleShiftLimit = function()
     JAWADEOBF_courierShiftLimit = false
 end
 
--- Deteksi shift limit via NotifEvent
 task.spawn(function()
     pcall(function()
         local JAWADEOBF_notif = game:GetService("ReplicatedStorage")
@@ -1450,7 +1390,6 @@ task.spawn(function()
     end)
 end)
 
--- Monitor notif UI untuk total earning & job count
 task.spawn(function()
     local JAWADEOBF_LP = game:GetService("Players").LocalPlayer
     local JAWADEOBF_PG = JAWADEOBF_LP:WaitForChild("PlayerGui", 9e9)
@@ -1493,7 +1432,6 @@ task.spawn(function()
     end)
 end)
 
--- Listen job baru dari ServiceEvent
 game:GetService("ReplicatedStorage")
     :WaitForChild("Delivery System")
     .Settings.ServiceEvent.OnClientEvent:Connect(function(JAWADEOBF_evt, JAWADEOBF_act, JAWADEOBF_id)
@@ -1519,7 +1457,6 @@ game:GetService("ReplicatedStorage")
         end
     end)
 
--- Fly ke posisi (Courier) via seat + BodyVelocity
 local JAWADEOBF_courierFlyTo = function(JAWADEOBF_targetCF)
     local JAWADEOBF_LP = game:GetService("Players").LocalPlayer
     local JAWADEOBF_char = JAWADEOBF_LP.Character
@@ -1573,7 +1510,6 @@ local JAWADEOBF_courierFlyTo = function(JAWADEOBF_targetCF)
         end
     end)
 
-    -- Animasi duduk
     local JAWADEOBF_animator = JAWADEOBF_hum:FindFirstChildOfClass("Animator")
     local JAWADEOBF_animTrack
     if JAWADEOBF_animator then
@@ -1637,7 +1573,6 @@ local JAWADEOBF_courierFlyTo = function(JAWADEOBF_targetCF)
     end)
 end
 
--- Loop utama courier
 task.spawn(function()
     JAWADEOBF_courierRestarting = false
     while task.wait(1) do
@@ -1660,7 +1595,6 @@ task.spawn(function()
         end
 
         if not JAWADEOBF_courierJobId then
-            -- Ambil job baru
             if not JAWADEOBF_courierRestarting then
                 local JAWADEOBF_takeCF = CFrame.new(-5108, 5, -3759)
                 JAWADEOBF_courierFlyTo(JAWADEOBF_takeCF)
@@ -1710,7 +1644,6 @@ task.spawn(function()
                 end
             end
         else
-            -- Ambil paket di lokasi job
             local JAWADEOBF_pickupCF = nil
             pcall(function()
                 local JAWADEOBF_block = workspace.Livrason.Location[JAWADEOBF_courierJobId].Block
@@ -1770,7 +1703,6 @@ local JAWADEOBF_BaristaSection = JAWADEOBF_BaristaTab:Section({
     Opened = true,
 })
 
--- State Barista
 local JAWADEOBF_baristaEnabled = false
 local JAWADEOBF_baristaWorking = false
 local JAWADEOBF_baristaStartTime = nil
@@ -1932,7 +1864,6 @@ local JAWADEOBF_baristaRejoinWarning = function()
     }, true)
 end
 
--- Timer loop barista
 task.spawn(function()
     while task.wait(1) do
         if JAWADEOBF_baristaEnabled and JAWADEOBF_baristaStartTime then
@@ -1968,13 +1899,11 @@ task.spawn(function()
     end
 end)
 
--- Konstanta tuning Barista
 local JAWADEOBF_baristaTweenMax = 60
 local JAWADEOBF_baristaTweenShort = 0.08
 local JAWADEOBF_baristaTweenMed = 0.1
 local JAWADEOBF_baristaTweenLong = 0.1
 
--- Teleport barista (tween smooth, bukan seat)
 local JAWADEOBF_baristaTeleport = function(JAWADEOBF_targetCF)
     local JAWADEOBF_LP = game:GetService("Players").LocalPlayer
     local JAWADEOBF_char = JAWADEOBF_LP.Character
@@ -2051,7 +1980,6 @@ local JAWADEOBF_baristaTeleport = function(JAWADEOBF_targetCF)
         end
     end)
 
-    -- Durasi tween proporsional jarak, dibatasi
     local JAWADEOBF_duration = math.clamp(JAWADEOBF_distFlat / JAWADEOBF_baristaTweenMax, 0.02, 1)
     local JAWADEOBF_t0 = os.clock()
 
@@ -2093,7 +2021,6 @@ local JAWADEOBF_baristaTeleport = function(JAWADEOBF_targetCF)
     JAWADEOBF_hrp.AssemblyAngularVelocity = Vector3.zero
 end
 
--- Branding GUI Barista (replace gradient, tampilkan "DX-SR")
 task.spawn(function()
     while task.wait(0.1) do
         pcall(function()
@@ -2104,13 +2031,11 @@ task.spawn(function()
             if JAWADEOBF_gui and JAWADEOBF_gui.Enabled then
                 local JAWADEOBF_mini = JAWADEOBF_gui:FindFirstChild("MinigameFrame")
                 if JAWADEOBF_mini and JAWADEOBF_mini.Visible then
-                    -- Stroke warna teal
                     local JAWADEOBF_stroke = JAWADEOBF_mini:FindFirstChildWhichIsA("UIStroke")
                     if JAWADEOBF_stroke then
                         JAWADEOBF_stroke.Color = Color3.fromRGB(0, 212, 206)
                     end
 
-                    -- Sembunyikan progress bar & tapzone
                     local JAWADEOBF_bar = JAWADEOBF_mini:FindFirstChild("ProgressBar")
                     if JAWADEOBF_bar and JAWADEOBF_bar:IsA("GuiObject") and JAWADEOBF_bar.Visible then
                         JAWADEOBF_bar.Visible = false
@@ -2132,7 +2057,6 @@ task.spawn(function()
                         end
                     end
 
-                    -- BackgroundBar → branding DX-SR
                     local JAWADEOBF_bg = JAWADEOBF_mini:FindFirstChild("BackgroundBar")
                     if JAWADEOBF_bg then
                         if JAWADEOBF_bg.BackgroundTransparency ~= 1 then
@@ -2234,14 +2158,12 @@ task.spawn(function()
     end
 end)
 
--- Handle shift start/end untuk Barista (klik "End Shift" atau "Start Shift")
 local JAWADEOBF_baristaPromptHandler = function(JAWADEOBF_parent)
     if not JAWADEOBF_parent then return false end
 
     local JAWADEOBF_prompt = JAWADEOBF_parent:FindFirstChildWhichIsA("ProximityPrompt")
     if not JAWADEOBF_prompt then return false end
 
-    -- Tunggu prompt enable
     if not JAWADEOBF_prompt.Enabled then
         local JAWADEOBF_t0 = os.clock()
         while JAWADEOBF_baristaEnabled
@@ -2260,7 +2182,6 @@ local JAWADEOBF_baristaPromptHandler = function(JAWADEOBF_parent)
 
     JAWADEOBF_prompt.HoldDuration = 0
 
-    -- Handle "End Shift"
     if JAWADEOBF_prompt.ActionText == "End Shift" then
         local JAWADEOBF_t0 = os.clock()
         local JAWADEOBF_lastClick = 0
@@ -2287,7 +2208,6 @@ local JAWADEOBF_baristaPromptHandler = function(JAWADEOBF_parent)
         JAWADEOBF_prompt = JAWADEOBF_parent:FindFirstChildWhichIsA("ProximityPrompt")
     end
 
-    -- Handle "Start Shift"
     if JAWADEOBF_prompt and JAWADEOBF_prompt.ActionText == "Start Shift" then
         local JAWADEOBF_t0 = os.clock()
         local JAWADEOBF_lastClick = 0
@@ -2317,7 +2237,6 @@ local JAWADEOBF_baristaPromptHandler = function(JAWADEOBF_parent)
     return JAWADEOBF_prompt and JAWADEOBF_prompt.ActionText == "End Shift"
 end
 
--- Loop utama Barista
 task.spawn(function()
     while task.wait(JAWADEOBF_baristaTweenLong) do
         if not JAWADEOBF_baristaEnabled then continue end
@@ -2333,7 +2252,6 @@ task.spawn(function()
             continue
         end
 
-        -- Pastikan team Barista
         if not JAWADEOBF_LP.Team or JAWADEOBF_LP.Team.Name ~= "Barista" then
             pcall(function()
                 JAWADEOBF_WindUI:Notify({
@@ -2368,7 +2286,6 @@ task.spawn(function()
             continue
         end
 
-        -- Dapatkan referensi part Barista
         local JAWADEOBF_job = workspace:FindFirstChild("BaristaJob")
         local JAWADEOBF_interactions = JAWADEOBF_job and JAWADEOBF_job:FindFirstChild("Interactions")
         if not JAWADEOBF_interactions then continue end
@@ -2403,7 +2320,6 @@ task.spawn(function()
             and JAWADEOBF_startPrompt.Enabled
             and JAWADEOBF_startPrompt.ActionText == "Start Shift"
 
-        -- Kalau belum working atau jauh dari start atau bisa start shift
         if not JAWADEOBF_baristaWorking
             or JAWADEOBF_distToDrop > 80
             or JAWADEOBF_canStart then
@@ -2433,7 +2349,6 @@ task.spawn(function()
             continue
         end
 
-        -- Supply ambil bahan
         if JAWADEOBF_supplyPrompt and JAWADEOBF_supplyPrompt.Enabled then
             JAWADEOBF_baristaLastAction = os.clock()
             JAWADEOBF_seatTeleport(CFrame.new(-5116.8, 5.8, -670.9))
@@ -2452,7 +2367,6 @@ task.spawn(function()
             continue
         end
 
-        -- Register / serve order
         if JAWADEOBF_registerPrompt and JAWADEOBF_registerPrompt.Enabled then
             JAWADEOBF_baristaLastAction = os.clock()
             JAWADEOBF_baristaTeleport(CFrame.new(-4997.1, 5.6, -755))
@@ -2478,7 +2392,6 @@ task.spawn(function()
             continue
         end
 
-        -- Machine / brew
         if JAWADEOBF_machinePrompt and JAWADEOBF_machinePrompt.Enabled then
             JAWADEOBF_baristaLastAction = os.clock()
 
@@ -2496,7 +2409,6 @@ task.spawn(function()
                 end)
             end
 
-            -- Tunggu sampai register prompt muncul / minigame selesai
             local JAWADEOBF_t0 = os.clock()
             while JAWADEOBF_baristaEnabled and (os.clock() - JAWADEOBF_t0) < 6 do
                 JAWADEOBF_baristaLastAction = os.clock()
@@ -2516,7 +2428,6 @@ task.spawn(function()
             continue
         end
 
-        -- Idle / tidak ada aksi
         local JAWADEOBF_brewPos = CFrame.new(-5000.2, 5.6, -792)
         local JAWADEOBF_distIdle = (Vector3.new(JAWADEOBF_brewPos.Position.X, 0, JAWADEOBF_brewPos.Position.Z)
             - Vector3.new(JAWADEOBF_hrp.Position.X, 0, JAWADEOBF_hrp.Position.Z)).Magnitude
@@ -2525,7 +2436,6 @@ task.spawn(function()
             JAWADEOBF_baristaTeleport(JAWADEOBF_brewPos)
         end
 
-        -- Deteksi stuck / limit shift
         local JAWADEOBF_idleTime = os.clock() - JAWADEOBF_baristaLastAction
         if JAWADEOBF_idleTime > 18 then
             JAWADEOBF_baristaLastAction = os.clock()
@@ -2566,7 +2476,6 @@ task.spawn(function()
     end
 end)
 
--- Auto-resume Barista setelah rejoin
 if getgenv().AUTO_RESUME_BARISTA then
     task.spawn(function()
         JAWADEOBF_bypassMainMenu()
@@ -2616,7 +2525,6 @@ if getgenv().AUTO_RESUME_BARISTA then
     end)
 end
 
--- Auto-resume Courier setelah rejoin
 if getgenv().AUTO_RESUME_COURIER then
     task.spawn(function()
         JAWADEOBF_bypassMainMenu()
@@ -2665,7 +2573,6 @@ local JAWADEOBF_TeleportTab = JAWADEOBF_Window:Tab({
     Icon = "map-pin",
 })
 
--- Teleport umum (sama seperti seatTeleport Ridego)
 local JAWADEOBF_genericTeleport = function(JAWADEOBF_cf)
     local JAWADEOBF_LP = game:GetService("Players").LocalPlayer
     local JAWADEOBF_char = JAWADEOBF_LP.Character
@@ -2718,7 +2625,6 @@ local JAWADEOBF_genericTeleport = function(JAWADEOBF_cf)
     workspace.CurrentCamera.CameraSubject = JAWADEOBF_hum
 end
 
--- Section Dealership
 local JAWADEOBF_DealershipSection = JAWADEOBF_TeleportTab:Section({
     Title = "Dealership",
 })
@@ -2764,7 +2670,6 @@ JAWADEOBF_DealershipSection:Button({
     end,
 })
 
--- Section Other Teleport
 local JAWADEOBF_OtherTpSection = JAWADEOBF_TeleportTab:Section({
     Title = "Other teleport",
 })
@@ -2850,7 +2755,6 @@ local JAWADEOBF_prefixText = ""
 local JAWADEOBF_prefixColor = Color3.fromRGB(24, 24, 24)
 local JAWADEOBF_nameShadowColor = Color3.fromRGB(0, 0, 0)
 
--- Parser ColorSequence
 local JAWADEOBF_parseColorSequence = function(JAWADEOBF_str)
     local JAWADEOBF_nums = {}
     for JAWADEOBF_tok in string.gmatch(JAWADEOBF_str, "%S+") do
@@ -2885,7 +2789,6 @@ local JAWADEOBF_parseColorSequence = function(JAWADEOBF_str)
     return nil
 end
 
--- Spoof avatar via UserId
 local JAWADEOBF_applyAvatarSpoof = function(JAWADEOBF_userId)
     local JAWADEOBF_LP = game:GetService("Players").LocalPlayer
     local JAWADEOBF_char = JAWADEOBF_LP.Character
@@ -2911,7 +2814,6 @@ local JAWADEOBF_applyAvatarSpoof = function(JAWADEOBF_userId)
         RightFoot = Enum.BodyPartR15.RightFoot,
     }
 
-    -- Backup avatar pertama kali
     if not JAWADEOBF_avatarBackup then
         JAWADEOBF_avatarBackup = {
             body_parts = {}, accessories = {}, clothing = {},
@@ -2975,7 +2877,6 @@ local JAWADEOBF_applyAvatarSpoof = function(JAWADEOBF_userId)
         end
     end
 
-    -- Load avatar target
     local JAWADEOBF_ok, JAWADEOBF_model = pcall(function()
         return game:GetService("Players"):CreateHumanoidModelFromUserIdAsync(JAWADEOBF_userId)
     end)
@@ -2995,7 +2896,6 @@ local JAWADEOBF_applyAvatarSpoof = function(JAWADEOBF_userId)
         return
     end
 
-    -- Replace body parts
     for JAWADEOBF_name, JAWADEOBF_enum in pairs(JAWADEOBF_r15Parts) do
         local JAWADEOBF_part = JAWADEOBF_model:FindFirstChild(JAWADEOBF_name)
         if JAWADEOBF_part and JAWADEOBF_part:IsA("BasePart") then
@@ -3005,7 +2905,6 @@ local JAWADEOBF_applyAvatarSpoof = function(JAWADEOBF_userId)
         end
     end
 
-    -- Hapus accessories/clothing lama
     for JAWADEOBF_i, JAWADEOBF_ch in ipairs(JAWADEOBF_char:GetChildren()) do
         if JAWADEOBF_ch:IsA("Accessory")
             or JAWADEOBF_ch:IsA("Shirt")
@@ -3016,7 +2915,6 @@ local JAWADEOBF_applyAvatarSpoof = function(JAWADEOBF_userId)
         end
     end
 
-    -- Face & head mesh
     local JAWADEOBF_head = JAWADEOBF_char:FindFirstChild("Head")
     local JAWADEOBF_targetHead = JAWADEOBF_model:FindFirstChild("Head")
 
@@ -3053,7 +2951,6 @@ local JAWADEOBF_applyAvatarSpoof = function(JAWADEOBF_userId)
         JAWADEOBF_head.Color = JAWADEOBF_targetHead.Color
     end
 
-    -- Clothing & body colors
     for JAWADEOBF_i, JAWADEOBF_k in ipairs(JAWADEOBF_model:GetChildren()) do
         if JAWADEOBF_k:IsA("Shirt")
             or JAWADEOBF_k:IsA("Pants")
@@ -3072,7 +2969,6 @@ local JAWADEOBF_applyAvatarSpoof = function(JAWADEOBF_userId)
         end
     end
 
-    -- Accessories dengan weld manual
     for JAWADEOBF_i, JAWADEOBF_acc in ipairs(JAWADEOBF_model:GetChildren()) do
         if JAWADEOBF_acc:IsA("Accessory") then
             local JAWADEOBF_clone = JAWADEOBF_acc:Clone()
@@ -3130,7 +3026,6 @@ local JAWADEOBF_applyAvatarSpoof = function(JAWADEOBF_userId)
         end
     end
 
-    -- Scales
     local JAWADEOBF_targetDesc = JAWADEOBF_targetHum:FindFirstChildOfClass("HumanoidDescription")
     if JAWADEOBF_targetDesc then
         for JAWADEOBF_i, JAWADEOBF_name in ipairs({
@@ -3155,7 +3050,6 @@ local JAWADEOBF_applyAvatarSpoof = function(JAWADEOBF_userId)
     })
 end
 
--- Restore avatar original
 local JAWADEOBF_resetAvatar = function()
     local JAWADEOBF_LP = game:GetService("Players").LocalPlayer
     local JAWADEOBF_char = JAWADEOBF_LP.Character
@@ -3318,7 +3212,6 @@ local JAWADEOBF_resetAvatar = function()
     })
 end
 
--- UI Avatar
 JAWADEOBF_AvatarSection:Input({
     Title = "Spoof Avatar (Username)",
     PlaceholderText = "Target Username...",
@@ -3465,7 +3358,6 @@ JAWADEOBF_AvatarSection:Input({
     end,
 })
 
--- Loop Name/Rank Spoofer
 task.spawn(function()
     while task.wait(1) do
         local JAWADEOBF_LP = game:GetService("Players").LocalPlayer
@@ -3500,7 +3392,6 @@ task.spawn(function()
             end)
         end
 
-        -- Rank tag di atas kepala
         pcall(function()
             local JAWADEOBF_wsChar = workspace:FindFirstChild(JAWADEOBF_LP.Name)
                 or JAWADEOBF_LP.Character
@@ -3892,7 +3783,6 @@ JAWADEOBF_ConfigTab:Button({
     end,
 })
 
--- Auto-load config saat script jalan
 pcall(function()
     local JAWADEOBF_http = game:GetService("HttpService")
     local JAWADEOBF_all = JAWADEOBF_Window.ConfigManager:AllConfigs()
