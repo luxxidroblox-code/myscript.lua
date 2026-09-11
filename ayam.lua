@@ -885,7 +885,7 @@ local JAWADEOBF_ridegoToggle = JAWADEOBF_RidegoTab:Toggle({
     end,
     Default = false,
 })
-JAWADEOBF_ridegoToggle:Lock()
+JAWADEOBF_ridegoToggle:Unlock()
 
 --=====================================================================
 -- WEBHOOK HELPER
