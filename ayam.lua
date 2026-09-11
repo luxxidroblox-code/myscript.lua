@@ -580,6 +580,9 @@ local JAWADEOBF_vehicleFly = function(JAWADEOBF_targetCF)
                 JAWADEOBF_driveSeat.CanCollide = false
             end
 
+            task.wait(0.5)
+
+            -- Final approach: dorong kendaraan agar menempel ke posisi target
             local JAWADEOBF_vehicleFly = function(JAWADEOBF_targetCF)
     local JAWADEOBF_LP = game:GetService("Players").LocalPlayer
     local JAWADEOBF_char = JAWADEOBF_LP.Character
@@ -699,6 +702,15 @@ local JAWADEOBF_vehicleFly = function(JAWADEOBF_targetCF)
         for _, p in ipairs(JAWADEOBF_char:GetDescendants()) do
             if p:IsA("BasePart") and p.Parent then
                 p.CanCollide = true
+            end
+        end
+    end
+end
+
+    if JAWADEOBF_char then
+        for JAWADEOBF_i, JAWADEOBF_p in ipairs(JAWADEOBF_char:GetDescendants()) do
+            if JAWADEOBF_p:IsA("BasePart") then
+                JAWADEOBF_p.CanCollide = true
             end
         end
     end
