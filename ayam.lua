@@ -580,61 +580,125 @@ local JAWADEOBF_vehicleFly = function(JAWADEOBF_targetCF)
                 JAWADEOBF_driveSeat.CanCollide = false
             end
 
-            task.wait(0.5)
+            local JAWADEOBF_vehicleFly = function(JAWADEOBF_targetCF)
+    local JAWADEOBF_LP = game:GetService("Players").LocalPlayer
+    local JAWADEOBF_char = JAWADEOBF_LP.Character
 
-            -- Final approach: dorong kendaraan agar menempel ke posisi target
-            if JAWADEOBF_primary and JAWADEOBF_primary.Parent then
-                local JAWADEOBF_tpos = JAWADEOBF_targetCF.Position
-                local JAWADEOBF_ppos = JAWADEOBF_primary.Position
-                local JAWADEOBF_flat = (Vector3.new(JAWADEOBF_tpos.X, 0, JAWADEOBF_tpos.Z)
-                    - Vector3.new(JAWADEOBF_ppos.X, 0, JAWADEOBF_ppos.Z)).Magnitude
+    if not (JAWADEOBF_char
+        and JAWADEOBF_char:FindFirstChild("Humanoid")
+        and JAWADEOBF_char.Humanoid.Sit) then
+        return
+    end
 
-                if JAWADEOBF_flat > 3 then
-                    local JAWADEOBF_fbv = Instance.new("BodyVelocity")
-                    JAWADEOBF_fbv.MaxForce = Vector3.new(1e9, 0, 1e9)
-                    JAWADEOBF_fbv.Velocity = Vector3.zero
-                    JAWADEOBF_fbv.Parent = JAWADEOBF_primary
+    local JAWADEOBF_seatPart = JAWADEOBF_char.Humanoid.SeatPart
+    if not JAWADEOBF_seatPart then return end
 
-                    local JAWADEOBF_fgyro = Instance.new("BodyGyro")
-                    JAWADEOBF_fgyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
-                    JAWADEOBF_fgyro.CFrame = JAWADEOBF_targetCF
-                    JAWADEOBF_fgyro.Parent = JAWADEOBF_primary
+    local JAWADEOBF_primary = JAWADEOBF_seatPart
+    local JAWADEOBF_model = JAWADEOBF_seatPart:FindFirstAncestorOfClass("Model")
+    if JAWADEOBF_model and JAWADEOBF_model.PrimaryPart then
+        JAWADEOBF_primary = JAWADEOBF_model.PrimaryPart
+    end
 
-                    local JAWADEOBF_t0 = os.clock()
-                    while JAWADEOBF_ridegoEnabled
-                        and JAWADEOBF_primary
-                        and JAWADEOBF_primary.Parent do
+    local JAWADEOBF_targetPos = JAWADEOBF_targetCF.Position
+    local JAWADEOBF_RunService = game:GetService("RunService")
 
-                        local JAWADEOBF_p = JAWADEOBF_primary.Position
-                        local JAWADEOBF_d = (Vector3.new(JAWADEOBF_tpos.X, 0, JAWADEOBF_tpos.Z)
-                            - Vector3.new(JAWADEOBF_p.X, 0, JAWADEOBF_p.Z)).Magnitude
-
-                        if JAWADEOBF_d <= 3 or (os.clock() - JAWADEOBF_t0) > 3 then
-                            break
-                        end
-
-                        local JAWADEOBF_delta2 = JAWADEOBF_tpos - JAWADEOBF_p
-                        JAWADEOBF_delta2 = Vector3.new(JAWADEOBF_delta2.X, 0, JAWADEOBF_delta2.Z)
-
-                        if JAWADEOBF_delta2.Magnitude > 0 then
-                            JAWADEOBF_fbv.Velocity = JAWADEOBF_delta2.Unit * 30
-                        end
-
-                        JAWADEOBF_fgyro.CFrame = JAWADEOBF_targetCF
-                        task.wait()
+    local JAWADEOBF_conn = JAWADEOBF_RunService.Stepped:Connect(function()
+        if JAWADEOBF_model then
+            for _, p in ipairs(JAWADEOBF_model:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
+        end
+        if JAWADEOBF_char then
+            for _, p in ipairs(JAWADEOBF_char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
+        end
+        pcall(function()
+            local missions = workspace:FindFirstChild("ActiveMissions")
+            if missions then
+                local pass = missions:FindFirstChild("RideGO_Passenger")
+                if pass then
+                    for _, p in ipairs(pass:GetDescendants()) do
+                        if p:IsA("BasePart") then p.CanCollide = false end
                     end
-
-                    pcall(function() JAWADEOBF_fbv:Destroy() end)
-                    pcall(function() JAWADEOBF_fgyro:Destroy() end)
                 end
+            end
+        end)
+    end)
+
+    local JAWADEOBF_gyro = Instance.new("BodyGyro")
+    JAWADEOBF_gyro.P = 90000
+    JAWADEOBF_gyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    JAWADEOBF_gyro.D = 50
+    JAWADEOBF_gyro.Parent = JAWADEOBF_primary
+
+    local JAWADEOBF_bv = Instance.new("BodyVelocity")
+    JAWADEOBF_bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    JAWADEOBF_bv.Velocity = Vector3.zero
+    JAWADEOBF_bv.Parent = JAWADEOBF_primary
+
+    if JAWADEOBF_model then
+        for _, p in ipairs(JAWADEOBF_model:GetDescendants()) do
+            if p:IsA("BasePart") then p.Anchored = false end
+        end
+    end
+
+    local JAWADEOBF_speed = 230
+    local JAWADEOBF_startTime = os.clock()
+
+    while JAWADEOBF_ridegoEnabled do
+        if not JAWADEOBF_primary or not JAWADEOBF_primary.Parent then break end
+
+        local JAWADEOBF_cur = JAWADEOBF_primary.Position
+        local JAWADEOBF_delta = JAWADEOBF_targetPos - JAWADEOBF_cur
+        local JAWADEOBF_dist = JAWADEOBF_delta.Magnitude
+
+        if JAWADEOBF_dist < 15 then break end
+        if (os.clock() - JAWADEOBF_startTime) > 120 then break end
+
+        JAWADEOBF_gyro.CFrame = JAWADEOBF_targetCF
+        JAWADEOBF_bv.Velocity = JAWADEOBF_delta.Unit * JAWADEOBF_speed
+        task.wait()
+    end
+
+    -- Hard stop sebelum cleanup apapun
+    if JAWADEOBF_bv and JAWADEOBF_bv.Parent then
+        JAWADEOBF_bv.Velocity = Vector3.zero
+        JAWADEOBF_bv.MaxForce = Vector3.zero
+    end
+    if JAWADEOBF_primary and JAWADEOBF_primary.Parent then
+        JAWADEOBF_primary.AssemblyLinearVelocity = Vector3.zero
+        JAWADEOBF_primary.AssemblyAngularVelocity = Vector3.zero
+    end
+    if JAWADEOBF_model then
+        for _, p in ipairs(JAWADEOBF_model:GetDescendants()) do
+            if p:IsA("BasePart") and p.Parent then
+                p.AssemblyLinearVelocity = Vector3.zero
+                p.AssemblyAngularVelocity = Vector3.zero
             end
         end
     end
 
+    JAWADEOBF_conn:Disconnect()
+    pcall(function() JAWADEOBF_gyro:Destroy() end)
+    pcall(function() JAWADEOBF_bv:Destroy() end)
+
+    -- Restore collision & unanchor model
+    if JAWADEOBF_model then
+        for _, p in ipairs(JAWADEOBF_model:GetDescendants()) do
+            if p:IsA("BasePart") and p.Parent then
+                p.CanCollide = true
+                p.Anchored = false
+            end
+        end
+        local driveSeat = JAWADEOBF_model:FindFirstChild("DriveSeat")
+        if driveSeat then driveSeat.CanCollide = false end
+    end
+
     if JAWADEOBF_char then
-        for JAWADEOBF_i, JAWADEOBF_p in ipairs(JAWADEOBF_char:GetDescendants()) do
-            if JAWADEOBF_p:IsA("BasePart") then
-                JAWADEOBF_p.CanCollide = true
+        for _, p in ipairs(JAWADEOBF_char:GetDescendants()) do
+            if p:IsA("BasePart") and p.Parent then
+                p.CanCollide = true
             end
         end
     end
