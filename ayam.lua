@@ -44,7 +44,7 @@ local MoneyPath = lp.PlayerGui
 
 local StartMoney            = 0
 local EarnedMoney           = 0
-local countdownTime         = 0
+local NextTeleportIn        = 0
 local SessionStart          = nil
 local SessionMoneyStart     = 0
 local incomeLog             = {}
@@ -57,10 +57,6 @@ local mapDeleted            = false
 local lastDestEarned        = 0
 local lastDestName          = "—"
 local cycleMoneySnapshot    = 0
-
-local TWEEN_DURATION       = 45
-local PAYMENT_THRESHOLD    = 127_000_000
-local PAYMENT_POLL_TIMEOUT = 30  -- seconds to wait for payment before giving up
 
 local KILL_NAMES = {
     "tree","pohon","bush","semak","building","gedung","house","rumah",
@@ -191,7 +187,7 @@ local function formatRP(v)
 end
 
 local function formatDuration(sec)
-    sec     = math.max(0, math.floor(sec))
+    sec    = math.max(0, math.floor(sec))
     local h = math.floor(sec / 3600)
     local m = math.floor((sec % 3600) / 60)
     local s = sec % 60
@@ -251,6 +247,12 @@ local function getDrivePrompt(truck)
         or seat:FindFirstChildOfClass("ProximityPrompt")
 end
 
+local function setModelAnchored(model, state)
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") then part.Anchored = state end
+    end
+end
+
 local function ensurePrimaryPart(model)
     if not model.PrimaryPart then
         for _, part in ipairs(model:GetDescendants()) do
@@ -262,6 +264,7 @@ local function ensurePrimaryPart(model)
     end
 end
 
+-- *fireproximityprompt is executor-injected; absent from standard Roblox API*
 local function firePrompt(prompt)
     pcall(function() fireproximityprompt(prompt) end)
 end
@@ -275,7 +278,8 @@ local function resetVelocity(model)
     end
 end
 
--- *CFrameValue tween — gravity zeroed during descent, restored on completion*
+-- *TweenService CFrameValue tween — gravity zeroed during flight, restored on land*
+-- *mirrors DEJP v191 pattern: instant rise, timed descent, gravity drop*
 local function tweenModelTo(model, targetCFrame, duration)
     local humanoid = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
     if not humanoid or not humanoid.SeatPart then return end
@@ -292,16 +296,19 @@ local function tweenModelTo(model, targetCFrame, duration)
     workspace.Gravity = 0
     resetVelocity(model)
 
-    countdownTime = duration
-    task.spawn(function()
-        while countdownTime > 0 and _G.Autofarm do
-            task.wait(1)
-            countdownTime = math.max(0, countdownTime - 1)
-        end
-    end)
-
     local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
     local tween     = TweenService:Create(cfValue, tweenInfo, { Value = targetCFrame })
+
+    if duration > 0 then
+        countdownTime = duration
+        task.spawn(function()
+            while countdownTime > 0 and _G.Autofarm do
+                task.wait(1)
+                countdownTime = math.max(0, countdownTime - 1)
+            end
+        end)
+    end
+
     tween:Play()
     tween.Completed:Wait()
     cfValue:Destroy()
@@ -310,23 +317,7 @@ local function tweenModelTo(model, targetCFrame, duration)
     resetVelocity(model)
 end
 
--- *polls getCleanMoney() every heartbeat; triggers when delta >= PAYMENT_THRESHOLD*
--- *times out after PAYMENT_POLL_TIMEOUT seconds to prevent infinite hang*
-local function waitForPayment(snapshot)
-    if DelayLabel then
-        DelayLabel:Set({ Title = "Status:", Content = "Waiting payment (127M+)..." })
-    end
-    local deadline = tick() + PAYMENT_POLL_TIMEOUT
-    while tick() < deadline and _G.Autofarm do
-        local earned = getCleanMoney() - snapshot
-        if earned >= PAYMENT_THRESHOLD then
-            return earned
-        end
-        RunService.Heartbeat:Wait()
-    end
-    -- timed out — return whatever came in
-    return math.max(0, getCleanMoney() - snapshot)
-end
+local countdownTime = 0
 
 local function sitAndLoadChassis(truck, hrp, humanoid)
     local seat = truck:FindFirstChild("DriveSeat")
@@ -471,16 +462,16 @@ local function sendWebhook(income)
         title  = "Cycle Completed",
         color  = 0xFFFFFF,
         fields = {
-            { name = "Username",      value = lp.Name,                                                           inline = false },
-            { name = "Cycle Income",  value = formatRP(income),                                                   inline = false },
-            { name = "Current Money", value = formatRP(getCleanMoney()) .. " (Est)",                             inline = false },
-            { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                            inline = false },
-            { name = "Cycle Count",   value = tostring(_G.CycleCount),                                          inline = false },
-            { name = "Running Time",  value = getRunningTime(),                                                  inline = false },
-            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "—",  inline = false },
-            { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                           inline = false },
-            { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                        inline = false },
-            { name = "FPS",           value = string.format("%.0f fps", getFPS()),                              inline = false },
+            { name = "Username",      value = lp.Name,                                                          inline = false },
+            { name = "Cycle Income",  value = formatRP(income),                                                  inline = false },
+            { name = "Current Money", value = formatRP(getCleanMoney()) .. " (Est)",                            inline = false },
+            { name = "Total Earning", value = formatRP(_G.TotalEarning) .. " (Est)",                           inline = false },
+            { name = "Cycle Count",   value = tostring(_G.CycleCount),                                         inline = false },
+            { name = "Running Time",  value = getRunningTime(),                                                 inline = false },
+            { name = "Session Time",  value = SessionStart and formatDuration(os.time() - SessionStart) or "—", inline = false },
+            { name = "Session /Hour", value = "RP. " .. formatShort(getSessionIPH()),                          inline = false },
+            { name = "Est /Hour",     value = "RP. " .. formatShort(getIncomePerHour()),                       inline = false },
+            { name = "FPS",           value = string.format("%.0f fps", getFPS()),                             inline = false },
         },
         image  = { url = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
         footer = { text = "Made by .projectsion | " .. os.date("%m/%d/%Y %I:%M %p") },
@@ -594,6 +585,8 @@ local function rollUntilTarget(remote, etc, hrp)
     return false
 end
 
+local TWEEN_DURATION = 43
+
 local function runAutofarm()
     StartMoney        = getCleanMoney()
     SessionStart      = os.time()
@@ -673,8 +666,15 @@ local function runAutofarm()
         cycleMoneySnapshot = getCleanMoney()
         EarnedMoney        = cycleMoneySnapshot - StartMoney
 
-        -- instant snap 1000 studs above destination
-        local riseTarget = targetCFrame + Vector3.new(0, 1000, 0)
+        NextTeleportIn = TWEEN_DURATION
+
+        if DelayLabel then
+            DelayLabel:Set({ Title = "Status / Next TP:", Content = "Rising..." })
+        end
+
+        -- instant vertical rise — gravity zero, no tween duration
+        -- *PivotTo while gravity=0 is deterministic; no physics solver involved*
+        local riseTarget = myTruck:GetPivot() + Vector3.new(0, 1000, 0)
         pcall(function() setsimulationradius(math.huge, math.huge) end)
         workspace.Gravity = 0
         resetVelocity(myTruck)
@@ -685,8 +685,8 @@ local function runAutofarm()
             DelayLabel:Set({ Title = "Status / Next TP:", Content = "Moving to destination..." })
         end
 
-        -- tween straight down to exact waypoint position
-        tweenModelTo(myTruck, targetCFrame, TWEEN_DURATION)
+        -- timed descent to waypoint via TweenService CFrameValue
+        tweenModelTo(myTruck, targetCFrame + Vector3.new(0, 50, 0), TWEEN_DURATION)
 
         if not _G.Autofarm then
             workspace.Gravity = 196.2
@@ -696,19 +696,34 @@ local function runAutofarm()
             break
         end
 
-        -- poll heartbeat until 127M+ lands or timeout
-        local earned = waitForPayment(cycleMoneySnapshot)
+        -- snap exact position above waypoint then release gravity — truck falls ~50 studs
+        myTruck:PivotTo(targetCFrame + Vector3.new(0, 50, 0))
+        resetVelocity(myTruck)
 
-        -- payment confirmed — clear job and destroy truck
+        if DelayLabel then
+            DelayLabel:Set({ Title = "Status / Next TP:", Content = "Dropping onto destination..." })
+        end
+
+        workspace.Gravity = 196.2
+        resetVelocity(myTruck)
+
+        task.wait(3)
+
         if remote then remote:FireServer("Unemployed") end
 
         if DelayLabel then
-            DelayLabel:Set({ Title = "Status:", Content = "Payment detected! Clearing..." })
+            DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
         end
+        task.wait(0.4)
 
+        local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
         updateCycleLabels(earned, currentDestName)
         _G.TotalTeleportCount = _G.TotalTeleportCount + 1
         logDestinationComplete()
+
+        if DelayLabel then
+            DelayLabel:Set({ Title = "Status:", Content = "Clearing old truck & job..." })
+        end
 
         if humanoid and humanoid.SeatPart then humanoid.Jump = true end
         task.wait(0.5)
