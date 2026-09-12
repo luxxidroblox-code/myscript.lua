@@ -646,7 +646,7 @@ local function runAutofarm()
 
         local currentDestName = getWaypointName(waypoint)
         -- Target is 50 studs above waypoint — enough clearance to fall clean
-        local targetPos       = waypoint.Position + Vector3.new(0, 50, 0)
+        local targetPos       = waypoint.Position + Vector3.new(0, 0, 0)
         local primary         = myTruck.PrimaryPart
 
         cycleMoneySnapshot = getCleanMoney()
@@ -671,7 +671,7 @@ local function runAutofarm()
         -- *AssemblyLinearVelocity only affects unanchored parts; tween uses PivotTo
         --  while anchored, which is invisible-to-physics and deterministic.*
 
-        local TWEEN_DURATION = 49  -- seconds, matches NextTeleportIn countdown
+        local TWEEN_DURATION = 48  -- seconds, matches NextTeleportIn countdown
         local elapsed        = 0
         NextTeleportIn       = TWEEN_DURATION
 
