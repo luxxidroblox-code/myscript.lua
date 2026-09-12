@@ -2,6 +2,8 @@
     DX-SR Hub â€” Merged
     Base    : Doc2 (vehicleFly tween stable)
     Fix     : Vehicle spawn logic dari Doc1 (retry 6x, rdFindAndSit hardened)
+    Patch   : OrderAccepted â†’ foot-tween ke NPC pickup (courier method, speed 300)
+              setelah nyampe NPC baru spawn motor â†’ sit
     Tween/Drive: DOC2 TIDAK DIUBAH
 ]]
 
@@ -186,13 +188,13 @@ local JAWADEOBF_Window = JAWADEOBF_WindUI:CreateWindow({
     ScrollBarEnabled            = false,
 })
 
-JAWADEOBF_Window:Tag({ Title = "v0.0.0.15", Icon = "github",      Color = Color3.fromHex("#30ff6a"), Radius = 13 })
+JAWADEOBF_Window:Tag({ Title = "v0.0.0.16", Icon = "github",      Color = Color3.fromHex("#30ff6a"), Radius = 13 })
 JAWADEOBF_Window:Tag({ Title = "DX-SR Hub", Icon = "text-cursor", Color = Color3.fromHex("#1E3A8A"), Radius = 13 })
 
 JAWADEOBF_WindUI:Popup({
     Title   = "Update logs",
     Icon    = "info",
-    Content = "Spawn hardened (retry 6x) + vehicleFly doc2 stable",
+    Content = "OrderAccepted: foot-tween ke NPC pickup (speed 300) sebelum spawn motor",
     Buttons = {{ Title = "Continue", Icon = "arrow-right", Callback = function() end, Variant = "Primary" }},
 })
 
@@ -315,6 +317,93 @@ local JAWADEOBF_seatTeleport = function(JAWADEOBF_cf)
     if JAWADEOBF_seat then JAWADEOBF_seat:Destroy() end
     JAWADEOBF_hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     workspace.CurrentCamera.CameraSubject = JAWADEOBF_hum
+end
+
+--=====================================================================
+-- FOOT TWEEN TO NPC â€” courier method, speed 300
+-- Dipakai di OrderAccepted sebelum spawn motor
+--=====================================================================
+local JAWADEOBF_rdFootTweenToPickup = function(JAWADEOBF_targetPos)
+    local LP   = game:GetService("Players").LocalPlayer
+    local char = LP.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    -- jangan tween kalau sudah sangat dekat
+    local dist = (hrp.Position - JAWADEOBF_targetPos).Magnitude
+    if dist < 6 then return end
+
+    hum.AutoRotate = false
+
+    local seat      = Instance.new("Seat")
+    seat.Name         = "ridego_npc_walk_seat"
+    seat.Size         = Vector3.new(1, 1, 1)
+    seat.Transparency = 1
+    seat.CanCollide   = false
+    seat.CFrame       = hrp.CFrame
+    seat.Parent       = workspace
+
+    local weld     = Instance.new("WeldConstraint")
+    weld.Part0     = seat; weld.Part1 = hrp; weld.Parent = seat
+
+    local bv       = Instance.new("BodyVelocity")
+    bv.MaxForce    = Vector3.new(1e9, 1e9, 1e9)
+    bv.Velocity    = Vector3.new(0, 0, 0)
+    bv.Parent      = seat
+
+    local gyro     = Instance.new("BodyGyro")
+    gyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+    gyro.CFrame    = hrp.CFrame
+    gyro.Parent    = seat
+
+    local RunService = game:GetService("RunService")
+
+    local seatConn = RunService.Stepped:Connect(function()
+        if hum.SeatPart ~= seat then hum.Sit = true; seat:Sit(hum) end
+    end)
+
+    local origCollide = {}
+    local collideConn = RunService.Stepped:Connect(function()
+        if char then
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") and p.CanCollide then
+                    p.CanCollide = false; origCollide[p] = true
+                end
+            end
+        end
+    end)
+
+    local TWEEN_SPEED = 300
+    local startTime   = os.clock()
+
+    while hrp do
+        local cur   = hrp.Position
+        local delta = JAWADEOBF_targetPos - cur
+        local rem   = delta.Magnitude
+        if rem < 6 then break end
+        if (os.clock() - startTime) > 60 then break end
+
+        bv.Velocity = delta.Unit * TWEEN_SPEED
+        gyro.CFrame = CFrame.lookAt(cur, JAWADEOBF_targetPos)
+        task.wait()
+    end
+
+    seatConn:Disconnect(); collideConn:Disconnect()
+
+    for part, _ in pairs(origCollide) do
+        if typeof(part) == "Instance" and part:IsA("BasePart") and part.Parent then
+            part.CanCollide = true
+        end
+    end
+
+    if bv then bv.Velocity = Vector3.new(0, 0, 0) end
+    hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    task.wait(0.1)
+    hum.Sit = false
+    if seat then seat:Destroy() end
+    hum.AutoRotate = true
+    hum:ChangeState(Enum.HumanoidStateType.Running)
 end
 
 --=====================================================================
@@ -559,7 +648,7 @@ task.spawn(function()
         JAWADEOBF_taxiEvent.OnClientEvent:Connect(function(JAWADEOBF_action, JAWADEOBF_data)
             if not JAWADEOBF_ridegoEnabled then return end
 
-            -- â”€â”€ OrderOffer: auto accept â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            -- â”€â”€ OrderOffer: auto accept â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if JAWADEOBF_action == "OrderOffer"
                 and type(JAWADEOBF_data) == "table"
                 and JAWADEOBF_data.Token then
@@ -569,7 +658,7 @@ task.spawn(function()
                     JAWADEOBF_WindUI:Notify({ Title = "RideGO", Content = "Auto-accepted order!", Duration = 3 })
                 end)
 
-            -- â”€â”€ OrderAccepted: teleport â†’ spawn (retry 6x) â†’ sit â”€
+            -- â”€â”€ OrderAccepted: foot-tween â†’ spawn â†’ sit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             elseif JAWADEOBF_action == "OrderAccepted"
                 and type(JAWADEOBF_data) == "table" then
 
@@ -586,18 +675,20 @@ task.spawn(function()
                     task.spawn(function()
                         JAWADEOBF_ridegoBusy = true
 
-                        -- teleport ke pickup
-                        local JAWADEOBF_pickupCF = CFrame.new(JAWADEOBF_data.PickupPos)
-                        if JAWADEOBF_data.PickupLook then
-                            JAWADEOBF_pickupCF = CFrame.lookAt(
-                                JAWADEOBF_data.PickupPos,
-                                JAWADEOBF_data.PickupPos + JAWADEOBF_data.PickupLook
-                            )
-                        end
-                        JAWADEOBF_seatTeleport(JAWADEOBF_pickupCF)
-                        task.wait(0.5)
+                        -- â‘  foot-tween ke posisi NPC pickup (courier method, 300 stud/s)
+                        --    karakter turun dari motor / jalan kaki menuju passenger
+                        JAWADEOBF_rdFootTweenToPickup(JAWADEOBF_data.PickupPos)
+                        task.wait(0.4)
 
-                        -- spawn kendaraan â€” retry 6x (DOC1)
+                        -- â‘¡ setelah nyampe di NPC, spawn motor (retry 6x)
+                        pcall(function()
+                            JAWADEOBF_WindUI:Notify({
+                                Title   = "RideGO",
+                                Content = "Spawning kendaraan di lokasi pickup...",
+                                Duration = 3,
+                            })
+                        end)
+
                         local JAWADEOBF_spawned = JAWADEOBF_rdSpawnVehicle()
                         if not JAWADEOBF_spawned then
                             JAWADEOBF_WindUI:Notify({
@@ -609,10 +700,10 @@ task.spawn(function()
                             return
                         end
 
-                        -- tunggu server settle
+                        -- â‘¢ tunggu server settle
                         task.wait(1.2)
 
-                        -- sit ke kendaraan (DOC1 hardened)
+                        -- â‘£ sit ke kendaraan (DOC1 hardened)
                         local JAWADEOBF_seated = JAWADEOBF_rdFindAndSit()
                         if not JAWADEOBF_seated then
                             JAWADEOBF_WindUI:Notify({
@@ -624,7 +715,7 @@ task.spawn(function()
                             return
                         end
 
-                        -- GoOnline setelah duduk
+                        -- â‘¤ GoOnline setelah duduk
                         task.spawn(function()
                             task.wait(0.5)
                             local JAWADEOBF_rs   = game:GetService("ReplicatedStorage")
@@ -640,7 +731,7 @@ task.spawn(function()
                     end)
                 end
 
-            -- â”€â”€ TripStarted: vehicleFly doc2 ke dropoff â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            -- â”€â”€ TripStarted: vehicleFly doc2 ke dropoff â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             elseif JAWADEOBF_action == "TripStarted"
                 and type(JAWADEOBF_data) == "table" then
 
