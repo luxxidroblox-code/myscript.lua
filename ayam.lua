@@ -26,6 +26,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
+local TweenService      = game:GetService("TweenService")
 local lp                = Players.LocalPlayer
 
 _G.Autofarm           = false
@@ -117,7 +118,7 @@ local function cleanMap()
 end
 
 local function uprightCF(cf, yOffset)
-    yOffset   = yOffset or 0
+    yOffset    = yOffset or 0
     local pos  = cf.Position + Vector3.new(0, yOffset, 0)
     local look = cf.LookVector
     local yaw  = math.atan2(look.X, look.Z)
@@ -267,6 +268,56 @@ end
 local function firePrompt(prompt)
     pcall(function() fireproximityprompt(prompt) end)
 end
+
+local function resetVelocity(model)
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.AssemblyLinearVelocity  = Vector3.zero
+            part.AssemblyAngularVelocity = Vector3.zero
+        end
+    end
+end
+
+-- *TweenService CFrameValue tween — gravity zeroed during flight, restored on land*
+-- *mirrors DEJP v191 pattern: instant rise, timed descent, gravity drop*
+local function tweenModelTo(model, targetCFrame, duration)
+    local humanoid = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or not humanoid.SeatPart then return end
+    model.PrimaryPart = humanoid.SeatPart
+
+    local cfValue = Instance.new("CFrameValue")
+    cfValue.Value = model:GetPrimaryPartCFrame()
+
+    cfValue.Changed:Connect(function()
+        model:PivotTo(cfValue.Value)
+        resetVelocity(model)
+    end)
+
+    workspace.Gravity = 0
+    resetVelocity(model)
+
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
+    local tween     = TweenService:Create(cfValue, tweenInfo, { Value = targetCFrame })
+
+    if duration > 0 then
+        countdownTime = duration
+        task.spawn(function()
+            while countdownTime > 0 and _G.Autofarm do
+                task.wait(1)
+                countdownTime = math.max(0, countdownTime - 1)
+            end
+        end)
+    end
+
+    tween:Play()
+    tween.Completed:Wait()
+    cfValue:Destroy()
+
+    workspace.Gravity = 196.2
+    resetVelocity(model)
+end
+
+local countdownTime = 0
 
 local function sitAndLoadChassis(truck, hrp, humanoid)
     local seat = truck:FindFirstChild("DriveSeat")
@@ -534,6 +585,8 @@ local function rollUntilTarget(remote, etc, hrp)
     return false
 end
 
+local TWEEN_DURATION = 43
+
 local function runAutofarm()
     StartMoney        = getCleanMoney()
     SessionStart      = os.time()
@@ -607,83 +660,52 @@ local function runAutofarm()
         end
 
         local currentDestName = getWaypointName(waypoint)
-        local targetPos       = waypoint.Position + Vector3.new(0, 0, 0)
-        local primary         = myTruck.PrimaryPart
+        local waypointCFrame  = waypoint.CFrame
+        local targetCFrame    = CFrame.new(waypointCFrame.Position) * (waypointCFrame - waypointCFrame.Position)
 
         cycleMoneySnapshot = getCleanMoney()
         EarnedMoney        = cycleMoneySnapshot - StartMoney
 
-        pcall(function() setModelAnchored(myTruck, true) end)
+        NextTeleportIn = TWEEN_DURATION
+
+        if DelayLabel then
+            DelayLabel:Set({ Title = "Status / Next TP:", Content = "Rising..." })
+        end
+
+        -- instant vertical rise — gravity zero, no tween duration
+        -- *PivotTo while gravity=0 is deterministic; no physics solver involved*
+        local riseTarget = myTruck:GetPivot() + Vector3.new(0, 1000, 0)
         pcall(function() setsimulationradius(math.huge, math.huge) end)
-        pcall(function()
-            if primary then primary:SetNetworkOwner(lp) end
-        end)
-
-        local startCFrame = myTruck:GetPivot()
-        local startPos    = startCFrame.Position
-        local startRot    = startCFrame - startPos
-
-        local TWEEN_DURATION = 47
-        local elapsed        = 0
-        NextTeleportIn       = TWEEN_DURATION
+        workspace.Gravity = 0
+        resetVelocity(myTruck)
+        myTruck:PivotTo(riseTarget)
+        resetVelocity(myTruck)
 
         if DelayLabel then
             DelayLabel:Set({ Title = "Status / Next TP:", Content = "Moving to destination..." })
         end
 
-        local tweenDone = false
-        local tweenConn
-        tweenConn = RunService.Heartbeat:Connect(function(dt)
-            if not myTruck or not myTruck.Parent or not _G.Autofarm then
-                tweenConn:Disconnect()
-                tweenDone = true
-                return
-            end
-
-            elapsed        = elapsed + dt
-            NextTeleportIn = math.max(0, math.floor(TWEEN_DURATION - elapsed))
-
-            local alpha      = math.min(elapsed / TWEEN_DURATION, 1)
-            local eased      = -(math.cos(math.pi * alpha) - 1) / 2
-            local currentPos = startPos:Lerp(targetPos, eased)
-
-            pcall(function() setsimulationradius(math.huge, math.huge) end)
-            pcall(function()
-                if myTruck.PrimaryPart then
-                    myTruck.PrimaryPart:SetNetworkOwner(lp)
-                end
-            end)
-
-            myTruck:PivotTo(CFrame.new(currentPos) * startRot)
-
-            if alpha >= 1 then
-                tweenConn:Disconnect()
-                tweenDone = true
-            end
-        end)
-
-        while not tweenDone do task.wait() end
+        -- timed descent to waypoint via TweenService CFrameValue
+        tweenModelTo(myTruck, targetCFrame + Vector3.new(0, 50, 0), TWEEN_DURATION)
 
         if not _G.Autofarm then
+            workspace.Gravity = 196.2
             if humanoid and humanoid.SeatPart then humanoid.Jump = true end
             task.wait(0.3)
             if myTruck and myTruck.Parent then pcall(function() myTruck:Destroy() end) end
             break
         end
 
-        myTruck:PivotTo(CFrame.new(targetPos) * startRot)
+        -- snap exact position above waypoint then release gravity — truck falls ~50 studs
+        myTruck:PivotTo(targetCFrame + Vector3.new(0, 50, 0))
+        resetVelocity(myTruck)
 
         if DelayLabel then
             DelayLabel:Set({ Title = "Status / Next TP:", Content = "Dropping onto destination..." })
         end
 
-        pcall(function() setModelAnchored(myTruck, false) end)
-        pcall(function()
-            if primary then
-                primary.AssemblyLinearVelocity  = Vector3.zero
-                primary.AssemblyAngularVelocity = Vector3.zero
-            end
-        end)
+        workspace.Gravity = 196.2
+        resetVelocity(myTruck)
 
         task.wait(3)
 
@@ -712,8 +734,9 @@ local function runAutofarm()
         continue
     until not _G.Autofarm
 
-    _G.DeleteMap = false
-    mapDeleted   = false
+    workspace.Gravity = 196.2
+    _G.DeleteMap      = false
+    mapDeleted        = false
 end
 
 local Window = Rayfield:CreateWindow({
@@ -737,6 +760,8 @@ FarmTab:CreateToggle({
             SessionStart      = os.time()
             SessionMoneyStart = getCleanMoney()
             task.spawn(runAutofarm)
+        else
+            workspace.Gravity = 196.2
         end
     end,
 })
@@ -877,10 +902,10 @@ end)
 task.spawn(function()
     while true do
         task.wait(1)
-        if _G.Autofarm and DelayLabel and NextTeleportIn > 0 then
+        if _G.Autofarm and DelayLabel and countdownTime > 0 then
             DelayLabel:Set({
                 Title   = "Status / Next TP:",
-                Content = string.format("Drop In: %ds", NextTeleportIn),
+                Content = string.format("Drop In: %ds", math.ceil(countdownTime)),
             })
         end
     end
