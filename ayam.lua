@@ -58,7 +58,9 @@ local lastDestEarned        = 0
 local lastDestName          = "—"
 local cycleMoneySnapshot    = 0
 
-local TWEEN_DURATION = 43
+local TWEEN_DURATION       = 43
+local PAYMENT_THRESHOLD    = 127_000_000
+local PAYMENT_POLL_TIMEOUT = 30  -- seconds to wait for payment before giving up
 
 local KILL_NAMES = {
     "tree","pohon","bush","semak","building","gedung","house","rumah",
@@ -274,7 +276,6 @@ local function resetVelocity(model)
 end
 
 -- *CFrameValue tween — gravity zeroed during descent, restored on completion*
--- *instant snap to 1000 studs above destination, then linear tween straight down*
 local function tweenModelTo(model, targetCFrame, duration)
     local humanoid = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
     if not humanoid or not humanoid.SeatPart then return end
@@ -307,6 +308,24 @@ local function tweenModelTo(model, targetCFrame, duration)
 
     workspace.Gravity = 196.2
     resetVelocity(model)
+end
+
+-- *polls getCleanMoney() every heartbeat; triggers when delta >= PAYMENT_THRESHOLD*
+-- *times out after PAYMENT_POLL_TIMEOUT seconds to prevent infinite hang*
+local function waitForPayment(snapshot)
+    if DelayLabel then
+        DelayLabel:Set({ Title = "Status:", Content = "Waiting payment (127M+)..." })
+    end
+    local deadline = tick() + PAYMENT_POLL_TIMEOUT
+    while tick() < deadline and _G.Autofarm do
+        local earned = getCleanMoney() - snapshot
+        if earned >= PAYMENT_THRESHOLD then
+            return earned
+        end
+        RunService.Heartbeat:Wait()
+    end
+    -- timed out — return whatever came in
+    return math.max(0, getCleanMoney() - snapshot)
 end
 
 local function sitAndLoadChassis(truck, hrp, humanoid)
@@ -677,22 +696,19 @@ local function runAutofarm()
             break
         end
 
-        if DelayLabel then
-            DelayLabel:Set({ Title = "Status:", Content = "Waiting payment..." })
-        end
-        task.wait(0.4)
+        -- poll heartbeat until 127M+ lands or timeout
+        local earned = waitForPayment(cycleMoneySnapshot)
 
+        -- payment confirmed — clear job and destroy truck
         if remote then remote:FireServer("Unemployed") end
-        task.wait(0.1)
 
-        local earned = math.max(0, getCleanMoney() - cycleMoneySnapshot)
+        if DelayLabel then
+            DelayLabel:Set({ Title = "Status:", Content = "Payment detected! Clearing..." })
+        end
+
         updateCycleLabels(earned, currentDestName)
         _G.TotalTeleportCount = _G.TotalTeleportCount + 1
         logDestinationComplete()
-
-        if DelayLabel then
-            DelayLabel:Set({ Title = "Status:", Content = "Clearing old truck & job..." })
-        end
 
         if humanoid and humanoid.SeatPart then humanoid.Jump = true end
         task.wait(0.5)
