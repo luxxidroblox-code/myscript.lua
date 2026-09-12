@@ -585,7 +585,7 @@ local function rollUntilTarget(remote, etc, hrp)
     return false
 end
 
-local TWEEN_DURATION = 45
+local TWEEN_DURATION = 46
 
 local function runAutofarm()
     StartMoney        = getCleanMoney()
