@@ -58,7 +58,7 @@ local lastDestEarned        = 0
 local lastDestName          = "—"
 local cycleMoneySnapshot    = 0
 
-local TWEEN_DURATION       = 43
+local TWEEN_DURATION       = 45
 local PAYMENT_THRESHOLD    = 127_000_000
 local PAYMENT_POLL_TIMEOUT = 30  -- seconds to wait for payment before giving up
 
