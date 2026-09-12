@@ -1,11 +1,4 @@
-warn("sebelum loadstring")
 local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/projectsionloader.lua'))()
-warn("sesudah loadstring")
-if Rayfield then
-    warn("kalau ini muncul 1 berarti berhasil rayfieldnya")
-else
-    warn("kalau ini muncul 2 berarti ga berhasil rayfieldnya")
-end
 
 local DelayLabel, TeleportLabel, DestMinLabel, Dest5MinLabel
 local IncomeHourLabel, EarnedLabel, CurrentLabel, FpsLabel
@@ -35,24 +28,18 @@ local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local lp                = Players.LocalPlayer
 
-warn("berhasil lewatin services")
-
 _G.Autofarm           = false
 _G.AutoWebhook        = false
 _G.DeleteMap          = false
-_G.WebhookURL         = _G.WebhookURL        or ""
-_G.StartTime          = _G.StartTime         or os.time()
-_G.CycleCount         = _G.CycleCount        or 0
-_G.TotalEarning       = _G.TotalEarning      or 0
+_G.WebhookURL         = _G.WebhookURL         or ""
+_G.StartTime          = _G.StartTime          or os.time()
+_G.CycleCount         = _G.CycleCount         or 0
+_G.TotalEarning       = _G.TotalEarning       or 0
 _G.TotalTeleportCount = _G.TotalTeleportCount or 0
-
-warn("berhasil lewatin global")
 
 local MoneyPath = lp.PlayerGui
     :WaitForChild("Main"):WaitForChild("Container"):WaitForChild("Hub")
     :WaitForChild("CashFrame"):WaitForChild("Frame"):WaitForChild("TextLabel")
-
-warn("berhasil lewatin moneypath")
 
 local StartMoney            = 0
 local EarnedMoney           = 0
@@ -69,8 +56,6 @@ local mapDeleted            = false
 local lastDestEarned        = 0
 local lastDestName          = "—"
 local cycleMoneySnapshot    = 0
-
-warn("berhasil lewatin global 2")
 
 local KILL_NAMES = {
     "tree","pohon","bush","semak","building","gedung","house","rumah",
@@ -132,7 +117,7 @@ local function cleanMap()
 end
 
 local function uprightCF(cf, yOffset)
-    yOffset    = yOffset or 0
+    yOffset   = yOffset or 0
     local pos  = cf.Position + Vector3.new(0, yOffset, 0)
     local look = cf.LookVector
     local yaw  = math.atan2(look.X, look.Z)
@@ -254,8 +239,6 @@ task.spawn(function()
 end)
 local function getFPS() return _currentFPS end
 
--- ─── Truck helpers ────────────────────────────────────────────────────────────
-
 local function getDrivePrompt(truck)
     local seat = truck:FindFirstChild("DriveSeat")
     if not seat then return nil end
@@ -287,10 +270,7 @@ end
 
 local function sitAndLoadChassis(truck, hrp, humanoid)
     local seat = truck:FindFirstChild("DriveSeat")
-    if not seat then
-        warn("[Projectsion] No DriveSeat — cannot sit.")
-        return false
-    end
+    if not seat then return false end
 
     local playerGui = lp:FindFirstChild("PlayerGui")
     if playerGui then
@@ -303,33 +283,24 @@ local function sitAndLoadChassis(truck, hrp, humanoid)
 
     if prompt then
         hrp.CFrame = seat.CFrame + Vector3.new(0, 3, 0)
-        pcall(function() hrp.Anchored = true end)
-        task.wait(0.2)
-        pcall(function() hrp.Anchored = false end)
-        task.wait(0.8)
         firePrompt(prompt)
         for _ = 1, 15 do
             if humanoid.SeatPart == seat then seated = true break end
-            task.wait(0.1)
+            RunService.Heartbeat:Wait()
         end
     end
 
     if not seated then
         hrp.CFrame = seat.CFrame + Vector3.new(0, 3, 0)
-        task.wait(0.2)
         pcall(function() seat:Sit(humanoid) end)
         for _ = 1, 15 do
             if humanoid.SeatPart == seat then seated = true break end
-            task.wait(0.1)
+            RunService.Heartbeat:Wait()
         end
     end
 
-    if not seated then
-        warn("[Projectsion] Failed to sit in truck.")
-        return false
-    end
+    if not seated then return false end
 
-    -- *A-Chassis inserts ScreenGui into PlayerGui on SeatWeld creation; wait up to 4 s*
     local chassisOk = false
     if playerGui then
         for _ = 1, 20 do
@@ -337,18 +308,15 @@ local function sitAndLoadChassis(truck, hrp, humanoid)
                 chassisOk = true
                 break
             end
-            task.wait(0.2)
+            RunService.Heartbeat:Wait()
         end
     end
 
     if not chassisOk then
-        warn("[Projectsion] A-Chassis failed to load — aborting.")
         pcall(function() humanoid.Sit = false end)
-        task.wait(0.2)
         return false
     end
 
-    -- Trailer causes physics explosion once VehicleController activates
     pcall(function()
         local trailer = truck:FindFirstChild("Trailer1")
         if trailer then trailer:Destroy() end
@@ -356,8 +324,6 @@ local function sitAndLoadChassis(truck, hrp, humanoid)
 
     return true
 end
-
--- ─── Income / destination tracking ───────────────────────────────────────────
 
 local function logDestinationComplete()
     table.insert(destinationTimestamps, os.time())
@@ -568,8 +534,6 @@ local function rollUntilTarget(remote, etc, hrp)
     return false
 end
 
--- ─── Main autofarm loop ───────────────────────────────────────────────────────
-
 local function runAutofarm()
     StartMoney        = getCleanMoney()
     SessionStart      = os.time()
@@ -621,7 +585,6 @@ local function runAutofarm()
 
         ensurePrimaryPart(myTruck)
 
-        -- Sit + A-Chassis handshake before any movement
         local sitOk = sitAndLoadChassis(myTruck, hrp, humanoid)
         if not sitOk or not _G.Autofarm then
             if myTruck and myTruck.Parent then
@@ -630,9 +593,8 @@ local function runAutofarm()
             continue
         end
 
-        -- Confirm destination still valid after chassis load
-        local waypointFolder  = Workspace:WaitForChild("Etc"):WaitForChild("Waypoint")
-        local waypoint        = waypointFolder:FindFirstChild("Waypoint")
+        local waypointFolder = Workspace:WaitForChild("Etc"):WaitForChild("Waypoint")
+        local waypoint       = waypointFolder:FindFirstChild("Waypoint")
 
         if not waypoint or not isTargetDestination(waypoint) then
             if remote then remote:FireServer("Unemployed") end
@@ -645,14 +607,12 @@ local function runAutofarm()
         end
 
         local currentDestName = getWaypointName(waypoint)
-        -- Target is 50 studs above waypoint — enough clearance to fall clean
         local targetPos       = waypoint.Position + Vector3.new(0, 0, 0)
         local primary         = myTruck.PrimaryPart
 
         cycleMoneySnapshot = getCleanMoney()
         EarnedMoney        = cycleMoneySnapshot - StartMoney
 
-        -- Anchor for stable tween start; network ownership granted to client
         pcall(function() setModelAnchored(myTruck, true) end)
         pcall(function() setsimulationradius(math.huge, math.huge) end)
         pcall(function()
@@ -661,17 +621,9 @@ local function runAutofarm()
 
         local startCFrame = myTruck:GetPivot()
         local startPos    = startCFrame.Position
-        local startRot    = startCFrame - startPos  -- rotation strip
+        local startRot    = startCFrame - startPos
 
-        -- ── Heartbeat tween: smooth lerp over TWEEN_DURATION seconds ──────────
-        -- Velocity is recalculated each heartbeat: speed = remaining_dist / remaining_time
-        -- This naturally accelerates when far and decelerates as it closes in,
-        -- without any PivotTo during flight — physics engine is dormant (anchored).
-        -- The truck unanchors at arrival and gravity does the rest.
-        -- *AssemblyLinearVelocity only affects unanchored parts; tween uses PivotTo
-        --  while anchored, which is invisible-to-physics and deterministic.*
-
-        local TWEEN_DURATION = 43  -- seconds, matches NextTeleportIn countdown
+        local TWEEN_DURATION = 47
         local elapsed        = 0
         NextTeleportIn       = TWEEN_DURATION
 
@@ -691,9 +643,7 @@ local function runAutofarm()
             elapsed        = elapsed + dt
             NextTeleportIn = math.max(0, math.floor(TWEEN_DURATION - elapsed))
 
-            local alpha = math.min(elapsed / TWEEN_DURATION, 1)
-
-            -- Sine ease-in-out: smooth acceleration and deceleration
+            local alpha      = math.min(elapsed / TWEEN_DURATION, 1)
             local eased      = -(math.cos(math.pi * alpha) - 1) / 2
             local currentPos = startPos:Lerp(targetPos, eased)
 
@@ -712,7 +662,6 @@ local function runAutofarm()
             end
         end)
 
-        -- Block until tween finishes or autofarm killed
         while not tweenDone do task.wait() end
 
         if not _G.Autofarm then
@@ -722,14 +671,12 @@ local function runAutofarm()
             break
         end
 
-        -- Snap exact and release — gravity pulls truck down onto waypoint collision
         myTruck:PivotTo(CFrame.new(targetPos) * startRot)
 
         if DelayLabel then
             DelayLabel:Set({ Title = "Status / Next TP:", Content = "Dropping onto destination..." })
         end
 
-        -- *setModelAnchored false restores physics; truck falls ~50 studs to waypoint*
         pcall(function() setModelAnchored(myTruck, false) end)
         pcall(function()
             if primary then
@@ -738,7 +685,6 @@ local function runAutofarm()
             end
         end)
 
-        -- Allow time for the fall + collision detection to register payment
         task.wait(3)
 
         if remote then remote:FireServer("Unemployed") end
@@ -753,7 +699,6 @@ local function runAutofarm()
         _G.TotalTeleportCount = _G.TotalTeleportCount + 1
         logDestinationComplete()
 
-        -- Exit truck and destroy
         if DelayLabel then
             DelayLabel:Set({ Title = "Status:", Content = "Clearing old truck & job..." })
         end
@@ -770,8 +715,6 @@ local function runAutofarm()
     _G.DeleteMap = false
     mapDeleted   = false
 end
-
--- ─── UI ───────────────────────────────────────────────────────────────────────
 
 local Window = Rayfield:CreateWindow({
     Name            = "Car Driving Indonesia | By .projectsion",
@@ -899,8 +842,6 @@ TpTab:CreateButton({
     end,
 })
 task.spawn(refreshPlayers)
-
--- ─── Stats update loop ────────────────────────────────────────────────────────
 
 task.spawn(function()
     while true do
