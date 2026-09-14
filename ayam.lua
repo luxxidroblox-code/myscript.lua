@@ -132,7 +132,7 @@ local lastEarned   = 0
 local perHourRate  = 0
 local farmStart    = nil
 local sessionStart = os.clock()
-local recentTrips  = {}    -- ring buffer, max 6
+local recentTrips  = {}
 local arrowCount   = 0
 local arrowTarget  = nil
 
@@ -222,7 +222,7 @@ end
 local cdTween     = nil
 local cdEndTime   = nil
 local cdDuration  = 0
-local barFill     = nil   -- set by UI builder below
+local barFill     = nil
 local cdLabel     = nil
 
 local function startCountdown(secs)
@@ -286,7 +286,6 @@ local function startFarm()
             local tripStart = os.clock()
             local gotRoute  = false
 
-            -- ── Phase 1: Get Cirebon_Baranangsiang4 route ─────────────────
             while farmActive and not gotRoute do
                 arrowCount  = 0
                 arrowTarget = nil
@@ -307,7 +306,6 @@ local function startFarm()
             end
             if not farmActive or not gotRoute then break end
 
-            -- ── Phase 2: Spawn truck ───────────────────────────────────────
             local spawnerRoot = Workspace.Etc.Job.Truck.Spawner
             local car         = getOwnedCar()
             if not car then
@@ -344,7 +342,6 @@ local function startFarm()
 
             task.wait(0.7)
 
-            -- strip trailer
             local trailerConn = car.ChildAdded:Connect(function(child)
                 if child.Name:lower():find("trailer") then
                     task.defer(function() pcall(child.Destroy, child) end)
@@ -354,7 +351,6 @@ local function startFarm()
                 if child.Name:lower():find("trailer") then pcall(child.Destroy, child) end
             end
 
-            -- ── Phase 3: Sit in DriveSeat ─────────────────────────────────
             local driveSeat = car:WaitForChild("DriveSeat", 5)
             if driveSeat then
                 local seatPrompt = driveSeat:WaitForChild("PromptDriveSeat", 3)
@@ -401,7 +397,6 @@ local function startFarm()
             end
             if not farmActive then break end
 
-            -- ── Phase 4: PivotTo base ──────────────────────────────────────
             local pivotAttempts = 0
             while farmActive and pivotAttempts < 10 do
                 car:PivotTo(BASE_CF)
@@ -451,7 +446,6 @@ local function startFarm()
             if not farmActive or not car or not car.Parent then continue end
             if (car:GetPivot().Position - BASE_CF.Position).Magnitude >= 150 then continue end
 
-            -- ── Phase 5: Job delay countdown ──────────────────────────────
             local elapsed     = os.clock() - tripStart
             local remaining   = jobDelay - elapsed
             local lastSec     = nil
@@ -478,7 +472,6 @@ local function startFarm()
             resetCountdown()
             if not farmActive then break end
 
-            -- ── Phase 6: Collect reward ────────────────────────────────────
             local cashBefore = getCash()
             car:PivotTo(BASE_DEST)
             if cashBefore > 0 then
@@ -505,7 +498,6 @@ local function startFarm()
                 end
             end
 
-            -- ── Phase 7: Dismount and reset ───────────────────────────────
             local char = LocalPlayer.Character
             local hum  = char and char:FindFirstChild("Humanoid")
             if hum then hum.Sit = false end
@@ -565,10 +557,7 @@ task.spawn(function()
             local mf  = hub and hub:FindFirstChild("MapFrame")
             if mf and mf.Visible then mf.Visible = false end
         end)
-
-        if farmActive then
-            pcall(function() RunService:Set3dRenderingEnabled(false) end)
-        end
+        -- Set3dRenderingEnabled calls removed — no more whitescreen
     end
 end)
 
@@ -627,7 +616,6 @@ local function alertWebhook(reason)
     })
 end
 
--- error / close hooks
 pcall(function()
     game:GetService("GuiService").ErrorMessageChanged:Connect(function()
         local msg = game:GetService("GuiService"):GetErrorMessage()
@@ -715,11 +703,8 @@ truckTab:Toggle({
     Callback = function(val)
         farmActive = val
         if val then
-            pcall(function() RunService:Set3dRenderingEnabled(false) end)
             if not farmStart then farmStart = os.clock() end
             startFarm()
-        else
-            pcall(function() RunService:Set3dRenderingEnabled(true) end)
         end
     end,
 })
@@ -751,9 +736,7 @@ truckTab:Input({
 truckTab:Section({ Title = "Information", Opened = true })
 pcall(function() truckTab:Space() end)
 
--- build paragraph references + capture barFill / cdLabel from a thin overlay
 do
-    -- lightweight countdown overlay (no blackscreen — just the bar + label)
     local pGui = LocalPlayer:WaitForChild("PlayerGui", 5) or LocalPlayer:FindFirstChild("PlayerGui")
     if pGui then
         local sg = Instance.new("ScreenGui")
@@ -788,7 +771,7 @@ do
         fill.BorderSizePixel = 0
         fill.Parent          = bar
         Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
-        barFill = fill  -- wire into countdown functions
+        barFill = fill
 
         local lbl = Instance.new("TextLabel")
         lbl.Size              = UDim2.new(1, 0, 0, 18)
@@ -800,7 +783,7 @@ do
         lbl.TextSize          = 13
         lbl.TextXAlignment    = Enum.TextXAlignment.Left
         lbl.Parent            = bg
-        cdLabel = lbl  -- wire into countdown functions
+        cdLabel = lbl
 
         sg.Parent = pGui
     end
@@ -948,7 +931,6 @@ cfgTab:Button({
     end,
 })
 
--- auto-load on start
 pcall(function()
     local all = Window.ConfigManager:AllConfigs()
     if all and readfile and isfile then
