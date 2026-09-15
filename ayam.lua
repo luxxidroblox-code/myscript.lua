@@ -1,808 +1,1061 @@
--- Eagle Nation Hub
--- Game : Bus Explorer Indonesia / CDID
--- UI   : DX-SR Hub (WindUI / Rayfield variant)
--- Clean : deobfuscated from JAWADEOBF Instance 723326
+-- VoidlineHub | Bus Explorer Indonesia | Truck Autofarm
+-- WindUI | DX-SR Hub | v0.0.0.3
+--   PATCH: Malang-only job roller (spam starter until arrow points Malang)
+--          Anti-trip HRP upright placement on every teleport to starter/spawner
 
 local Players          = game:GetService("Players")
 local Workspace        = game:GetService("Workspace")
-local TweenService     = game:GetService("TweenService")
+local ReplicatedStorage= game:GetService("ReplicatedStorage")
 local RunService       = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualUser      = game:GetService("VirtualUser")
+local TweenService     = game:GetService("TweenService")
 local HttpService      = game:GetService("HttpService")
+local VirtualUser      = game:GetService("VirtualUser")
 local LocalPlayer      = Players.LocalPlayer
 
--- ============================================================
--- ANTI-AFK
--- ============================================================
-local idleConnection
-local function setupAntiIdle()
-    if idleConnection then return end
-    for _, conn in pairs(getconnections(LocalPlayer.Idled)) do
-        pcall(conn.Disable, conn)
-        pcall(conn.Disconnect, conn)
-    end
-    idleConnection = LocalPlayer.Idled:Connect(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.zero)
-    end)
+-- ── Anti-idle ──────────────────────────────────────────────────────────────
+for _, conn in getconnections(LocalPlayer.Idled) do
+    pcall(conn.Disable, conn)
+    pcall(conn.Disconnect, conn)
 end
-setupAntiIdle()
+LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.zero)
+end)
 
--- ============================================================
--- CONFIG
--- ============================================================
-local Config = {
-    AutoFarm          = false, TweenSpeed       = 35, ActionDelay       = 0.5, NoclipFarm       = true,
-    AutoCement        = false, CementTweenSpeed = 35, CementActionDelay = 0.5, CementNoclipFarm = true,
-    AutoOilRig        = false, OilRigTweenSpeed = 35, OilRigActionDelay = 0.5, OilRigNoclipFarm = true,
-    AutoMining        = false, MiningTweenSpeed = 35, MiningActionDelay = 0.5, MiningNoclipFarm = true,
-    WalkSpeedEnabled  = false, WalkSpeed        = 16,
-    JumpPowerEnabled  = false, JumpPower        = 50,
-    InfiniteJump      = false, Noclip           = false,
-}
-_G.EagleNationConfig = Config
-
--- ============================================================
--- SESSION STATS
--- ============================================================
-local Stats = {
-    StartCash = 0, StartXP = 0, EarnedCash = 0, EarnedXP = 0,
-    DeliveriesCompleted = 0, CurrentStatus = "Idle",
-
-    CementStartCash = 0, CementStartXP = 0, CementEarnedCash = 0, CementEarnedXP = 0,
-    CementDeliveriesCompleted = 0, CementCurrentStatus = "Idle",
-
-    OilRigStartCash = 0, OilRigStartXP = 0, OilRigEarnedCash = 0, OilRigEarnedXP = 0,
-    OilRigDeliveriesCompleted = 0, OilRigCurrentStatus = "Idle",
-
-    MiningStartCash = 0, MiningStartXP = 0, MiningEarnedCash = 0, MiningEarnedXP = 0,
-    MiningDeliveriesCompleted = 0, MiningCurrentStatus = "Idle",
-}
-
-local function getLeaderStats()
-    local ls   = LocalPlayer:FindFirstChild("leaderstats")
-    local cash = (ls and ls:FindFirstChild("$")  and ls["$"].Value)  or 0
-    local xp   = (ls and ls:FindFirstChild("XP") and ls.XP.Value)    or 0
-    return cash, xp
+-- ── Upright CFrame helper (lifted from Projectsion) ───────────────────────
+-- *keeps character standing straight — no tumble on teleport*
+local function uprightCF(cf, yOffset)
+    yOffset   = yOffset or 0
+    local pos = cf.Position + Vector3.new(0, yOffset, 0)
+    local look = cf.LookVector
+    local yaw  = math.atan2(look.X, look.Z)
+    return CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
 end
 
-Stats.StartCash,    Stats.StartXP    = getLeaderStats()
-Stats.CementStartCash,  Stats.CementStartXP  = Stats.StartCash, Stats.StartXP
-Stats.OilRigStartCash,  Stats.OilRigStartXP  = Stats.StartCash, Stats.StartXP
-Stats.MiningStartCash,  Stats.MiningStartXP  = Stats.StartCash, Stats.StartXP
-
--- ============================================================
--- WORLD LOCATIONS
--- ============================================================
-local WorldLocations = {
-    ["Ranch Main"]    = CFrame.new(13376.21,  149.36,   2990.05),
-    ["Dealership"]    = CFrame.new(-489.74,    9.32,   -406.23),
-    ["Mining Area"]   = CFrame.new(-5355.07,   5.87,   -946.03),
-    ["Oil Rig"]       = CFrame.new(-3174.13, -132.51, -8470.26),
-    ["Construction"]  = CFrame.new(29274,     196.16,  -2382),
-    ["Race Track"]    = CFrame.new(-9231.64,  390.84,   3294.88),
-    ["Custom Garage"] = CFrame.new(-765.64,    8.40,   -304.92),
-}
-local LocationNames = {
-    "Ranch Main", "Dealership", "Mining Area", "Oil Rig",
-    "Construction", "Race Track", "Custom Garage",
-}
-
--- ============================================================
--- MOVEMENT HELPERS
--- ============================================================
-local activeTween = nil
-
-local function getRootPart(character)
-    character = character or LocalPlayer.Character
-    return character and character:FindFirstChild("HumanoidRootPart")
-end
-
-local function setNoclip(enabled)
-    local character = LocalPlayer.Character
-    if not character then return end
-    for _, part in ipairs(character:GetChildren()) do
-        if part:IsA("BasePart") and (
-            part.Name == "HumanoidRootPart" or
-            part.Name:find("Torso")         or
-            part.Name == "Head"
-        ) then
-            part.CanCollide = not enabled
-        end
+-- ── Teleport helpers ───────────────────────────────────────────────────────
+-- *all teleports go through uprightCF now — no more ragdoll on arrival*
+local function teleport(cf)
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CFrame = uprightCF(cf, 0)
     end
 end
 
-local function teleportTo(cf)
-    local root = getRootPart()
-    if root then root.CFrame = cf end
-end
-
-local function tweenTo(targetCF, speedOverride)
-    local root = getRootPart()
-    if not root then return end
-
-    if activeTween then
-        pcall(function() activeTween:Cancel() end)
-        activeTween = nil
+local function teleportAbove(cf, offset)
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.CFrame = uprightCF(cf, offset or 3)
     end
-
-    local speed = (Config.AutoMining  and Config.MiningTweenSpeed)  or
-                  (Config.AutoOilRig  and Config.OilRigTweenSpeed)   or
-                  (Config.AutoCement  and Config.CementTweenSpeed)   or
-                  Config.TweenSpeed
-    local clampedSpeed = math.clamp(speedOverride or speed or 35, 10, 50)
-
-    if Config.NoclipFarm or
-       (Config.AutoCement  and Config.CementNoclipFarm)  or
-       (Config.AutoOilRig  and Config.OilRigNoclipFarm)  or
-       (Config.AutoMining  and Config.MiningNoclipFarm)  then
-        setNoclip(true)
-    end
-
-    -- Ranch gate bypass waypoint
-    local gateWP     = Vector3.new(13360, 150.5, 2980)
-    local inRanch    = root.Position.X > 12000 and root.Position.X < 14000
-    local destInRanch = targetCF.Position.X > 12000 and targetCF.Position.X < 14000
-
-    if inRanch and destInRanch then
-        local fromRight  = root.Position.X > 13366
-        local destLeft   = targetCF.Position.X < 13364
-        local destRight  = targetCF.Position.X > 13366
-
-        if (fromRight and destLeft) or ((not fromRight) and destRight) then
-            local d = (gateWP - root.Position).Magnitude
-            local t = TweenService:Create(root,
-                TweenInfo.new(math.clamp(d / clampedSpeed, 0.1, 4), Enum.EasingStyle.Linear),
-                { CFrame = CFrame.new(gateWP) })
-            t:Play()
-            t.Completed:Wait()
-        end
-    end
-
-    local dist    = (targetCF.Position - root.Position).Magnitude
-    local duration = math.clamp(dist / clampedSpeed, 0.1, 15)
-    activeTween   = TweenService:Create(root,
-        TweenInfo.new(duration, Enum.EasingStyle.Linear),
-        { CFrame = targetCF })
-    activeTween:Play()
-    activeTween.Completed:Wait()
-    activeTween = nil
 end
 
 local function firePrompt(prompt)
-    if not prompt or not prompt.Enabled then return end
-    local hold = prompt.HoldDuration or 0
+    if not prompt then return end
+    prompt.Enabled = true
     if fireproximityprompt then
-        pcall(function() fireproximityprompt(prompt) end)
-        task.wait(hold + 0.15)
+        pcall(fireproximityprompt, prompt)
     else
-        pcall(function() prompt:InputHoldBegin() end)
-        task.wait(hold + 0.1)
-        pcall(function() prompt:InputHoldEnd() end)
-        task.wait(0.15)
+        prompt:InputHoldBegin()
+        task.wait(prompt.HoldDuration + 0.1)
+        prompt:InputHoldEnd()
     end
 end
 
--- Approach CFrame facing the horse stall feed slot
-local function getHayFeedCFrame(stall)
-    local pos    = stall.Position
-    local up     = stall.CFrame.UpVector
-    local flatUp = Vector3.new(up.X, 0, up.Z).Unit
-    local isD4   = false
-    local rj     = Workspace:FindFirstChild("RancherJob")
-    if rj and rj:FindFirstChild("RancherDestination4") then
-        if (rj.RancherDestination4.Position - pos).Magnitude < 4 then isD4 = true end
-    end
-    local dir    = isD4 and flatUp or -flatUp
-    local offset = pos + (dir * 3.2)
-    local root   = getRootPart()
-    local y      = (root and root.Position.Y) or (pos.Y + 0.5)
-    return CFrame.lookAt(Vector3.new(offset.X, y, offset.Z), Vector3.new(pos.X, y, pos.Z))
+local function getOwnedCar()
+    local vehicles = Workspace:FindFirstChild("Vehicles")
+    return vehicles and vehicles:FindFirstChild(LocalPlayer.Name .. "sCar")
 end
 
--- Approach CFrame facing the cement mixer front
-local function getCementPourCFrame(mixer)
-    local pos    = mixer.Position
-    local look   = mixer.CFrame.LookVector
-    local flat   = Vector3.new(look.X, 0, look.Z).Unit
-    local offset = pos + (flat * 3.5)
-    local root   = getRootPart()
-    local y      = (root and root.Position.Y) or (pos.Y + 0.5)
-    return CFrame.lookAt(Vector3.new(offset.X, y, offset.Z), Vector3.new(pos.X, y, pos.Z))
-end
-
--- ============================================================
--- LOAD WINDUI
--- ============================================================
-if _G.EagleNationHubLoaded then
-    pcall(function() _G.EagleNationHubLoaded:Destroy() end)
-    _G.EagleNationHubLoaded = nil
-end
-
-local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-local Window = WindUI:CreateWindow({
-    Title                      = "Eagle Nation",
-    Icon                       = "motorbike",
-    Author                     = "DX-SR Hub",
-    Folder                     = "EagleNationHub",
-    Size                       = UDim2.fromOffset(590, 470),
-    MinSize                    = Vector2.new(560, 360),
-    MaxSize                    = Vector2.new(850, 580),
-    ToggleKey                  = Enum.KeyCode.V,
-    Transparent                = true,
-    Theme                      = "Dark",
-    Resizable                  = true,
-    SideBarWidth               = 200,
-    BackgroundImageTransparency = 0.42,
-    HideSearchBar              = false,
-    ScrollBarEnabled           = false,
-})
-_G.EagleNationHubLoaded = Window
-
-Window:Tag({ Title = "v0.0.0.1",    Icon = "git-pull-request-draft", Color = Color3.fromHex("#30ff6a"), Radius = 13 })
-Window:Tag({ Title = "DX-SR (paid)", Icon = "dollar-sign",            Color = Color3.fromHex("#34b1eb"), Radius = 13 })
-
--- Helper: update a WindUI Paragraph element
-local function updateParagraph(label, desc, title)
-    if not label then return end
+-- ── Map-destroy helpers ────────────────────────────────────────────────────
+local function createBaseParts()
+    teleport(CFrame.new(34938, 135, -54576))
+    task.wait(0.5)
     pcall(function()
-        if label.SetDesc then
-            label:SetDesc(desc)
-            if title and label.SetTitle then label:SetTitle(title) end
-        elseif label.Set then
-            local t = { Desc = desc }
-            if title then t.Title = title end
-            label:Set(t)
+        local bases = {
+            { name = "Base_Malang",   pos = Vector3.new(-7851,  380,  46856) },
+            { name = "Base_Surabaya", pos = Vector3.new(35076,  128, -54518) },
+        }
+        for _, b in ipairs(bases) do
+            local part = Workspace:FindFirstChild(b.name)
+            if not part then
+                part              = Instance.new("Part")
+                part.Name         = b.name
+                part.Anchored     = true
+                part.CanCollide   = true
+                part.Parent       = Workspace
+            end
+            part.Size   = Vector3.new(1000, 5, 1000)
+            part.CFrame = CFrame.new(b.pos)
         end
     end)
 end
 
--- ============================================================
--- TABS
--- ============================================================
-local mainSection = Window:Section({ Title = "Main", Icon = "house", Opened = true })
-local feedingTab  = mainSection:Tab({ Title = "Feeding job",  Icon = "tractor" })
-local cementTab   = mainSection:Tab({ Title = "Cement job",   Icon = "hammer"  })
-local oilRigTab   = mainSection:Tab({ Title = "Oil rig",      Icon = "droplet" })
-local miningTab   = mainSection:Tab({ Title = "Mining job",   Icon = "pickaxe" })
-local teleportTab = Window:Tab({ Title = "Teleports",    Icon = "map-pin" })
-local playerTab   = Window:Tab({ Title = "Player",       Icon = "user"    })
-pcall(function() feedingTab:Select() end)
-
--- ============================================================
--- FEEDING JOB TAB
--- ============================================================
-feedingTab:Section({ Title = "Horse Feeding Job (Hay Stack)", Opened = true })
-pcall(function() feedingTab:Space() end)
-
-local feedingStatsLabel = feedingTab:Paragraph({ Title = "Session Statistics", Desc = "Delivered: 0 | Cash: +$0 | XP: +0" })
-
-local function updateFeedingStats()
-    local cash, xp = getLeaderStats()
-    Stats.EarnedCash = math.max(0, cash - Stats.StartCash)
-    Stats.EarnedXP   = math.max(0, xp   - Stats.StartXP)
-    updateParagraph(feedingStatsLabel,
-        string.format("Delivered: %d | Cash: +$%s | XP: +%s",
-            Stats.DeliveriesCompleted, tostring(Stats.EarnedCash), tostring(Stats.EarnedXP)),
-        "Session Statistics")
+local mapDestroyed = false
+local function destroyMap()
+    if mapDestroyed then return end
+    mapDestroyed = true
+    pcall(function()
+        local map = Workspace:FindFirstChild("Map")
+        if map then map:Destroy() end
+    end)
 end
 
-_G.EagleNationFarmToggle = feedingTab:Toggle({
-    Title = "Auto Feed Horse", Flag = "AutoFarmHorse", Default = false,
-    Callback = function(enabled)
-        Config.AutoFarm = enabled
-        if enabled then
-            if Config.AutoCement  then Config.AutoCement  = false pcall(function() _G.EagleNationCementToggle:SetValue(false)  end) end
-            if Config.AutoOilRig  then Config.AutoOilRig  = false pcall(function() _G.EagleNationOilRigToggle:SetValue(false)  end) end
-            if Config.AutoMining  then Config.AutoMining  = false pcall(function() _G.EagleNationMiningToggle:SetValue(false)  end) end
-            Stats.CurrentStatus = "Starting farm cycle..."
-            updateFeedingStats()
-            WindUI:Notify({ Title = "Rancher Farm", Content = "Auto Feed Horse started!", Duration = 2.5 })
-        else
-            Stats.CurrentStatus = "Stopped"
-            updateFeedingStats()
-            if activeTween then pcall(function() activeTween:Cancel() end) activeTween = nil end
-            setNoclip(false)
+-- ── GUI suppression ────────────────────────────────────────────────────────
+pcall(function()
+    local gui = LocalPlayer:WaitForChild("PlayerGui", 5) or LocalPlayer:FindFirstChild("PlayerGui")
+    if not gui then return end
+    local function hideGui(sg)
+        if sg and sg:IsA("ScreenGui") then
+            sg.Enabled = false
+            sg:GetPropertyChangedSignal("Enabled"):Connect(function()
+                if sg.Enabled then sg.Enabled = false end
+            end)
         end
-    end,
-})
-
-feedingTab:Toggle({ Title = "Noclip During Farm", Flag = "NoclipFarmToggle", Default = true,
-    Callback = function(v) Config.NoclipFarm = v end })
-feedingTab:Slider({ Title = "Tween Speed", Step = 5, Flag = "TweenSpeedSlider",
-    Value = { Min = 10, Max = 50, Default = 35 }, Callback = function(v) Config.TweenSpeed = v end })
-feedingTab:Slider({ Title = "Action Delay", Step = 0.1, Flag = "ActionDelaySlider",
-    Value = { Min = 0.1, Max = 4, Default = 0.5 }, Callback = function(v) Config.ActionDelay = v end })
-
--- ============================================================
--- CEMENT JOB TAB
--- ============================================================
-cementTab:Section({ Title = "Cement Delivery Job (Construction Site)", Opened = true })
-pcall(function() cementTab:Space() end)
-
-local cementStatsLabel = cementTab:Paragraph({ Title = "Session Statistics", Desc = "Delivered: 0 | Cash: +$0 | XP: +0" })
-
-local function updateCementStats()
-    local cash, xp = getLeaderStats()
-    Stats.CementEarnedCash = math.max(0, cash - Stats.CementStartCash)
-    Stats.CementEarnedXP   = math.max(0, xp   - Stats.CementStartXP)
-    updateParagraph(cementStatsLabel,
-        string.format("Delivered: %d | Cash: +$%s | XP: +%s",
-            Stats.CementDeliveriesCompleted, tostring(Stats.CementEarnedCash), tostring(Stats.CementEarnedXP)),
-        "Session Statistics")
-end
-
-_G.EagleNationCementToggle = cementTab:Toggle({
-    Title = "Auto Cement Job", Flag = "AutoFarmCement", Default = false,
-    Callback = function(enabled)
-        Config.AutoCement = enabled
-        if enabled then
-            if Config.AutoFarm    then Config.AutoFarm    = false pcall(function() _G.EagleNationFarmToggle:SetValue(false)   end) end
-            if Config.AutoOilRig  then Config.AutoOilRig  = false pcall(function() _G.EagleNationOilRigToggle:SetValue(false) end) end
-            if Config.AutoMining  then Config.AutoMining  = false pcall(function() _G.EagleNationMiningToggle:SetValue(false) end) end
-            Stats.CementCurrentStatus = "Starting cement cycle..."
-            updateCementStats()
-            WindUI:Notify({ Title = "Construction Farm", Content = "Auto Cement Job started!", Duration = 2.5 })
-        else
-            Stats.CementCurrentStatus = "Stopped"
-            updateCementStats()
-            if activeTween then pcall(function() activeTween:Cancel() end) activeTween = nil end
-            setNoclip(false)
-        end
-    end,
-})
-
-cementTab:Toggle({ Title = "Noclip During Farm", Flag = "NoclipCementToggle", Default = true,
-    Callback = function(v) Config.CementNoclipFarm = v end })
-cementTab:Slider({ Title = "Tween Speed", Step = 5, Flag = "CementTweenSpeedSlider",
-    Value = { Min = 10, Max = 50, Default = 35 }, Callback = function(v) Config.CementTweenSpeed = v end })
-cementTab:Slider({ Title = "Action Delay", Step = 0.1, Flag = "CementActionDelaySlider",
-    Value = { Min = 0.1, Max = 4, Default = 0.5 }, Callback = function(v) Config.CementActionDelay = v end })
-
--- ============================================================
--- OIL RIG TAB
--- ============================================================
-oilRigTab:Section({ Title = "Oil Rig Job", Opened = true })
-pcall(function() oilRigTab:Space() end)
-
-local oilRigStatsLabel = oilRigTab:Paragraph({ Title = "Session Statistics", Desc = "Delivered: 0 | Cash: +$0 | XP: +0" })
-
-local function updateOilRigStats()
-    local cash, xp = getLeaderStats()
-    Stats.OilRigEarnedCash = math.max(0, cash - Stats.OilRigStartCash)
-    Stats.OilRigEarnedXP   = math.max(0, xp   - Stats.OilRigStartXP)
-    updateParagraph(oilRigStatsLabel,
-        string.format("Delivered: %d | Cash: +$%s | XP: +%s",
-            Stats.OilRigDeliveriesCompleted, tostring(Stats.OilRigEarnedCash), tostring(Stats.OilRigEarnedXP)),
-        "Session Statistics")
-end
-
-_G.EagleNationOilRigToggle = oilRigTab:Toggle({
-    Title = "Auto Oil Rig", Flag = "AutoFarmOilRig", Default = false,
-    Callback = function(enabled)
-        Config.AutoOilRig = enabled
-        if enabled then
-            if Config.AutoFarm    then Config.AutoFarm    = false pcall(function() _G.EagleNationFarmToggle:SetValue(false)   end) end
-            if Config.AutoCement  then Config.AutoCement  = false pcall(function() _G.EagleNationCementToggle:SetValue(false) end) end
-            if Config.AutoMining  then Config.AutoMining  = false pcall(function() _G.EagleNationMiningToggle:SetValue(false) end) end
-            Stats.OilRigCurrentStatus = "Starting oil rig cycle..."
-            updateOilRigStats()
-            WindUI:Notify({ Title = "Oil Rig Farm", Content = "Auto Oil Rig started!", Duration = 2.5 })
-        else
-            Stats.OilRigCurrentStatus = "Stopped"
-            updateOilRigStats()
-            if activeTween then pcall(function() activeTween:Cancel() end) activeTween = nil end
-            setNoclip(false)
-        end
-    end,
-})
-
-oilRigTab:Toggle({ Title = "Noclip During Farm", Flag = "NoclipOilRigToggle", Default = true,
-    Callback = function(v) Config.OilRigNoclipFarm = v end })
-oilRigTab:Slider({ Title = "Tween Speed", Step = 5, Flag = "OilRigTweenSpeedSlider",
-    Value = { Min = 10, Max = 50, Default = 35 }, Callback = function(v) Config.OilRigTweenSpeed = v end })
-oilRigTab:Slider({ Title = "Action Delay", Step = 0.1, Flag = "OilRigActionDelaySlider",
-    Value = { Min = 0.1, Max = 4, Default = 0.5 }, Callback = function(v) Config.OilRigActionDelay = v end })
-
--- ============================================================
--- MINING JOB TAB
--- ============================================================
-miningTab:Section({ Title = "Mining Job (Ore Extraction & Sale)", Opened = true })
-pcall(function() miningTab:Space() end)
-
-local miningStatsLabel = miningTab:Paragraph({ Title = "Session Statistics", Desc = "Sales: 0 | Cash: +$0 | XP: +0" })
-
-local function updateMiningStats()
-    local cash, xp = getLeaderStats()
-    Stats.MiningEarnedCash = math.max(0, cash - Stats.MiningStartCash)
-    Stats.MiningEarnedXP   = math.max(0, xp   - Stats.MiningStartXP)
-    updateParagraph(miningStatsLabel,
-        string.format("Sales: %d | Cash: +$%s | XP: +%s",
-            Stats.MiningDeliveriesCompleted, tostring(Stats.MiningEarnedCash), tostring(Stats.MiningEarnedXP)),
-        "Session Statistics")
-end
-
-_G.EagleNationMiningToggle = miningTab:Toggle({
-    Title = "Auto Mining Job", Flag = "AutoFarmMining", Default = false,
-    Callback = function(enabled)
-        Config.AutoMining = enabled
-        if enabled then
-            if Config.AutoFarm    then Config.AutoFarm    = false pcall(function() _G.EagleNationFarmToggle:SetValue(false)   end) end
-            if Config.AutoCement  then Config.AutoCement  = false pcall(function() _G.EagleNationCementToggle:SetValue(false) end) end
-            if Config.AutoOilRig  then Config.AutoOilRig  = false pcall(function() _G.EagleNationOilRigToggle:SetValue(false) end) end
-            Stats.MiningCurrentStatus = "Starting mining cycle..."
-            updateMiningStats()
-            WindUI:Notify({ Title = "Mining Farm", Content = "Auto Mining Job started!", Duration = 2.5 })
-        else
-            Stats.MiningCurrentStatus = "Stopped"
-            updateMiningStats()
-            if activeTween then pcall(function() activeTween:Cancel() end) activeTween = nil end
-            setNoclip(false)
-        end
-    end,
-})
-
-miningTab:Toggle({ Title = "Noclip During Farm", Flag = "NoclipMiningToggle", Default = true,
-    Callback = function(v) Config.MiningNoclipFarm = v end })
-miningTab:Slider({ Title = "Tween Speed", Step = 5, Flag = "MiningTweenSpeedSlider",
-    Value = { Min = 10, Max = 50, Default = 35 }, Callback = function(v) Config.MiningTweenSpeed = v end })
-miningTab:Slider({ Title = "Action Delay", Step = 0.1, Flag = "MiningActionDelaySlider",
-    Value = { Min = 0.1, Max = 4, Default = 0.5 }, Callback = function(v) Config.MiningActionDelay = v end })
-
--- ============================================================
--- TELEPORTS TAB
--- ============================================================
-teleportTab:Section({ Title = "World Locations", Opened = true })
-pcall(function() teleportTab:Space() end)
-
-local teleportReady    = false
-local selectedLocation = LocationNames[1]
-
-teleportTab:Dropdown({
-    Title = "Select Location", Multi = false, Flag = "WorldTeleportDropdown",
-    Value = selectedLocation, Values = LocationNames,
-    Callback = function(loc)
-        selectedLocation = loc
-        if teleportReady and WorldLocations[loc] then
-            teleportTo(WorldLocations[loc])
-            WindUI:Notify({ Title = "Teleport", Content = "Teleported to " .. loc, Duration = 2 })
-        end
-    end,
-})
-teleportTab:Button({
-    Title = "Teleport",
-    Callback = function()
-        local cf = WorldLocations[selectedLocation]
-        if cf then
-            teleportTo(cf)
-            WindUI:Notify({ Title = "Teleport", Content = "Teleported to " .. selectedLocation, Duration = 2 })
-        end
-    end,
-})
-task.delay(0.5, function() teleportReady = true end)
-
--- ============================================================
--- PLAYER TAB â€” Overhead Customizer
--- ============================================================
-playerTab:Section({ Title = "Overhead Customizer", Opened = true })
-pcall(function() playerTab:Space() end)
-
-local overheadData = { Rank = nil, Level = nil, Name = nil }
-
-local function applyOverhead()
-    local character  = LocalPlayer.Character
-    local head       = character and character:FindFirstChild("Head")
-    local overheadUI = head and head:FindFirstChild("OverheadUI")
-    if not overheadUI then return end
-
-    if overheadData.Rank and overheadData.Rank ~= "" then
-        local lbl = overheadUI:FindFirstChild("GRank")
-        if lbl and lbl:IsA("TextLabel") then lbl.Text = overheadData.Rank end
     end
-    if overheadData.Level and overheadData.Level ~= "" then
-        local lbl = overheadUI:FindFirstChild("LevelLabel")
-        if lbl and lbl:IsA("TextLabel") then lbl.Text = overheadData.Level end
+    local function hideFrame(f)
+        if f then
+            f.Visible = false
+            f:GetPropertyChangedSignal("Visible"):Connect(function()
+                if f.Visible then f.Visible = false end
+            end)
+        end
     end
-    if overheadData.Name and overheadData.Name ~= "" then
-        local lbl = overheadUI:FindFirstChild("PName")
-        if lbl and lbl:IsA("TextLabel") then lbl.Text = overheadData.Name end
+    local job = gui:FindFirstChild("Job")
+    if job then hideGui(job) end
+    gui.ChildAdded:Connect(function(child)
+        if child.Name == "Job" then hideGui(child) end
+    end)
+    task.spawn(function()
+        local main = gui:WaitForChild("Main", 5)
+        local cont = main and main:WaitForChild("Container", 5)
+        local hub  = cont and cont:WaitForChild("Hub", 5)
+        local mapF = hub  and (hub:FindFirstChild("MapFrame") or hub:WaitForChild("MapFrame", 5))
+        if mapF then hideFrame(mapF) end
+    end)
+end)
+
+-- ── State ──────────────────────────────────────────────────────────────────
+local farmActive      = false
+local jobDelay        = 50
+local webhookUrl      = ""
+local webhookOn       = false
+local webhookMsgId    = nil
+local webhookInterval = 60
+
+local totalEarned  = 0
+local tripCount    = 0
+local lastEarned   = 0
+local perHourRate  = 0
+local farmStart    = nil
+local sessionStart = os.clock()
+local recentTrips  = {}
+local arrowCount   = 0
+local arrowTarget  = nil
+
+-- ── TruckArea module ───────────────────────────────────────────────────────
+local TruckArea = require(ReplicatedStorage.Shared.TruckArea)
+
+-- ── DataReplication (cash reader) ─────────────────────────────────────────
+local DataRep
+pcall(function() DataRep = require(ReplicatedStorage.Services.DataReplication) end)
+
+local function getCash()
+    local cash = 0
+    pcall(function()
+        if DataRep then
+            if DataRep.GetCash then cash = DataRep:GetCash()
+            elseif DataRep.GetData then cash = DataRep:GetData().Cash end
+        end
+    end)
+    return cash
+end
+
+local function readDisplayCash()
+    local cash = 0
+    pcall(function()
+        local lbl = LocalPlayer.PlayerGui.Main.Container.Hub.CashFrame.Frame.TextLabel
+        cash = tonumber(lbl.Text:gsub("[^%d]", "")) or 0
+    end)
+    return cash > 0 and cash or getCash()
+end
+
+-- ── Formatters ─────────────────────────────────────────────────────────────
+local function fmtTime(s)
+    local h   = math.floor(s / 3600)
+    local m   = math.floor((s % 3600) / 60)
+    local sec = math.floor(s % 60)
+    return h > 0 and string.format("%02d:%02d:%02d", h, m, sec)
+               or  string.format("%02d:%02d", m, sec)
+end
+
+local function fmtRp(n)
+    local s = tostring(math.floor(n or 0))
+    repeat s = s:gsub("^(-?%d+)(%d%d%d)", "%1.%2") until not s:find("^(-?%d+)(%d%d%d)")
+    return "Rp " .. s
+end
+
+local function fmtRate(rph)
+    local v = math.floor(rph or 0)
+    if (v / 1e9) >= 0.1 then
+        return string.format("%s (~%.2fM/hr)", fmtRp(v), v / 1e9)
+    end
+    return string.format("%s (~%.1fJt/hr)", fmtRp(v), v / 1e6)
+end
+
+-- ── Nearest TruckArea lookup ───────────────────────────────────────────────
+local function nearestArea(pos)
+    for i, area in ipairs(TruckArea) do
+        if (pos - area.Location).Magnitude < 50 then
+            return i, area.txt
+        end
+    end
+    return nil, nil
+end
+
+-- ── Remote event wiring ────────────────────────────────────────────────────
+local NetContainer = ReplicatedStorage:WaitForChild("NetworkContainer", 5)
+local JobRemote    = NetContainer
+    and NetContainer:FindFirstChild("RemoteEvents")
+    and NetContainer.RemoteEvents:FindFirstChild("Job")
+
+if JobRemote then
+    JobRemote.OnClientEvent:Connect(function(action, data)
+        if action == "SetArrow" and typeof(data) == "Vector3" then
+            arrowCount  = arrowCount + 1
+            arrowTarget = data
+        elseif action == "Cleanup" then
+            arrowCount  = 0
+            arrowTarget = nil
+        end
+    end)
+end
+
+-- ── Countdown tween state ──────────────────────────────────────────────────
+local cdTween    = nil
+local cdEndTime  = nil
+local cdDuration = 0
+local barFill    = nil
+local cdLabel    = nil
+
+local function startCountdown(secs)
+    if cdTween then pcall(function() cdTween:Cancel() end); cdTween = nil end
+    if secs and secs > 0 then
+        cdDuration = secs
+        cdEndTime  = os.clock() + secs
+        if barFill then
+            barFill.Size = UDim2.new(1, 0, 1, 0)
+            cdTween = TweenService:Create(
+                barFill,
+                TweenInfo.new(secs, Enum.EasingStyle.Linear, Enum.EasingDirection.Out),
+                { Size = UDim2.new(0, 0, 1, 0) }
+            )
+            cdTween:Play()
+        end
+    else
+        cdDuration = 0
+        cdEndTime  = nil
+        if barFill then barFill.Size = UDim2.new(0, 0, 1, 0) end
     end
 end
 
-LocalPlayer.CharacterAdded:Connect(function(character)
-    task.wait(1)
-    applyOverhead()
-    local head = character:WaitForChild("Head", 10)
-    local ui   = head and head:WaitForChild("OverheadUI", 10)
-    if ui then applyOverhead() end
+local function resetCountdown()
+    cdEndTime  = nil
+    cdDuration = 0
+    if cdTween then pcall(function() cdTween:Cancel() end); cdTween = nil end
+    if barFill  then barFill.Size = UDim2.new(0, 0, 1, 0) end
+    if cdLabel  then cdLabel.Text = "0s" end
+end
+
+local function setCountdownText(txt)
+    if cdLabel then cdLabel.Text = txt end
+end
+
+-- ── Starter finder ─────────────────────────────────────────────────────────
+local function getTruckStarter()
+    local truck = Workspace:FindFirstChild("Etc")
+        and Workspace.Etc:FindFirstChild("Job")
+        and Workspace.Etc.Job:FindFirstChild("Truck")
+    local starter = truck and truck:FindFirstChild("Starter")
+    if starter then
+        return starter,
+               starter:FindFirstChild("Prompt", true)
+               or starter:FindFirstChildWhichIsA("ProximityPrompt", true)
+    end
+    return nil, nil
+end
+
+-- ── Waypoint destination reader (mirrors Projectsion) ─────────────────────
+local function getArrowDestinationName()
+    -- read from the Waypoint folder the server sets after job accept
+    local waypointFolder = Workspace:FindFirstChild("Etc")
+        and Workspace.Etc:FindFirstChild("Waypoint")
+    if not waypointFolder then return nil end
+    local wp = waypointFolder:FindFirstChild("Waypoint")
+    if not wp then return nil end
+    local gui = wp:FindFirstChildOfClass("BillboardGui") or wp:FindFirstChildOfClass("SurfaceGui")
+    if gui then
+        local tl = gui:FindFirstChildOfClass("TextLabel")
+        if tl and tl.Text ~= "" then return tl.Text:lower(), wp end
+    end
+    return wp.Name:lower(), wp
+end
+
+-- ── Malang-only spam roller (adapted from Projectsion rollUntilTarget) ─────
+-- *fires Unemployed → Truck → starter prompt in a tight loop*
+-- *stops only when arrow/waypoint resolves to Malang*
+-- *uprightCF placement on starter prevents the character from tripping*
+local function rollUntilMalang()
+    local attempt = 0
+    while farmActive do
+        attempt = attempt + 1
+
+        -- clear previous job
+        if JobRemote then JobRemote:FireServer("Unemployed") end
+        task.wait(0.08)
+
+        -- request Truck job
+        if JobRemote then JobRemote:FireServer("Truck") end
+        task.wait(0.05)
+
+        -- walk to starter and fire prompt — upright placement (Projectsion pattern)
+        local starterModel, starterPrompt = getTruckStarter()
+        if starterModel and starterPrompt then
+            local char = LocalPlayer.Character
+            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = uprightCF(starterModel:GetPivot(), 3)
+            end
+            firePrompt(starterPrompt)
+            firePrompt(starterPrompt)   -- double-fire to ensure register
+        end
+
+        -- wait a brief beat for the server to set the arrow/waypoint
+        task.wait(0.12)
+
+        -- read destination — two detection paths:
+        --   1. arrowTarget set by JobRemote.OnClientEvent ("SetArrow") → nearestArea
+        --   2. Waypoint folder text (Projectsion path) → string match
+        local isMalang = false
+        local destLabel = "?"
+
+        if arrowTarget then
+            local areaIdx, areaTxt = nearestArea(arrowTarget)
+            -- TruckArea index 4 = Malang (same as original DX-SR check)
+            if areaIdx == 4 then
+                isMalang = true
+                destLabel = areaTxt or "Malang"
+            else
+                destLabel = areaTxt or ("area " .. tostring(areaIdx))
+            end
+        else
+            local wpLabel = getArrowDestinationName()
+            if wpLabel and wpLabel:find("malang") then
+                isMalang = true
+                destLabel = "Malang (waypoint)"
+            elseif wpLabel then
+                destLabel = wpLabel
+            end
+        end
+
+        if UI_paragraphs and UI_paragraphs.rollStatus then
+            UI_paragraphs.rollStatus:SetDesc(
+                string.format("Attempt %d — %s %s", attempt, destLabel,
+                    isMalang and "✔" or "✘")
+            )
+        end
+
+        if isMalang then
+            arrowCount = 0
+            arrowTarget = nil
+            return true
+        end
+
+        -- not Malang — reset arrow state and loop immediately
+        arrowCount  = 0
+        arrowTarget = nil
+    end
+    return false
+end
+
+-- ── Main farm loop ─────────────────────────────────────────────────────────
+local SPAWN_CF  = CFrame.new(34938, 135, -54576)
+local SPAWNER_V = Vector3.new(35161.36, 139, -54683.41)
+local BASE_CF   = CFrame.new(-7848, 386, 46763)
+local BASE_DEST = CFrame.new(-7845, 386, 46865)
+
+local function startFarm()
+    task.spawn(function()
+        if JobRemote then JobRemote:FireServer("Truck") end
+        createBaseParts()
+        destroyMap()
+
+        while farmActive do
+            local tripStart = os.clock()
+
+            -- ── Phase 1: roll until Malang ──────────────────────────────
+            local gotMalang = rollUntilMalang()
+            if not farmActive or not gotMalang then break end
+
+            -- ── Phase 2: get / spawn truck ──────────────────────────────
+            local spawnerRoot = Workspace.Etc.Job.Truck.Spawner
+            local car         = getOwnedCar()
+
+            if not car then
+                -- *uprightCF on spawner approach — Projectsion anti-trip*
+                local spawnPart = spawnerRoot:FindFirstChild("Part")
+                              or  spawnerRoot:WaitForChild("Part", 3)
+                if spawnPart then
+                    teleportAbove(spawnPart.CFrame, 3)
+                else
+                    local char = LocalPlayer.Character
+                    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        hrp.CFrame = uprightCF(CFrame.new(SPAWNER_V), 3)
+                    end
+                end
+
+                local deadline = os.clock()
+                while farmActive and not car do
+                    local prompt = spawnPart and (
+                        spawnPart:FindFirstChild("Prompt")
+                        or spawnPart:FindFirstChildWhichIsA("ProximityPrompt", true)
+                    )
+                    if prompt then
+                        firePrompt(prompt)
+                    elseif not spawnPart then
+                        spawnPart = spawnerRoot:FindFirstChild("Part")
+                        if spawnPart then teleportAbove(spawnPart.CFrame, 3) end
+                    end
+                    local t1 = os.clock()
+                    while farmActive and os.clock() - t1 < 0.4 do
+                        car = getOwnedCar()
+                        if car then break end
+                        task.wait(0.05)
+                    end
+                    if os.clock() - deadline > 6 then
+                        if spawnPart then teleportAbove(spawnPart.CFrame, 3) end
+                        deadline = os.clock()
+                    end
+                end
+            end
+            if not farmActive or not car then continue end
+
+            task.wait(0.7)
+
+            -- remove trailer immediately on spawn and on any future attach
+            local trailerConn = car.ChildAdded:Connect(function(child)
+                if child.Name:lower():find("trailer") then
+                    task.defer(function() pcall(child.Destroy, child) end)
+                end
+            end)
+            for _, child in ipairs(car:GetChildren()) do
+                if child.Name:lower():find("trailer") then pcall(child.Destroy, child) end
+            end
+
+            -- ── Phase 3: sit in drive seat ──────────────────────────────
+            local driveSeat = car:WaitForChild("DriveSeat", 5)
+            if driveSeat then
+                local seatPrompt = driveSeat:WaitForChild("PromptDriveSeat", 3)
+                if seatPrompt then
+                    -- *uprightCF — no trip on seating teleport*
+                    teleportAbove(driveSeat.CFrame, 3)
+                    task.wait(0.2)
+                    firePrompt(seatPrompt)
+                end
+            end
+
+            local t2 = os.clock()
+            while farmActive do
+                local char = LocalPlayer.Character
+                local hum  = char and char:FindFirstChild("Humanoid")
+                if hum and hum.SeatPart then
+                    if driveSeat and hum.SeatPart ~= driveSeat then
+                        hum.Sit = false
+                        task.wait(0.1)
+                        local p = driveSeat:FindFirstChild("PromptDriveSeat")
+                        if p then
+                            teleportAbove(driveSeat.CFrame, 3)
+                            task.wait(0.1)
+                            firePrompt(p)
+                        end
+                    else
+                        break
+                    end
+                end
+                if os.clock() - t2 > 1.5 and driveSeat then
+                    local p = driveSeat:FindFirstChild("PromptDriveSeat")
+                    if p then
+                        teleportAbove(driveSeat.CFrame, 3)
+                        task.wait(0.1)
+                        firePrompt(p)
+                    end
+                end
+                task.wait(0.1)
+                if os.clock() - t2 > 6 then break end
+            end
+
+            trailerConn:Disconnect()
+            for _, child in ipairs(car:GetChildren()) do
+                if child.Name:lower():find("trailer") then pcall(child.Destroy, child) end
+            end
+            if not farmActive then break end
+
+            -- ── Phase 4: pivot truck to base ────────────────────────────
+            local pivotAttempts = 0
+            while farmActive and pivotAttempts < 10 do
+                car:PivotTo(BASE_CF)
+                task.wait(0.25)
+                if not car or not car.Parent then break end
+                if (car:GetPivot().Position - BASE_CF.Position).Magnitude < 150 then break end
+                pivotAttempts += 1
+                local char = LocalPlayer.Character
+                local hum  = char and char:FindFirstChild("Humanoid")
+                if hum then
+                    hum.Sit = false
+                    local t3 = os.clock()
+                    while farmActive and hum and hum.SeatPart do
+                        hum.Sit = false
+                        task.wait(0.05)
+                        if os.clock() - t3 > 1.2 then break end
+                    end
+                end
+                task.wait(0.15)
+                local ds2 = car:FindFirstChild("DriveSeat") or car:WaitForChild("DriveSeat", 2)
+                local sp2 = ds2 and (
+                    ds2:FindFirstChild("PromptDriveSeat")
+                    or ds2:FindFirstChildWhichIsA("ProximityPrompt", true)
+                )
+                if ds2 and sp2 then
+                    teleportAbove(ds2.CFrame, 3)
+                    task.wait(0.1)
+                    firePrompt(sp2)
+                end
+                local t4 = os.clock()
+                while farmActive do
+                    local char2 = LocalPlayer.Character
+                    local hum2  = char2 and char2:FindFirstChild("Humanoid")
+                    if hum2 and hum2.SeatPart and (not ds2 or hum2.SeatPart == ds2) then break end
+                    if os.clock() - t4 > 1.2 and ds2 and sp2 then
+                        teleportAbove(ds2.CFrame, 3)
+                        task.wait(0.1)
+                        firePrompt(sp2)
+                    end
+                    task.wait(0.1)
+                    if os.clock() - t4 > 5 then break end
+                end
+                for _, child in ipairs(car:GetChildren()) do
+                    if child.Name:lower():find("trailer") then pcall(child.Destroy, child) end
+                end
+                task.wait(0.2)
+            end
+
+            if not farmActive or not car or not car.Parent then continue end
+            if (car:GetPivot().Position - BASE_CF.Position).Magnitude >= 150 then continue end
+
+            -- ── Phase 5: countdown ──────────────────────────────────────
+            local elapsed   = os.clock() - tripStart
+            local remaining = jobDelay - elapsed
+            local lastSec   = nil
+            if remaining > 0 then
+                startCountdown(remaining)
+                setCountdownText(string.format("%ds", math.ceil(remaining)))
+            end
+            while farmActive do
+                local rem = jobDelay - (os.clock() - tripStart)
+                if rem <= 0 then break end
+                local s = math.ceil(rem)
+                if s ~= lastSec then
+                    if UI_paragraphs and UI_paragraphs.countdown then
+                        UI_paragraphs.countdown:SetDesc(string.format("%ds", s))
+                    end
+                    setCountdownText(string.format("%ds", s))
+                    lastSec = s
+                end
+                task.wait(0.1)
+            end
+            if UI_paragraphs and UI_paragraphs.countdown then
+                UI_paragraphs.countdown:SetDesc("0s")
+            end
+            resetCountdown()
+            if not farmActive then break end
+
+            -- ── Phase 6: deliver and track earnings ─────────────────────
+            local cashBefore = getCash()
+            car:PivotTo(BASE_DEST)
+            if cashBefore > 0 then
+                local t5 = os.clock()
+                while farmActive do
+                    local cashAfter = getCash()
+                    if cashAfter > cashBefore then
+                        local gained = cashAfter - cashBefore
+                        local dur    = os.clock() - tripStart
+                        totalEarned += gained
+                        lastEarned   = gained
+                        tripCount   += 1
+                        table.insert(recentTrips, { earned = gained, duration = dur })
+                        while #recentTrips > 6 do table.remove(recentTrips, 1) end
+                        local sumE, sumD = 0, 0
+                        for _, t in ipairs(recentTrips) do
+                            sumE += t.earned; sumD += t.duration
+                        end
+                        if sumD > 0 then perHourRate = (sumE / sumD) * 3600 end
+                        break
+                    end
+                    if os.clock() - t5 > 10 then break end
+                    task.wait()
+                end
+            end
+
+            -- ── Phase 7: reset for next cycle ───────────────────────────
+            local char = LocalPlayer.Character
+            local hum  = char and char:FindFirstChild("Humanoid")
+            if hum then hum.Sit = false end
+            teleport(SPAWN_CF)
+            if JobRemote then JobRemote:FireServer("Unemployed") end
+            task.wait(0.05)
+        end
+    end)
+end
+
+-- ── Paragraph reference table (filled after UI build) ─────────────────────
+UI_paragraphs = {}
+
+-- ── Background stats ticker ────────────────────────────────────────────────
+task.spawn(function()
+    while true do
+        task.wait(1)
+        local now = os.clock()
+
+        if UI_paragraphs.elapsed then
+            if farmActive and farmStart then
+                UI_paragraphs.elapsed:SetDesc(fmtTime(now - farmStart))
+            elseif tripCount == 0 then
+                UI_paragraphs.elapsed:SetDesc("00:00")
+            end
+        end
+        if UI_paragraphs.currentMoney then
+            UI_paragraphs.currentMoney:SetDesc(fmtRp(readDisplayCash()))
+        end
+        if UI_paragraphs.totalEarned then
+            UI_paragraphs.totalEarned:SetDesc(fmtRp(totalEarned))
+        end
+        if UI_paragraphs.perHour then
+            if perHourRate > 0 then
+                UI_paragraphs.perHour:SetDesc(fmtRate(perHourRate))
+            elseif farmActive then
+                UI_paragraphs.perHour:SetDesc("Calculating...")
+            else
+                UI_paragraphs.perHour:SetDesc("Rp 0")
+            end
+        end
+        if UI_paragraphs.youGot and lastEarned > 0 then
+            UI_paragraphs.youGot:SetDesc(fmtRp(lastEarned))
+        end
+
+        -- suppress job screen / map frame each tick
+        pcall(function()
+            local gui = LocalPlayer:FindFirstChild("PlayerGui")
+            if not gui then return end
+            local job = gui:FindFirstChild("Job")
+            if job and job.Enabled then job.Enabled = false end
+            local hub = gui:FindFirstChild("Main")
+                and gui.Main:FindFirstChild("Container")
+                and gui.Main.Container:FindFirstChild("Hub")
+            local mf  = hub and hub:FindFirstChild("MapFrame")
+            if mf and mf.Visible then mf.Visible = false end
+        end)
+    end
+end)
+
+-- ── Webhook ────────────────────────────────────────────────────────────────
+local function sendWebhook(title, color, extraFields)
+    if not webhookOn or webhookUrl == "" then return end
+    local cash    = readDisplayCash()
+    local elapsed = farmStart and (os.clock() - farmStart) or (os.clock() - sessionStart)
+    local fields  = {
+        { name = "Total earning",    value = "```" .. fmtRp(totalEarned)  .. "```", inline = true  },
+        { name = "Total job done",   value = "```" .. tripCount            .. " Delivered```", inline = true },
+        { name = "Earning per/hour", value = "```" .. fmtRate(perHourRate) .. "```", inline = false },
+        { name = "Current money",    value = "```" .. fmtRp(cash)          .. "```", inline = true  },
+        { name = "Uptime",           value = "```" .. fmtTime(elapsed)     .. "```", inline = true  },
+    }
+    if extraFields then
+        for _, f in ipairs(extraFields) do table.insert(fields, f) end
+    end
+    local body = HttpService:JSONEncode({
+        username = "anonymous",
+        embeds   = { {
+            title     = title,
+            color     = color,
+            fields    = fields,
+            thumbnail = { url = "https://tr.rbxcdn.com/180DAY-89e12785eed48e4b6cf7b03cd0cff336/150/150/Image/Webp/noFilter" },
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+            footer    = { text = "DX-SR Hub | CDIDTruck" },
+        } },
+    })
+    pcall(function()
+        local req = (syn and syn.request) or (http and http.request) or http_request or request
+        if not req then return end
+        local cleanUrl = webhookUrl:gsub("%?.*$", "")
+        if webhookMsgId then
+            local res = req({ Url = cleanUrl .. "/messages/" .. webhookMsgId,
+                              Method = "POST",
+                              Headers = { ["Content-Type"] = "application/json" },
+                              Body = body })
+            if res and res.StatusCode and res.StatusCode >= 200 and res.StatusCode < 300 then return end
+            webhookMsgId = nil
+        end
+        local res = req({ Url = cleanUrl .. "?wait=true",
+                          Method = "POST",
+                          Headers = { ["Content-Type"] = "application/json" },
+                          Body = body })
+        if res and res.Body then
+            local ok, data = pcall(HttpService.JSONDecode, HttpService, res.Body)
+            if ok and data and data.id then webhookMsgId = tostring(data.id) end
+        end
+    end)
+end
+
+local webhookAlerted = false
+local function alertWebhook(reason)
+    if webhookAlerted or not webhookOn or webhookUrl == "" then return end
+    webhookAlerted = true
+    sendWebhook("CDID Truck – Alert", 15548997, {
+        { name = "Reason", value = "```" .. tostring(reason) .. "```", inline = false },
+        { name = "Status", value = "```Disconnected```",               inline = true  },
+    })
+end
+
+pcall(function()
+    game:GetService("GuiService").ErrorMessageChanged:Connect(function()
+        local msg = game:GetService("GuiService"):GetErrorMessage()
+        if msg and msg ~= "" then alertWebhook(msg) end
+    end)
+end)
+pcall(function()
+    local overlay = game:GetService("CoreGui"):WaitForChild("RobloxPromptGui", 5)
+                    and game:GetService("CoreGui").RobloxPromptGui:WaitForChild("promptOverlay", 5)
+    if overlay then
+        local function checkPrompt(child)
+            if child.Name == "ErrorPrompt" then
+                local area = child:FindFirstChild("MessageArea")
+                local lbl  = area and area.ErrorFrame and area.ErrorFrame:FindFirstChild("ErrorMessage")
+                alertWebhook(lbl and lbl.Text or "Roblox Prompt Disconnected")
+            end
+        end
+        overlay.ChildAdded:Connect(checkPrompt)
+        local existing = overlay:FindFirstChild("ErrorPrompt")
+        if existing then checkPrompt(existing) end
+    end
+end)
+pcall(function()
+    game:GetService("TeleportService").TeleportInitFailed:Connect(function(_, _, msg)
+        alertWebhook("Teleport Failed: " .. tostring(msg))
+    end)
+end)
+pcall(function()
+    game:BindToClose(function() alertWebhook("Game Closed") end)
 end)
 
 task.spawn(function()
     while true do
-        if overheadData.Rank or overheadData.Level or overheadData.Name then
-            pcall(applyOverhead)
-        end
-        task.wait(1)
-    end
-end)
-
-playerTab:Input({
-    Title = "Rank", Desc = "Change overhead rank text",
-    PlaceholderText = "Enter rank...", ClearTextOnFocus = false, Flag = "OverheadRankInput",
-    Callback = function(v) overheadData.Rank = v applyOverhead() end,
-})
-playerTab:Input({
-    Title = "Level", Desc = "e.g. [LVL -]",
-    PlaceholderText = "[LVL -]", ClearTextOnFocus = false, Flag = "OverheadLevelInput",
-    Callback = function(v)
-        if v and v ~= "" then
-            if v:find("%[LVL") then
-                overheadData.Level = v
-            elseif tonumber(v) then
-                overheadData.Level = "[LVL " .. v .. "]"
-            else
-                overheadData.Level = v
-            end
-        else
-            overheadData.Level = nil
-        end
-        applyOverhead()
-    end,
-})
-playerTab:Input({
-    Title = "Name", Desc = "Change overhead display name",
-    PlaceholderText = "Enter name...", ClearTextOnFocus = false, Flag = "OverheadNameInput",
-    Callback = function(v) overheadData.Name = v applyOverhead() end,
-})
-
--- ============================================================
--- PLAYER TAB â€” Movement Modifiers
--- ============================================================
-pcall(function() playerTab:Space() end)
-playerTab:Section({ Title = "Movement Modifiers", Opened = true })
-pcall(function() playerTab:Space() end)
-
-playerTab:Toggle({ Title = "Modify WalkSpeed", Desc = "Bypasses game speed limits (default is 6)",
-    Flag = "WalkSpeedToggle", Default = false,
-    Callback = function(v)
-        Config.WalkSpeedEnabled = v
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-        if hum and not v then hum.WalkSpeed = 6 end
-    end,
-})
-playerTab:Toggle({ Title = "Modify JumpPower", Desc = "Enable custom jump power",
-    Flag = "JumpPowerToggle", Default = false,
-    Callback = function(v)
-        Config.JumpPowerEnabled = v
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-        if hum and not v then hum.JumpPower = 50 end
-    end,
-})
-playerTab:Toggle({ Title = "Infinite Jump", Desc = "Jump continuously in the air",
-    Flag = "InfiniteJumpToggle", Default = false,
-    Callback = function(v) Config.InfiniteJump = v end,
-})
-playerTab:Toggle({ Title = "Noclip", Desc = "Walk through walls and obstacles",
-    Flag = "NoclipToggle", Default = false,
-    Callback = function(v)
-        Config.Noclip = v
-        if not v then setNoclip(false) end
-    end,
-})
-playerTab:Slider({ Title = "WalkSpeed Value", Desc = "Set custom walkspeed",
-    Step = 1, Flag = "WalkSpeedValue",
-    Value = { Min = 6, Max = 80, Default = 24 },
-    Callback = function(v) Config.WalkSpeed = v end,
-})
-playerTab:Slider({ Title = "JumpPower Value", Desc = "Set custom jump power",
-    Step = 5, Flag = "JumpPowerValue",
-    Value = { Min = 50, Max = 200, Default = 70 },
-    Callback = function(v) Config.JumpPower = v end,
-})
-
-game:GetService("UserInputService").JumpRequest:Connect(function()
-    if Config.InfiniteJump then
-        local character = LocalPlayer.Character
-        local hum = character and character:FindFirstChildOfClass("Humanoid")
-        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-    end
-end)
-
-RunService.Heartbeat:Connect(function()
-    local character = LocalPlayer.Character
-    if not character then return end
-    local hum = character:FindFirstChildOfClass("Humanoid")
-    if hum then
-        if Config.WalkSpeedEnabled then hum.WalkSpeed = Config.WalkSpeed end
-        if Config.JumpPowerEnabled then hum.JumpPower = Config.JumpPower end
-    end
-    if Config.Noclip or (Config.AutoFarm and Config.NoclipFarm) then
-        setNoclip(true)
-    end
-end)
-
--- ============================================================
--- CONFIGURATION TAB
--- ============================================================
-local configTab = Window:Tab({ Title = "Configuration", Icon = "settings" })
-configTab:Section({ Title = "Theme" })
-pcall(function() configTab:Space() end)
-
-local themes = {}
-pcall(function()
-    local list = WindUI:GetThemes()
-    if list then
-        for k, v in pairs(list) do
-            if type(v) == "string" then table.insert(themes, v)
-            elseif type(k) == "string" then table.insert(themes, k) end
+        task.wait(webhookInterval)
+        if webhookOn and webhookUrl ~= "" then
+            sendWebhook("CDID Truck – Auto Farm Report", 1981066, {
+                { name = "Status", value = "```" .. (farmActive and "Running" or "Idle") .. "```", inline = true },
+            })
         end
     end
 end)
-if #themes == 0 then
-    themes = { "Dark", "Light", "Rose", "Plant", "Red", "Indigo", "Sky", "Violet",
-               "Amber", "Emerald", "Midnight", "Crimson", "Monokai Pro", "Cotton Candy",
-               "Mellowsi", "Rainbow" }
+
+-- ── WindUI ─────────────────────────────────────────────────────────────────
+local WindUI = loadstring(game:HttpGet(
+    "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"
+))()
+
+local Window = WindUI:CreateWindow({
+    Title        = "CDID x Truck",
+    Icon         = "truck",
+    Author       = "DX-SR Hub",
+    Folder       = "DX-SR",
+    Size         = UDim2.fromOffset(580, 480),
+    MinSize      = Vector2.new(560, 360),
+    MaxSize      = Vector2.new(850, 580),
+    ToggleKey    = Enum.KeyCode.V,
+    Transparent  = true,
+    Theme        = "Dark",
+    Resizable    = true,
+    SideBarWidth = 200,
+    BackgroundImageTransparency = 0.42,
+    HideSearchBar    = false,
+    ScrollBarEnabled = false,
+})
+Window:Tag({ Title = "v0.0.0.3",  Icon = "github",      Color = Color3.fromHex("#30ff6a"), Radius = 13 })
+Window:Tag({ Title = "DX-SR Hub", Icon = "text-cursor", Color = Color3.fromHex("#1E3A8A"), Radius = 13 })
+WindUI:Popup({
+    Title   = "Update log",
+    Icon    = "info",
+    Content = "v0.0.0.3 — Malang-only roller + anti-trip teleport",
+    Buttons = { { Title = "Continue", Icon = "arrow-right", Callback = function() end, Variant = "Primary" } },
+})
+
+local mainSection = Window:Section({ Title = "Main", Icon = "home", Opened = true })
+local truckTab    = mainSection:Tab({ Title = "Truck", Icon = "truck" })
+
+truckTab:Section({ Title = "Auto Truck", Opened = true })
+pcall(function() truckTab:Space() end)
+
+truckTab:Toggle({
+    Title    = "Auto farm Truck",
+    Flag     = "AutoFarmTruck",
+    Default  = false,
+    Callback = function(val)
+        farmActive = val
+        if val then
+            if not farmStart then farmStart = os.clock() end
+            startFarm()
+        end
+    end,
+})
+
+truckTab:Slider({
+    Title    = "Job delay",
+    Step     = 1,
+    Flag     = "TeleportDelay",
+    Value    = { Min = 0, Max = 50, Default = jobDelay },
+    Callback = function(val) jobDelay = val end,
+})
+
+truckTab:Toggle({
+    Title    = "Enable Webhook",
+    Flag     = "WebhookEnabled",
+    Default  = false,
+    Callback = function(val) webhookOn = val end,
+})
+
+truckTab:Input({
+    Title            = "Webhook URL",
+    PlaceholderText  = "https://discord.com/api/webhooks/...",
+    ClearTextOnFocus = false,
+    Flag             = "WebhookUrl",
+    Value            = webhookUrl,
+    Callback         = function(val) webhookUrl = val end,
+})
+
+truckTab:Section({ Title = "Information", Opened = true })
+pcall(function() truckTab:Space() end)
+
+-- countdown bar (bottom of screen)
+do
+    local pGui = LocalPlayer:WaitForChild("PlayerGui", 5) or LocalPlayer:FindFirstChild("PlayerGui")
+    if pGui then
+        local sg = Instance.new("ScreenGui")
+        sg.Name           = "CDCountdown"
+        sg.DisplayOrder   = 10
+        sg.IgnoreGuiInset = true
+        sg.ResetOnSpawn   = false
+        sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+        local bg = Instance.new("Frame")
+        bg.Size                    = UDim2.new(1, 0, 0, 36)
+        bg.Position                = UDim2.new(0, 0, 1, -50)
+        bg.BackgroundColor3        = Color3.fromRGB(10, 10, 15)
+        bg.BackgroundTransparency  = 0.25
+        bg.BorderSizePixel         = 0
+        bg.Parent                  = sg
+
+        local bar = Instance.new("Frame")
+        bar.Name             = "BarBg"
+        bar.Size             = UDim2.new(1, 0, 0, 5)
+        bar.Position         = UDim2.new(0, 0, 0, 0)
+        bar.BackgroundColor3 = Color3.fromRGB(24, 30, 46)
+        bar.BorderSizePixel  = 0
+        bar.ClipsDescendants = true
+        bar.Parent           = bg
+        Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+
+        local fill = Instance.new("Frame")
+        fill.Name             = "Fill"
+        fill.Size             = UDim2.new(0, 0, 1, 0)
+        fill.BackgroundColor3 = Color3.fromRGB(34, 211, 238)
+        fill.BorderSizePixel  = 0
+        fill.Parent           = bar
+        Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+        barFill = fill
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Size                  = UDim2.new(1, 0, 0, 18)
+        lbl.Position              = UDim2.new(0, 8, 0, 10)
+        lbl.BackgroundTransparency= 1
+        lbl.Font                  = Enum.Font.GothamBold
+        lbl.Text                  = "0s"
+        lbl.TextColor3            = Color3.fromRGB(224, 242, 254)
+        lbl.TextSize              = 13
+        lbl.TextXAlignment        = Enum.TextXAlignment.Left
+        lbl.Parent                = bg
+        cdLabel = lbl
+
+        sg.Parent = pGui
+    end
 end
 
-configTab:Dropdown({
-    Title = "Select Theme", Desc = "Choose UI Theme", Multi = false, Flag = "SelectedTheme",
-    Value = WindUI:GetCurrentTheme() or "Dark", Values = themes,
-    Callback = function(theme) pcall(function() WindUI:SetTheme(theme) end) end,
+UI_paragraphs.rollStatus   = truckTab:Paragraph({ Title = "Job Roller",       Desc = "Waiting..." })
+UI_paragraphs.countdown    = truckTab:Paragraph({ Title = "Delay Countdown",  Desc = "0s" })
+UI_paragraphs.elapsed      = truckTab:Paragraph({ Title = "Time Elapsed",     Desc = "00:00" })
+UI_paragraphs.currentMoney = truckTab:Paragraph({ Title = "Current Money",    Desc = "Rp 0" })
+UI_paragraphs.totalEarned  = truckTab:Paragraph({ Title = "Total Earning",    Desc = "Rp 0" })
+UI_paragraphs.perHour      = truckTab:Paragraph({ Title = "Earning / Hour",   Desc = "Rp 0" })
+UI_paragraphs.youGot       = truckTab:Paragraph({ Title = "You Got",          Desc = "Rp 0" })
+
+-- ── Config tab ─────────────────────────────────────────────────────────────
+local cfgTab = mainSection:Tab({ Title = "Configuration", Icon = "settings" })
+cfgTab:Section({ Title = "Theme", Opened = true })
+pcall(function() cfgTab:Space() end)
+
+local themes = {
+    "Dark","Light","Rose","Plant","Red","Indigo","Sky","Violet",
+    "Amber","Emerald","Midnight","Crimson","Monokai Pro","Cotton Candy",
+    "Mellowsi","Rainbow",
+}
+cfgTab:Dropdown({
+    Title    = "Select Theme",
+    Desc     = "Choose UI Theme",
+    Multi    = false,
+    Flag     = "SelectedTheme",
+    Value    = WindUI:GetCurrentTheme() or "Dark",
+    Values   = themes,
+    Callback = function(v) pcall(function() WindUI:SetTheme(v) end) end,
 })
 
-configTab:Section({ Title = "Config" })
-pcall(function() configTab:Space() end)
+cfgTab:Section({ Title = "Config Manager", Opened = true })
+pcall(function() cfgTab:Space() end)
 
-local selectedConfig = ""
-local configNameInput = ""
-
-local function getAllConfigs()
-    local list = {}
+local selectedCfg  = ""
+local cfgNameInput = ""
+local function listConfigs()
+    local out = {}
     pcall(function()
-        local configs = Window.ConfigManager:AllConfigs()
-        if configs then for _, name in ipairs(configs) do table.insert(list, name) end end
+        local all = Window.ConfigManager:AllConfigs()
+        if all then for _, n in ipairs(all) do table.insert(out, n) end end
     end)
-    return list
+    return out
 end
 
-local configDropdown = configTab:Dropdown({
-    Title = "Select Config", Desc = "Choose saved config", Multi = false,
-    Flag = "SelectedConfigDropdown", Value = "", Values = getAllConfigs(),
-    Callback = function(v) selectedConfig = v end,
+local cfgDropdown = cfgTab:Dropdown({
+    Title    = "Select Config",
+    Desc     = "Choose saved config",
+    Multi    = false,
+    Flag     = "SelectedConfigDropdown",
+    Value    = "",
+    Values   = listConfigs(),
+    Callback = function(v) selectedCfg = v end,
 })
 
-configTab:Input({
-    Title = "Config Name", Desc = "New config name",
-    PlaceholderText = "Enter config name...", Flag = "ConfigNameInput",
-    Callback = function(v) configNameInput = v end,
+cfgTab:Input({
+    Title            = "Config Name",
+    Desc             = "New config name",
+    PlaceholderText  = "Enter config name...",
+    ClearTextOnFocus = false,
+    Flag             = "ConfigNameInput",
+    Callback         = function(v) cfgNameInput = v end,
 })
-configTab:Button({ Title = "Save Config", Desc = "Save current settings to new config",
+
+cfgTab:Button({
+    Title    = "Save Config",
+    Desc     = "Save current settings",
     Callback = function()
-        if configNameInput == "" then
-            WindUI:Notify({ Title = "Config", Content = "Enter config name first!", Duration = 3 }) return
+        if cfgNameInput == "" then
+            WindUI:Notify({ Title = "Config", Content = "Enter config name first!", Duration = 3 })
+            return
         end
         pcall(function()
-            selectedConfig = configNameInput
-            pcall(function() configDropdown:Select(configNameInput) end)
-            Window.ConfigManager:CreateConfig(configNameInput):Save()
+            selectedCfg = cfgNameInput
+            pcall(function() cfgDropdown:Select(cfgNameInput) end)
+            Window.ConfigManager:CreateConfig(cfgNameInput):Save()
         end)
-        WindUI:Notify({ Title = "Config", Content = "Config '" .. configNameInput .. "' saved successfully!", Duration = 3 })
-        pcall(function() configDropdown:Refresh(getAllConfigs()) configDropdown:Select(configNameInput) end)
+        WindUI:Notify({ Title = "Config", Content = "Config '" .. cfgNameInput .. "' saved!", Duration = 3 })
+        pcall(function() cfgDropdown:Refresh(listConfigs()); cfgDropdown:Select(cfgNameInput) end)
     end,
 })
-configTab:Button({ Title = "Load Config", Desc = "Load selected config",
+
+cfgTab:Button({
+    Title    = "Load Config",
+    Desc     = "Load selected config",
     Callback = function()
-        if selectedConfig == "" or selectedConfig == "--" then
-            WindUI:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 }) return
+        if selectedCfg == "" or selectedCfg == "--" then
+            WindUI:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 })
+            return
         end
         pcall(function()
-            Window.ConfigManager:CreateConfig(selectedConfig):Load()
-            pcall(function() configDropdown:Select(selectedConfig) end)
+            Window.ConfigManager:CreateConfig(selectedCfg):Load()
+            pcall(function() cfgDropdown:Select(selectedCfg) end)
         end)
-        WindUI:Notify({ Title = "Config", Content = "Config '" .. selectedConfig .. "' loaded successfully!", Duration = 3 })
+        WindUI:Notify({ Title = "Config", Content = "Config '" .. selectedCfg .. "' loaded!", Duration = 3 })
     end,
 })
-configTab:Button({ Title = "Rewrite Config", Desc = "Rewrite selected config",
+
+cfgTab:Button({
+    Title    = "Delete Config",
+    Desc     = "Delete selected config",
     Callback = function()
-        if selectedConfig == "" or selectedConfig == "--" then
-            WindUI:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 }) return
+        if selectedCfg == "" or selectedCfg == "--" then
+            WindUI:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 })
+            return
         end
-        local path       = "WindUI/" .. (Window.Folder or "EagleNationHub") .. "/config/" .. selectedConfig .. ".json"
-        local autoLoad   = false
-        local customData = {}
-        if isfile and isfile(path) and readfile then
-            pcall(function()
-                local decoded = HttpService:JSONDecode(readfile(path))
-                if type(decoded) == "table" then
-                    autoLoad   = decoded.__autoload or false
-                    customData = decoded.__custom or {}
-                end
-            end)
-        end
-        local ok, err = pcall(function()
-            pcall(function() configDropdown:Select(selectedConfig) end)
-            local elements = {}
-            local parser   = Window.ConfigManager.Parser
-            local flags    = Window.PendingFlags or Window.Flags or {}
-            for flagName, flag in pairs(flags) do
-                if flag and flag.__type and parser and parser[flag.__type] then
-                    pcall(function() elements[tostring(flagName)] = parser[flag.__type].Save(flag) end)
-                end
-            end
-            local data = { __version = 1.2, __elements = elements, __autoload = autoLoad, __custom = customData }
-            if writefile then writefile(path, HttpService:JSONEncode(data)) end
-            local cfgs = Window.ConfigManager and Window.ConfigManager.Configs
-            if cfgs and cfgs[selectedConfig] then
-                local cfg      = cfgs[selectedConfig]
-                cfg.AutoLoad   = autoLoad
-                cfg.CustomData = customData
-                for flagName, flag in pairs(flags) do cfg:Register(flagName, flag) end
-            end
-        end)
-        if ok then
-            WindUI:Notify({ Title = "Config", Content = "Config '" .. selectedConfig .. "' rewritten! (Not loaded)", Duration = 3 })
-        else
-            WindUI:Notify({ Title = "Config", Content = "Failed: " .. tostring(err), Duration = 3 })
-        end
+        pcall(function() Window.ConfigManager:CreateConfig(selectedCfg):Delete() end)
+        WindUI:Notify({ Title = "Config", Content = "Config '" .. selectedCfg .. "' deleted!", Duration = 3 })
+        selectedCfg = ""
+        pcall(function() cfgDropdown:Refresh(listConfigs()); cfgDropdown:Select("") end)
     end,
 })
-configTab:Button({ Title = "Delete Config", Desc = "Delete selected config",
+
+cfgTab:Button({
+    Title    = "Set Auto Load",
+    Desc     = "Auto-load this config on start",
     Callback = function()
-        if selectedConfig == "" or selectedConfig == "--" then
-            WindUI:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 }) return
-        end
-        pcall(function() Window.ConfigManager:CreateConfig(selectedConfig):Delete() end)
-        WindUI:Notify({ Title = "Config", Content = "Config '" .. selectedConfig .. "' deleted!", Duration = 3 })
-        selectedConfig = ""
-        pcall(function() configDropdown:Refresh(getAllConfigs()) configDropdown:Select("") end)
-    end,
-})
-configTab:Button({ Title = "Set Auto Load", Desc = "Automatically load selected config on start",
-    Callback = function()
-        if selectedConfig == "" or selectedConfig == "--" then
-            WindUI:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 }) return
+        if selectedCfg == "" or selectedCfg == "--" then
+            WindUI:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 })
+            return
         end
         pcall(function()
-            local allCfgs = Window.ConfigManager:AllConfigs()
-            if allCfgs and isfile and readfile and writefile then
-                for _, name in ipairs(allCfgs) do
-                    local p = "WindUI/" .. (Window.Folder or "EagleNationHub") .. "/config/" .. name .. ".json"
-                    if isfile(p) then
+            local all = Window.ConfigManager:AllConfigs()
+            if all and isfile and readfile and writefile then
+                for _, name in ipairs(all) do
+                    local path = "WindUI/" .. (Window.Folder or "DX-SR") .. "/config/" .. name .. ".json"
+                    if isfile(path) then
                         pcall(function()
-                            local d = HttpService:JSONDecode(readfile(p))
-                            if type(d) == "table" then
-                                d.__autoload = (name == selectedConfig)
-                                writefile(p, HttpService:JSONEncode(d))
+                            local data = HttpService:JSONDecode(readfile(path))
+                            if type(data) == "table" then
+                                data.__autoload = (name == selectedCfg)
+                                writefile(path, HttpService:JSONEncode(data))
                             end
                         end)
                     end
                 end
             end
-            pcall(function() configDropdown:Select(selectedConfig) end)
-            local cfgs = Window.ConfigManager and Window.ConfigManager.Configs
-            if cfgs then
-                for name, cfg in pairs(cfgs) do
-                    if cfg and cfg.SetAutoLoad then cfg:SetAutoLoad(name == selectedConfig) end
+            pcall(function() cfgDropdown:Select(selectedCfg) end)
+            if Window.ConfigManager and Window.ConfigManager.Configs then
+                for name, cfg in pairs(Window.ConfigManager.Configs) do
+                    if cfg and cfg.SetAutoLoad then cfg:SetAutoLoad(name == selectedCfg) end
                 end
             end
         end)
-        WindUI:Notify({ Title = "Config", Content = "Auto load set to '" .. selectedConfig .. "'!", Duration = 3 })
+        WindUI:Notify({ Title = "Config", Content = "Auto load set to '" .. selectedCfg .. "'!", Duration = 3 })
     end,
 })
 
--- Auto-load on start
 pcall(function()
-    local allCfgs = Window.ConfigManager:AllConfigs()
-    if allCfgs and readfile and isfile then
-        for _, name in pairs(allCfgs) do
-            local path = "WindUI/" .. (Window.Folder or "EagleNationHub") .. "/config/" .. name .. ".json"
+    local all = Window.ConfigManager:AllConfigs()
+    if all and readfile and isfile then
+        for _, name in ipairs(all) do
+            local path = "WindUI/" .. (Window.Folder or "DX-SR") .. "/config/" .. name .. ".json"
             if isfile(path) then
-                local ok, decoded = pcall(function() return HttpService:JSONDecode(readfile(path)) end)
-                if ok and type(decoded) == "table" and decoded.__autoload then
+                local ok, data = pcall(HttpService.JSONDecode, HttpService, readfile(path))
+                if ok and type(data) == "table" and data.__autoload then
                     Window.ConfigManager:CreateConfig(name):Load()
-                    selectedConfig = name
-                    task.defer(function() pcall(function() configDropdown:Select(name) end) end)
+                    selectedCfg = name
+                    task.defer(function() pcall(function() cfgDropdown:Select(name) end) end)
                     break
                 end
             end
@@ -811,531 +1064,11 @@ pcall(function()
 end)
 
 Window:EditOpenButton({
-    Title = "Eagle Hub", Icon = "wheat",
-    CornerRadius = UDim.new(0, 16), StrokeThickness = 2,
-    Color = ColorSequence.new(Color3.fromHex("F89B29"), Color3.fromHex("FF0F7B")),
-    OnlyMobile = false, Enabled = true, Draggable = true,
-})
-
--- ============================================================
--- FARM LOOPS
--- ============================================================
-
--- Hay Feeding
-local function runHayFarm()
-    local character = LocalPlayer.Character
-    local root      = getRootPart(character)
-    if not character or not root then task.wait(1) return end
-
-    local packageSites = Workspace:FindFirstChild("PackageSites")
-    local hayStack     = packageSites and packageSites:FindFirstChild("GatherPackageHay")
-    if not hayStack then
-        Stats.CurrentStatus = "Waiting for Hay Stack to exist..."
-        updateFeedingStats() task.wait(1) return
-    end
-
-    local hayPrompt       = hayStack:FindFirstChildWhichIsA("ProximityPrompt")
-    local deliveryKey     = LocalPlayer.Name .. "_Delivery"
-    local activeDeliveries = Workspace:FindFirstChild("ActiveDeliveries")
-    local delivery        = activeDeliveries and activeDeliveries:FindFirstChild(deliveryKey)
-
-    if not delivery then
-        local grabCF = CFrame.lookAt(
-            Vector3.new(hayStack.Position.X - 3.5, root.Position.Y, hayStack.Position.Z),
-            Vector3.new(hayStack.Position.X,        root.Position.Y, hayStack.Position.Z))
-        if (root.Position - grabCF.Position).Magnitude > 2 then
-            Stats.CurrentStatus = "Moving to Hay Supply..."
-            updateFeedingStats() tweenTo(grabCF)
-        end
-        if not Config.AutoFarm then return end
-
-        local hold = (hayPrompt and hayPrompt.HoldDuration) or 1.5
-        Stats.CurrentStatus = string.format("Grabbing Hay (Hold %.1fs)...", hold)
-        updateFeedingStats()
-        if hayPrompt then firePrompt(hayPrompt) end
-
-        if Config.ActionDelay and Config.ActionDelay > 0 then
-            Stats.CurrentStatus = string.format("Action Delay: Waiting %.1fs...", Config.ActionDelay)
-            updateFeedingStats() task.wait(Config.ActionDelay)
-        end
-
-        Stats.CurrentStatus = "Waiting for server to assign horse..."
-        updateFeedingStats()
-        local t0 = tick()
-        repeat
-            delivery = activeDeliveries and activeDeliveries:FindFirstChild(deliveryKey)
-            task.wait(0.05)
-        until delivery or (tick() - t0 > 8) or not Config.AutoFarm
-    end
-
-    if not Config.AutoFarm then return end
-
-    if delivery then
-        local stallName  = "Horse Stall"
-        local rancherJob = Workspace:FindFirstChild("RancherJob")
-        if rancherJob then
-            local stallMap = {
-                RancherDestination1 = "Stall 1 (Horse 1)", RancherDestination2 = "Stall 2 (Horse 2)",
-                RancherDestination3 = "Stall 3 (Horse 3)", RancherDestination4 = "Stall 4 (Horse 4)",
-            }
-            for _, part in ipairs(rancherJob:GetChildren()) do
-                if part:IsA("BasePart") and (part.Position - delivery.Position).Magnitude < 6 then
-                    stallName = stallMap[part.Name] or part.Name break
-                end
-            end
-        end
-
-        Stats.CurrentStatus = "Assigned: " .. stallName .. " - Moving..."
-        updateFeedingStats()
-        local feedCF = getHayFeedCFrame(delivery)
-        tweenTo(feedCF)
-        if not Config.AutoFarm then return end
-        if (delivery.Position - root.Position).Magnitude > 6 then tweenTo(feedCF) end
-
-        local feedPrompt = delivery:WaitForChild("ProximityPrompt", 4)
-        if feedPrompt then
-            Stats.CurrentStatus = string.format("Feeding %s (Hold %.1fs)...", stallName, feedPrompt.HoldDuration or 1.2)
-            updateFeedingStats() firePrompt(feedPrompt)
-        end
-
-        Stats.CurrentStatus = "Waiting for server validation..."
-        updateFeedingStats()
-        local t0 = tick()
-        while activeDeliveries:FindFirstChild(deliveryKey) and (tick() - t0 < 4) do
-            task.wait(0.05) if not Config.AutoFarm then break end
-        end
-        if not activeDeliveries:FindFirstChild(deliveryKey) then
-            Stats.CurrentStatus = "Fed " .. stallName .. " Successfully!"
-            updateFeedingStats()
-        end
-    end
-    task.wait(0.1)
-end
-
-task.spawn(function()
-    while true do
-        if Config.AutoFarm then
-            local ok, err = pcall(runHayFarm)
-            if not ok and Config.AutoFarm then
-                warn("[Eagle Nation Hub Farm Error]:", err)
-                Stats.CurrentStatus = "Error: " .. tostring(err)
-                updateFeedingStats() task.wait(1)
-            end
-        else task.wait(0.5) end
-    end
-end)
-
--- Cement Farm
-local function runCementFarm()
-    local character = LocalPlayer.Character
-    local root      = getRootPart(character)
-    if not character or not root then task.wait(1) return end
-
-    local packageSites  = Workspace:FindFirstChild("PackageSites")
-    local cementSupply  = packageSites and packageSites:FindFirstChild("GatherPackageCement")
-    if not cementSupply then
-        Stats.CementCurrentStatus = "Waiting for Cement Supply..."
-        updateCementStats() task.wait(1) return
-    end
-
-    local cementPrompt    = cementSupply:FindFirstChildWhichIsA("ProximityPrompt")
-    local deliveryKey     = LocalPlayer.Name .. "_Delivery"
-    local activeDeliveries = Workspace:FindFirstChild("ActiveDeliveries")
-    local delivery        = activeDeliveries and activeDeliveries:FindFirstChild(deliveryKey)
-
-    if not delivery then
-        local grabCF = CFrame.lookAt(
-            Vector3.new(cementSupply.Position.X + 3.5, root.Position.Y, cementSupply.Position.Z),
-            Vector3.new(cementSupply.Position.X,        root.Position.Y, cementSupply.Position.Z))
-        if (root.Position - grabCF.Position).Magnitude > 2 then
-            Stats.CementCurrentStatus = "Moving to Cement Supply..."
-            updateCementStats() tweenTo(grabCF)
-        end
-        if not Config.AutoCement then return end
-
-        local hold = (cementPrompt and cementPrompt.HoldDuration) or 1.5
-        Stats.CementCurrentStatus = string.format("Grabbing Cement (Hold %.1fs)...", hold)
-        updateCementStats()
-        if cementPrompt then firePrompt(cementPrompt) end
-
-        if Config.CementActionDelay and Config.CementActionDelay > 0 then
-            Stats.CementCurrentStatus = string.format("Action Delay: Waiting %.1fs...", Config.CementActionDelay)
-            updateCementStats() task.wait(Config.CementActionDelay)
-        end
-
-        Stats.CementCurrentStatus = "Waiting for server to assign mixer..."
-        updateCementStats()
-        local t0 = tick()
-        repeat
-            delivery = activeDeliveries and activeDeliveries:FindFirstChild(deliveryKey)
-            task.wait(0.05)
-        until delivery or (tick() - t0 > 8) or not Config.AutoCement
-    end
-
-    if not Config.AutoCement then return end
-
-    if delivery then
-        local mixerName     = "Concrete Mixer"
-        local constructionJob = Workspace:FindFirstChild("ConstructionJob")
-        if constructionJob then
-            for _, part in ipairs(constructionJob:GetChildren()) do
-                if part:IsA("BasePart") and (part.Position - delivery.Position).Magnitude < 6 then
-                    local num = part.Name:match("%d+")
-                    mixerName = (num and "Mixer " .. num) or part.Name break
-                end
-            end
-        end
-
-        Stats.CementCurrentStatus = "Assigned: " .. mixerName .. " - Moving..."
-        updateCementStats()
-        local pourCF = getCementPourCFrame(delivery)
-        tweenTo(pourCF)
-        if not Config.AutoCement then return end
-        if (delivery.Position - root.Position).Magnitude > 6 then tweenTo(pourCF) end
-
-        local pourPrompt = delivery:WaitForChild("ProximityPrompt", 4)
-        if pourPrompt then
-            Stats.CementCurrentStatus = string.format("Pouring %s (Hold %.1fs)...", mixerName, pourPrompt.HoldDuration or 2)
-            updateCementStats() firePrompt(pourPrompt)
-        end
-
-        Stats.CementCurrentStatus = "Waiting for server validation..."
-        updateCementStats()
-        local t0 = tick()
-        while activeDeliveries:FindFirstChild(deliveryKey) and (tick() - t0 < 4) do
-            task.wait(0.05) if not Config.AutoCement then break end
-        end
-        if not activeDeliveries:FindFirstChild(deliveryKey) then
-            Stats.CementCurrentStatus = "Poured " .. mixerName .. " Successfully!"
-            updateCementStats()
-        end
-    end
-    task.wait(0.1)
-end
-
-task.spawn(function()
-    while true do
-        if Config.AutoCement then
-            local ok, err = pcall(runCementFarm)
-            if not ok and Config.AutoCement then
-                warn("[Eagle Nation Hub Cement Farm Error]:", err)
-                Stats.CementCurrentStatus = "Error: " .. tostring(err)
-                updateCementStats() task.wait(1)
-            end
-        else task.wait(0.5) end
-    end
-end)
-
--- Oil Rig Farm
-local hasOilCarried = false
-
-local function runOilRigFarm()
-    local character = LocalPlayer.Character
-    local root      = getRootPart(character)
-    if not character or not root then task.wait(1) return end
-
-    local oilRigJob      = Workspace:FindFirstChild("OilRigJob")
-    local collectionTank = oilRigJob and oilRigJob:FindFirstChild("CollectionTank")
-    local wells          = oilRigJob and oilRigJob:FindFirstChild("Wells")
-    if not oilRigJob or not collectionTank or not wells then
-        Stats.OilRigCurrentStatus = "Waiting for Oil Rig Job..."
-        updateOilRigStats() task.wait(1) return
-    end
-
-    local carryingOil = hasOilCarried or (collectionTank:FindFirstChild("OilCarryBeam") ~= nil)
-
-    if not carryingOil then
-        local readyWells   = {}
-        local shortestWait = math.huge
-
-        for _, well in ipairs(wells:GetChildren()) do
-            if well:IsA("BasePart") then
-                local refillAt = well:GetAttribute("RefillAt") or 0
-                local wait     = refillAt - os.time()
-                if wait <= 0 then
-                    table.insert(readyWells, well)
-                elseif wait < shortestWait then
-                    shortestWait = wait
-                end
-            end
-        end
-
-        if #readyWells == 0 then
-            Stats.OilRigCurrentStatus = string.format("All wells refilling (wait %ds)...", math.max(1, shortestWait))
-            updateOilRigStats() task.wait(math.clamp(shortestWait, 0.5, 3)) return
-        end
-
-        table.sort(readyWells, function(a, b)
-            return (a.Position - root.Position).Magnitude < (b.Position - root.Position).Magnitude
-        end)
-        local targetWell = readyWells[1]
-
-        local approachCF = CFrame.lookAt(
-            Vector3.new(targetWell.Position.X, root.Position.Y, targetWell.Position.Z + 3.5),
-            Vector3.new(targetWell.Position.X, root.Position.Y, targetWell.Position.Z))
-        if (root.Position - approachCF.Position).Magnitude > 2 then
-            Stats.OilRigCurrentStatus = "Moving to " .. targetWell.Name .. "..."
-            updateOilRigStats() tweenTo(approachCF)
-        end
-        if not Config.AutoOilRig then return end
-
-        local wellPrompt = targetWell:FindFirstChildWhichIsA("ProximityPrompt")
-        Stats.OilRigCurrentStatus = string.format("Collecting Oil (Hold %.1fs)...", (wellPrompt and wellPrompt.HoldDuration) or 1)
-        updateOilRigStats()
-        if wellPrompt then firePrompt(wellPrompt) end
-
-        if Config.OilRigActionDelay and Config.OilRigActionDelay > 0 then
-            Stats.OilRigCurrentStatus = string.format("Action Delay: Waiting %.1fs...", Config.OilRigActionDelay)
-            updateOilRigStats() task.wait(Config.OilRigActionDelay)
-        end
-
-        local t0 = tick()
-        repeat task.wait(0.05)
-        until hasOilCarried or collectionTank:FindFirstChild("OilCarryBeam")
-            or (tick() - t0 > 3) or not Config.AutoOilRig
-    end
-
-    if not Config.AutoOilRig then return end
-
-    carryingOil = hasOilCarried or (collectionTank:FindFirstChild("OilCarryBeam") ~= nil)
-    if carryingOil then
-        local tankPrompt = collectionTank:FindFirstChildWhichIsA("ProximityPrompt")
-        local deliverCF  = CFrame.lookAt(
-            Vector3.new(collectionTank.Position.X + 3.5, root.Position.Y, collectionTank.Position.Z),
-            Vector3.new(collectionTank.Position.X,        root.Position.Y, collectionTank.Position.Z))
-        Stats.OilRigCurrentStatus = "Moving to Collection Tank..."
-        updateOilRigStats() tweenTo(deliverCF)
-        if not Config.AutoOilRig then return end
-        if (collectionTank.Position - root.Position).Magnitude > 6 then tweenTo(deliverCF) end
-
-        if tankPrompt then
-            Stats.OilRigCurrentStatus = string.format("Delivering Oil (Hold %.1fs)...", tankPrompt.HoldDuration or 1.2)
-            updateOilRigStats() firePrompt(tankPrompt)
-        end
-
-        Stats.OilRigCurrentStatus = "Waiting for server validation..."
-        updateOilRigStats()
-        local t0 = tick()
-        while (hasOilCarried or collectionTank:FindFirstChild("OilCarryBeam")) and (tick() - t0 < 4) do
-            task.wait(0.05) if not Config.AutoOilRig then break end
-        end
-        if not hasOilCarried and not collectionTank:FindFirstChild("OilCarryBeam") then
-            Stats.OilRigCurrentStatus = "Delivered Oil Successfully!"
-            updateOilRigStats()
-        end
-    end
-    task.wait(0.1)
-end
-
-task.spawn(function()
-    while true do
-        if Config.AutoOilRig then
-            local ok, err = pcall(runOilRigFarm)
-            if not ok and Config.AutoOilRig then
-                warn("[Eagle Nation Hub Oil Rig Farm Error]:", err)
-                Stats.OilRigCurrentStatus = "Error: " .. tostring(err)
-                updateOilRigStats() task.wait(1)
-            end
-        else task.wait(0.5) end
-    end
-end)
-
--- Mining Farm
-local function runMiningFarm()
-    local character = LocalPlayer.Character
-    local root      = getRootPart(character)
-    local humanoid  = character and character:FindFirstChildOfClass("Humanoid")
-    if not character or not root or not humanoid then task.wait(1) return end
-
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    local pickaxe  = character:FindFirstChild("Pickaxe") or (backpack and backpack:FindFirstChild("Pickaxe"))
-
-    if not pickaxe then
-        local miningRemotes = ReplicatedStorage:FindFirstChild("MiningRemotes")
-        local buyPickaxe    = miningRemotes and miningRemotes:FindFirstChild("BuyPickaxe")
-        if buyPickaxe then
-            pcall(function() buyPickaxe:InvokeServer() end)
-            task.wait(0.5)
-            pickaxe = character:FindFirstChild("Pickaxe") or (backpack and backpack:FindFirstChild("Pickaxe"))
-        end
-    end
-
-    if pickaxe and pickaxe.Parent == backpack then
-        humanoid:EquipTool(pickaxe) task.wait(0.2)
-    end
-
-    local bagCount = LocalPlayer:GetAttribute("EN_MiningBag") or 0
-    local bagMax   = 10
-
-    if bagCount >= bagMax then
-        local traderPos = Vector3.new(-5337.1, 5.59, -899.32)
-        local traderCF  = CFrame.lookAt(traderPos + Vector3.new(0, 0, 3.5), traderPos)
-        Stats.MiningCurrentStatus = string.format("Bag Full (%d/%d) - Moving to Ore Trader...", bagCount, bagMax)
-        updateMiningStats() tweenTo(traderCF)
-        if not Config.AutoMining then return end
-
-        if (root.Position - traderPos).Magnitude <= 16 then
-            Stats.MiningCurrentStatus = "Selling Ore..."
-            updateMiningStats()
-            local miningRemotes = ReplicatedStorage:FindFirstChild("MiningRemotes")
-            local sellRemote    = miningRemotes and miningRemotes:FindFirstChild("Sell")
-            if sellRemote then
-                local result = sellRemote:InvokeServer("all")
-                if result and type(result) == "table" and result.total and result.total > 0 then
-                    Stats.MiningEarnedCash         = Stats.MiningEarnedCash + result.total
-                    Stats.MiningEarnedXP           = Stats.MiningEarnedXP + (result.xp or 0)
-                    Stats.MiningDeliveriesCompleted = Stats.MiningDeliveriesCompleted + 1
-                    Stats.MiningCurrentStatus       = string.format("Sold for +$%s & +%s XP", tostring(result.total), tostring(result.xp or 0))
-                    updateMiningStats()
-                end
-            end
-            if Config.MiningActionDelay and Config.MiningActionDelay > 0 then
-                task.wait(Config.MiningActionDelay)
-            end
-        end
-        return
-    end
-
-    local miningJob    = Workspace:FindFirstChild("MiningJob")
-    local activeDeposits = miningJob and miningJob:FindFirstChild("ActiveDeposits")
-    if not activeDeposits then
-        Stats.MiningCurrentStatus = "Waiting for ActiveDeposits..."
-        updateMiningStats() task.wait(1) return
-    end
-
-    local deposits = {}
-    for _, deposit in ipairs(activeDeposits:GetChildren()) do
-        if (deposit:GetAttribute("SwingsLeft") or 1) > 0 then
-            table.insert(deposits, deposit)
-        end
-    end
-
-    if #deposits == 0 then
-        Stats.MiningCurrentStatus = "Waiting for deposits to spawn..."
-        updateMiningStats() task.wait(1.5) return
-    end
-
-    table.sort(deposits, function(a, b)
-        return (a:GetPivot().Position - root.Position).Magnitude < (b:GetPivot().Position - root.Position).Magnitude
-    end)
-
-    local targetDeposit = deposits[1]
-    local depositPos    = targetDeposit:GetPivot().Position
-    local approachCF    = CFrame.lookAt(
-        Vector3.new(depositPos.X, root.Position.Y, depositPos.Z + 3.8),
-        Vector3.new(depositPos.X, root.Position.Y, depositPos.Z))
-    if (root.Position - approachCF.Position).Magnitude > 2 then
-        Stats.MiningCurrentStatus = "Moving to " .. targetDeposit.Name .. "..."
-        updateMiningStats() tweenTo(approachCF)
-    end
-    if not Config.AutoMining then return end
-
-    local equippedPickaxe = character:FindFirstChild("Pickaxe")
-    if not equippedPickaxe and pickaxe and pickaxe.Parent == backpack then
-        humanoid:EquipTool(pickaxe) task.wait(0.2)
-        equippedPickaxe = character:FindFirstChild("Pickaxe")
-    end
-
-    local miningRemotes = ReplicatedStorage:FindFirstChild("MiningRemotes")
-    local swingRemote   = miningRemotes and miningRemotes:FindFirstChild("Swing")
-    local maxSwings     = 20
-    local swingsDone    = 0
-
-    while targetDeposit.Parent
-        and (targetDeposit:GetAttribute("SwingsLeft") or 0) > 0
-        and swingsDone < maxSwings do
-        if not Config.AutoMining then break end
-        if (LocalPlayer:GetAttribute("EN_MiningBag") or 0) >= bagMax then break end
-
-        Stats.MiningCurrentStatus = string.format("Mining %s (%d left)...",
-            targetDeposit.Name, targetDeposit:GetAttribute("SwingsLeft") or 0)
-        updateMiningStats()
-
-        if swingRemote then
-            swingRemote:FireServer(targetDeposit)
-        elseif equippedPickaxe then
-            equippedPickaxe:Activate()
-        end
-
-        swingsDone = swingsDone + 1
-        task.wait(1)
-    end
-
-    if Config.MiningActionDelay and Config.MiningActionDelay > 0 then
-        task.wait(Config.MiningActionDelay)
-    end
-    task.wait(0.1)
-end
-
-task.spawn(function()
-    while true do
-        if Config.AutoMining then
-            local ok, err = pcall(runMiningFarm)
-            if not ok and Config.AutoMining then
-                warn("[Eagle Nation Hub Mining Farm Error]:", err)
-                Stats.MiningCurrentStatus = "Error: " .. tostring(err)
-                updateMiningStats() task.wait(1)
-            end
-        else task.wait(0.5) end
-    end
-end)
-
--- ============================================================
--- REMOTE EVENT LISTENERS
--- ============================================================
-
-local deliveryEvent = ReplicatedStorage:FindFirstChild("deliveryEvent")
-if deliveryEvent then
-    deliveryEvent.OnClientEvent:Connect(function(eventType, cash, xp)
-        if eventType ~= "STOP" then return end
-        if Config.AutoCement then
-            if cash and type(cash) == "number" then Stats.CementEarnedCash = Stats.CementEarnedCash + cash end
-            if xp   and type(xp)   == "number" then Stats.CementEarnedXP   = Stats.CementEarnedXP   + xp   end
-            Stats.CementDeliveriesCompleted = Stats.CementDeliveriesCompleted + 1
-            Stats.CementCurrentStatus = string.format("Reward: +$%s & +%s XP", tostring(cash or 650), tostring(xp or 100))
-            pcall(updateCementStats)
-        else
-            if cash and type(cash) == "number" then Stats.EarnedCash = Stats.EarnedCash + cash end
-            if xp   and type(xp)   == "number" then Stats.EarnedXP   = Stats.EarnedXP   + xp   end
-            Stats.DeliveriesCompleted = Stats.DeliveriesCompleted + 1
-            Stats.CurrentStatus = string.format("Reward: +$%s & +%s XP", tostring(cash or 650), tostring(xp or 100))
-            pcall(updateFeedingStats)
-        end
-    end)
-end
-
-local oilRigResult = ReplicatedStorage:FindFirstChild("OilRigResult")
-if oilRigResult then
-    oilRigResult.OnClientEvent:Connect(function(eventType, cash, xp)
-        if eventType == "collected" or eventType == "handsfull" then
-            hasOilCarried = true
-        elseif eventType == "paid" or eventType == "void" or eventType == "empty" then
-            hasOilCarried = false
-        end
-        if eventType == "paid" then
-            if cash and type(cash) == "number" then Stats.OilRigEarnedCash = Stats.OilRigEarnedCash + cash end
-            if xp   and type(xp)   == "number" then Stats.OilRigEarnedXP   = Stats.OilRigEarnedXP   + xp   end
-            Stats.OilRigDeliveriesCompleted = Stats.OilRigDeliveriesCompleted + 1
-            Stats.OilRigCurrentStatus = string.format("Reward: +$%s & +%s XP", tostring(cash or 0), tostring(xp or 0))
-            pcall(updateOilRigStats)
-        end
-    end)
-end
-
--- Stats refresh tick
-task.spawn(function()
-    while true do
-        if      Config.AutoFarm    then pcall(updateFeedingStats)
-        elseif  Config.AutoCement  then pcall(updateCementStats)
-        elseif  Config.AutoOilRig  then pcall(updateOilRigStats)
-        elseif  Config.AutoMining  then pcall(updateMiningStats)
-        end
-        task.wait(1.5)
-    end
-end)
-
-WindUI:Notify({
-    Title   = "Eagle Nation Hub",
-    Content = "Eagle Nation Hub loaded successfully! Press [V] to toggle.",
-    Duration = 4,
+    Title           = "Open UI",
+    Icon            = "monitor",
+    CornerRadius    = UDim.new(0, 16),
+    StrokeThickness = 2,
+    Color           = ColorSequence.new(Color3.fromHex("FF0F7B"), Color3.fromHex("F89B29")),
+    OnlyMobile      = false,
+    Enabled         = true,
 })
