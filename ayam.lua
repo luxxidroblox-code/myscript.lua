@@ -514,6 +514,7 @@ local function raceInstantTo(model, targetCFrame)
     workspace.Gravity = 196.2
 end
 
+-- doc 2 runRaceLoop: remote listen + task.wait(12), raceTweenTo doc 1
 local function runRaceLoop()
     local ShowRaceTrack = ReplicatedStorage.Race.Remotes.ShowRaceTrack
 
@@ -527,50 +528,29 @@ local function runRaceLoop()
             char2:PivotTo(raceCheckpoints[1])
         end
 
-        local freezeConn = RunService.Heartbeat:Connect(function()
-            local v = getRaceVehicle()
-            if v then raceResetVelocity(v) end
-        end)
-
         local raceStarted = false
         local conn
-
-        conn = ShowRaceTrack.OnClientEvent:Connect(function(...)
-            local state = select(1, ...)
-            if state == nil or state == true or state == 1
-               or (type(state) == "string" and (state:lower():find("start") or state:lower():find("show"))) then
+        conn = ShowRaceTrack.OnClientEvent:Connect(function(state)
+            if state == true then
                 raceStarted = true
+                conn:Disconnect()
             end
         end)
 
         local elapsed = 0
-        while not raceStarted and elapsed < 90 and raceRunning do
+        while not raceStarted and elapsed < 60 and raceRunning do
             task.wait(0.5)
             elapsed += 0.5
-            local raceFolder = workspace:FindFirstChild("Race")
-            if raceFolder then
-                local track = raceFolder:FindFirstChildWhichIsA("Model", true)
-                          or raceFolder:FindFirstChildWhichIsA("Folder", true)
-                if track then
-                    raceStarted = true
-                end
-            end
         end
-
-        conn:Disconnect()
-        freezeConn:Disconnect()
+        if conn then conn:Disconnect() end
 
         if not raceStarted then
+            warn("[AutoRace] ShowRaceTrack timeout — retrying...")
             task.wait(3)
             continue
         end
 
-        local countdownFreeze = RunService.Heartbeat:Connect(function()
-            local v = getRaceVehicle()
-            if v then raceResetVelocity(v) end
-        end)
-        task.wait(5)
-        countdownFreeze:Disconnect()
+        task.wait(12)
 
         for i = 2, #raceCheckpoints do
             if not raceRunning then break end
@@ -581,10 +561,10 @@ local function runRaceLoop()
             else
                 char2:PivotTo(raceCheckpoints[i])
             end
-            task.wait(0.8)
+            task.wait(1)
         end
 
-        task.wait(5)
+        task.wait(2)
     end
 end
 
