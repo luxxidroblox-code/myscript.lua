@@ -1,11 +1,10 @@
 -- VoidlineHub | Bus Explorer Indonesia | Truck Autofarm
--- WindUI | DX-SR Hub | v0.0.0.3
---   PATCH: Malang-only job roller (spam starter until arrow points Malang)
---          Anti-trip HRP upright placement on every teleport to starter/spawner
+-- WindUI | DX-SR Hub | v0.0.0.2
 
 local Players          = game:GetService("Players")
 local Workspace        = game:GetService("Workspace")
 local ReplicatedStorage= game:GetService("ReplicatedStorage")
+local VirtualInputMgr  = game:GetService("VirtualInputManager")
 local RunService       = game:GetService("RunService")
 local TweenService     = game:GetService("TweenService")
 local HttpService      = game:GetService("HttpService")
@@ -17,36 +16,25 @@ for _, conn in getconnections(LocalPlayer.Idled) do
     pcall(conn.Disable, conn)
     pcall(conn.Disconnect, conn)
 end
-LocalPlayer.Idled:Connect(function()
+local _idleConn = LocalPlayer.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.zero)
 end)
 
--- ── Upright CFrame helper (lifted from Projectsion) ───────────────────────
--- *keeps character standing straight — no tumble on teleport*
+-- ── uprightCF — strip pitch/roll, keep yaw + y-offset (ported from Projectsion) ──
 local function uprightCF(cf, yOffset)
     yOffset   = yOffset or 0
-    local pos = cf.Position + Vector3.new(0, yOffset, 0)
+    local pos  = cf.Position + Vector3.new(0, yOffset, 0)
     local look = cf.LookVector
     local yaw  = math.atan2(look.X, look.Z)
     return CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
 end
 
--- ── Teleport helpers ───────────────────────────────────────────────────────
--- *all teleports go through uprightCF now — no more ragdoll on arrival*
+-- ── Teleport / proximity helpers ───────────────────────────────────────────
 local function teleport(cf)
     local char = LocalPlayer.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.CFrame = uprightCF(cf, 0)
-    end
-end
-
-local function teleportAbove(cf, offset)
-    local char = LocalPlayer.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.CFrame = uprightCF(cf, offset or 3)
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = uprightCF(cf)
     end
 end
 
@@ -79,11 +67,11 @@ local function createBaseParts()
         for _, b in ipairs(bases) do
             local part = Workspace:FindFirstChild(b.name)
             if not part then
-                part              = Instance.new("Part")
-                part.Name         = b.name
-                part.Anchored     = true
-                part.CanCollide   = true
-                part.Parent       = Workspace
+                part            = Instance.new("Part")
+                part.Name       = b.name
+                part.Anchored   = true
+                part.CanCollide = true
+                part.Parent     = Workspace
             end
             part.Size   = Vector3.new(1000, 5, 1000)
             part.CFrame = CFrame.new(b.pos)
@@ -101,10 +89,11 @@ local function destroyMap()
     end)
 end
 
--- ── GUI suppression ────────────────────────────────────────────────────────
+-- ── GUI suppression (job screen / map frame only) ──────────────────────────
 pcall(function()
     local gui = LocalPlayer:WaitForChild("PlayerGui", 5) or LocalPlayer:FindFirstChild("PlayerGui")
     if not gui then return end
+
     local function hideGui(sg)
         if sg and sg:IsA("ScreenGui") then
             sg.Enabled = false
@@ -113,6 +102,7 @@ pcall(function()
             end)
         end
     end
+
     local function hideFrame(f)
         if f then
             f.Visible = false
@@ -121,16 +111,18 @@ pcall(function()
             end)
         end
     end
+
     local job = gui:FindFirstChild("Job")
     if job then hideGui(job) end
     gui.ChildAdded:Connect(function(child)
         if child.Name == "Job" then hideGui(child) end
     end)
+
     task.spawn(function()
-        local main = gui:WaitForChild("Main", 5)
-        local cont = main and main:WaitForChild("Container", 5)
-        local hub  = cont and cont:WaitForChild("Hub", 5)
-        local mapF = hub  and (hub:FindFirstChild("MapFrame") or hub:WaitForChild("MapFrame", 5))
+        local main  = gui:WaitForChild("Main", 5)
+        local cont  = main and main:WaitForChild("Container", 5)
+        local hub   = cont and cont:WaitForChild("Hub", 5)
+        local mapF  = hub  and (hub:FindFirstChild("MapFrame") or hub:WaitForChild("MapFrame", 5))
         if mapF then hideFrame(mapF) end
     end)
 end)
@@ -158,14 +150,19 @@ local TruckArea = require(ReplicatedStorage.Shared.TruckArea)
 
 -- ── DataReplication (cash reader) ─────────────────────────────────────────
 local DataRep
-pcall(function() DataRep = require(ReplicatedStorage.Services.DataReplication) end)
+pcall(function()
+    DataRep = require(ReplicatedStorage.Services.DataReplication)
+end)
 
 local function getCash()
     local cash = 0
     pcall(function()
         if DataRep then
-            if DataRep.GetCash then cash = DataRep:GetCash()
-            elseif DataRep.GetData then cash = DataRep:GetData().Cash end
+            if DataRep.GetCash then
+                cash = DataRep:GetCash()
+            elseif DataRep.GetData then
+                cash = DataRep:GetData().Cash
+            end
         end
     end)
     return cash
@@ -215,9 +212,8 @@ end
 
 -- ── Remote event wiring ────────────────────────────────────────────────────
 local NetContainer = ReplicatedStorage:WaitForChild("NetworkContainer", 5)
-local JobRemote    = NetContainer
-    and NetContainer:FindFirstChild("RemoteEvents")
-    and NetContainer.RemoteEvents:FindFirstChild("Job")
+local JobRemote    = NetContainer and NetContainer:FindFirstChild("RemoteEvents")
+                     and NetContainer.RemoteEvents:FindFirstChild("Job")
 
 if JobRemote then
     JobRemote.OnClientEvent:Connect(function(action, data)
@@ -271,118 +267,23 @@ local function setCountdownText(txt)
     if cdLabel then cdLabel.Text = txt end
 end
 
--- ── Starter finder ─────────────────────────────────────────────────────────
-local function getTruckStarter()
-    local truck = Workspace:FindFirstChild("Etc")
-        and Workspace.Etc:FindFirstChild("Job")
-        and Workspace.Etc.Job:FindFirstChild("Truck")
-    local starter = truck and truck:FindFirstChild("Starter")
-    if starter then
-        return starter,
-               starter:FindFirstChild("Prompt", true)
-               or starter:FindFirstChildWhichIsA("ProximityPrompt", true)
-    end
-    return nil, nil
-end
-
--- ── Waypoint destination reader (mirrors Projectsion) ─────────────────────
-local function getArrowDestinationName()
-    -- read from the Waypoint folder the server sets after job accept
-    local waypointFolder = Workspace:FindFirstChild("Etc")
-        and Workspace.Etc:FindFirstChild("Waypoint")
-    if not waypointFolder then return nil end
-    local wp = waypointFolder:FindFirstChild("Waypoint")
-    if not wp then return nil end
-    local gui = wp:FindFirstChildOfClass("BillboardGui") or wp:FindFirstChildOfClass("SurfaceGui")
-    if gui then
-        local tl = gui:FindFirstChildOfClass("TextLabel")
-        if tl and tl.Text ~= "" then return tl.Text:lower(), wp end
-    end
-    return wp.Name:lower(), wp
-end
-
--- ── Malang-only spam roller (adapted from Projectsion rollUntilTarget) ─────
--- *fires Unemployed → Truck → starter prompt in a tight loop*
--- *stops only when arrow/waypoint resolves to Malang*
--- *uprightCF placement on starter prevents the character from tripping*
-local function rollUntilMalang()
-    local attempt = 0
-    while farmActive do
-        attempt = attempt + 1
-
-        -- clear previous job
-        if JobRemote then JobRemote:FireServer("Unemployed") end
-        task.wait(0.08)
-
-        -- request Truck job
-        if JobRemote then JobRemote:FireServer("Truck") end
-        task.wait(0.05)
-
-        -- walk to starter and fire prompt — upright placement (Projectsion pattern)
-        local starterModel, starterPrompt = getTruckStarter()
-        if starterModel and starterPrompt then
-            local char = LocalPlayer.Character
-            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                hrp.CFrame = uprightCF(starterModel:GetPivot(), 3)
-            end
-            firePrompt(starterPrompt)
-            firePrompt(starterPrompt)   -- double-fire to ensure register
-        end
-
-        -- wait a brief beat for the server to set the arrow/waypoint
-        task.wait(0.12)
-
-        -- read destination — two detection paths:
-        --   1. arrowTarget set by JobRemote.OnClientEvent ("SetArrow") → nearestArea
-        --   2. Waypoint folder text (Projectsion path) → string match
-        local isMalang = false
-        local destLabel = "?"
-
-        if arrowTarget then
-            local areaIdx, areaTxt = nearestArea(arrowTarget)
-            -- TruckArea index 4 = Malang (same as original DX-SR check)
-            if areaIdx == 4 then
-                isMalang = true
-                destLabel = areaTxt or "Malang"
-            else
-                destLabel = areaTxt or ("area " .. tostring(areaIdx))
-            end
-        else
-            local wpLabel = getArrowDestinationName()
-            if wpLabel and wpLabel:find("malang") then
-                isMalang = true
-                destLabel = "Malang (waypoint)"
-            elseif wpLabel then
-                destLabel = wpLabel
-            end
-        end
-
-        if UI_paragraphs and UI_paragraphs.rollStatus then
-            UI_paragraphs.rollStatus:SetDesc(
-                string.format("Attempt %d — %s %s", attempt, destLabel,
-                    isMalang and "✔" or "✘")
-            )
-        end
-
-        if isMalang then
-            arrowCount = 0
-            arrowTarget = nil
-            return true
-        end
-
-        -- not Malang — reset arrow state and loop immediately
-        arrowCount  = 0
-        arrowTarget = nil
-    end
-    return false
-end
-
 -- ── Main farm loop ─────────────────────────────────────────────────────────
 local SPAWN_CF  = CFrame.new(34938, 135, -54576)
 local SPAWNER_V = Vector3.new(35161.36, 139, -54683.41)
 local BASE_CF   = CFrame.new(-7848, 386, 46763)
 local BASE_DEST = CFrame.new(-7845, 386, 46865)
+local BASE_POS  = Vector3.new(-7845.344, 389.014, 46865.543)
+
+local function getTruckStarter()
+    local truck   = Workspace:FindFirstChild("Etc")
+        and Workspace.Etc:FindFirstChild("Job")
+        and Workspace.Etc.Job:FindFirstChild("Truck")
+    local starter = truck and truck:FindFirstChild("Starter")
+    if starter then
+        return starter:FindFirstChild("Prompt", true)
+            or starter:FindFirstChildWhichIsA("ProximityPrompt", true)
+    end
+end
 
 local function startFarm()
     task.spawn(function()
@@ -392,27 +293,44 @@ local function startFarm()
 
         while farmActive do
             local tripStart = os.clock()
+            local gotRoute  = false
 
-            -- ── Phase 1: roll until Malang ──────────────────────────────
-            local gotMalang = rollUntilMalang()
-            if not farmActive or not gotMalang then break end
+            -- ── Phase 1: Get Cirebon_Baranangsiang4 route ─────────────────
+            while farmActive and not gotRoute do
+                arrowCount  = 0
+                arrowTarget = nil
+                if JobRemote then JobRemote:FireServer("Truck") end
 
-            -- ── Phase 2: get / spawn truck ──────────────────────────────
+                -- uprightCF applied via teleport() — no trip on starter approach
+                local starter = getTruckStarter()
+                if starter then
+                    teleport(uprightCF(starter:GetPivot(), 3))
+                    firePrompt(starter)
+                end
+
+                local t0 = os.clock()
+                while farmActive and arrowCount < 2 do
+                    if os.clock() - t0 > 0.5 then break end
+                    task.wait()
+                end
+                if not farmActive then break end
+                if arrowCount < 2 or not arrowTarget then continue end
+
+                local areaIdx = nearestArea(arrowTarget)
+                if areaIdx == 4 then gotRoute = true end
+            end
+            if not farmActive or not gotRoute then break end
+
+            -- ── Phase 2: Spawn truck ───────────────────────────────────────
             local spawnerRoot = Workspace.Etc.Job.Truck.Spawner
             local car         = getOwnedCar()
-
             if not car then
-                -- *uprightCF on spawner approach — Projectsion anti-trip*
+                -- uprightCF on spawner approach — character lands upright
+                teleport(uprightCF(CFrame.new(SPAWNER_V), 3))
                 local spawnPart = spawnerRoot:FindFirstChild("Part")
                               or  spawnerRoot:WaitForChild("Part", 3)
                 if spawnPart then
-                    teleportAbove(spawnPart.CFrame, 3)
-                else
-                    local char = LocalPlayer.Character
-                    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        hrp.CFrame = uprightCF(CFrame.new(SPAWNER_V), 3)
-                    end
+                    teleport(uprightCF(spawnPart.CFrame, 2))
                 end
 
                 local deadline = os.clock()
@@ -425,7 +343,9 @@ local function startFarm()
                         firePrompt(prompt)
                     elseif not spawnPart then
                         spawnPart = spawnerRoot:FindFirstChild("Part")
-                        if spawnPart then teleportAbove(spawnPart.CFrame, 3) end
+                        if spawnPart then
+                            teleport(uprightCF(spawnPart.CFrame, 2))
+                        end
                     end
                     local t1 = os.clock()
                     while farmActive and os.clock() - t1 < 0.4 do
@@ -434,7 +354,7 @@ local function startFarm()
                         task.wait(0.05)
                     end
                     if os.clock() - deadline > 6 then
-                        if spawnPart then teleportAbove(spawnPart.CFrame, 3) end
+                        if spawnPart then teleport(uprightCF(spawnPart.CFrame, 2)) end
                         deadline = os.clock()
                     end
                 end
@@ -443,7 +363,6 @@ local function startFarm()
 
             task.wait(0.7)
 
-            -- remove trailer immediately on spawn and on any future attach
             local trailerConn = car.ChildAdded:Connect(function(child)
                 if child.Name:lower():find("trailer") then
                     task.defer(function() pcall(child.Destroy, child) end)
@@ -453,13 +372,12 @@ local function startFarm()
                 if child.Name:lower():find("trailer") then pcall(child.Destroy, child) end
             end
 
-            -- ── Phase 3: sit in drive seat ──────────────────────────────
+            -- ── Phase 3: Sit in DriveSeat ─────────────────────────────────
             local driveSeat = car:WaitForChild("DriveSeat", 5)
             if driveSeat then
                 local seatPrompt = driveSeat:WaitForChild("PromptDriveSeat", 3)
                 if seatPrompt then
-                    -- *uprightCF — no trip on seating teleport*
-                    teleportAbove(driveSeat.CFrame, 3)
+                    teleport(uprightCF(driveSeat.CFrame, 3))
                     task.wait(0.2)
                     firePrompt(seatPrompt)
                 end
@@ -475,7 +393,7 @@ local function startFarm()
                         task.wait(0.1)
                         local p = driveSeat:FindFirstChild("PromptDriveSeat")
                         if p then
-                            teleportAbove(driveSeat.CFrame, 3)
+                            teleport(uprightCF(driveSeat.CFrame, 3))
                             task.wait(0.1)
                             firePrompt(p)
                         end
@@ -486,7 +404,7 @@ local function startFarm()
                 if os.clock() - t2 > 1.5 and driveSeat then
                     local p = driveSeat:FindFirstChild("PromptDriveSeat")
                     if p then
-                        teleportAbove(driveSeat.CFrame, 3)
+                        teleport(uprightCF(driveSeat.CFrame, 3))
                         task.wait(0.1)
                         firePrompt(p)
                     end
@@ -501,7 +419,7 @@ local function startFarm()
             end
             if not farmActive then break end
 
-            -- ── Phase 4: pivot truck to base ────────────────────────────
+            -- ── Phase 4: PivotTo base ──────────────────────────────────────
             local pivotAttempts = 0
             while farmActive and pivotAttempts < 10 do
                 car:PivotTo(BASE_CF)
@@ -522,22 +440,20 @@ local function startFarm()
                 end
                 task.wait(0.15)
                 local ds2 = car:FindFirstChild("DriveSeat") or car:WaitForChild("DriveSeat", 2)
-                local sp2 = ds2 and (
-                    ds2:FindFirstChild("PromptDriveSeat")
-                    or ds2:FindFirstChildWhichIsA("ProximityPrompt", true)
-                )
+                local sp2 = ds2 and (ds2:FindFirstChild("PromptDriveSeat")
+                                   or ds2:FindFirstChildWhichIsA("ProximityPrompt", true))
                 if ds2 and sp2 then
-                    teleportAbove(ds2.CFrame, 3)
+                    teleport(uprightCF(ds2.CFrame, 3))
                     task.wait(0.1)
                     firePrompt(sp2)
                 end
                 local t4 = os.clock()
                 while farmActive do
-                    local char2 = LocalPlayer.Character
-                    local hum2  = char2 and char2:FindFirstChild("Humanoid")
-                    if hum2 and hum2.SeatPart and (not ds2 or hum2.SeatPart == ds2) then break end
+                    local char = LocalPlayer.Character
+                    local hum  = char and char:FindFirstChild("Humanoid")
+                    if hum and hum.SeatPart and (not ds2 or hum.SeatPart == ds2) then break end
                     if os.clock() - t4 > 1.2 and ds2 and sp2 then
-                        teleportAbove(ds2.CFrame, 3)
+                        teleport(uprightCF(ds2.CFrame, 3))
                         task.wait(0.1)
                         firePrompt(sp2)
                     end
@@ -553,7 +469,7 @@ local function startFarm()
             if not farmActive or not car or not car.Parent then continue end
             if (car:GetPivot().Position - BASE_CF.Position).Magnitude >= 150 then continue end
 
-            -- ── Phase 5: countdown ──────────────────────────────────────
+            -- ── Phase 5: Job delay countdown ──────────────────────────────
             local elapsed   = os.clock() - tripStart
             local remaining = jobDelay - elapsed
             local lastSec   = nil
@@ -580,7 +496,7 @@ local function startFarm()
             resetCountdown()
             if not farmActive then break end
 
-            -- ── Phase 6: deliver and track earnings ─────────────────────
+            -- ── Phase 6: Collect reward ────────────────────────────────────
             local cashBefore = getCash()
             car:PivotTo(BASE_DEST)
             if cashBefore > 0 then
@@ -607,13 +523,14 @@ local function startFarm()
                 end
             end
 
-            -- ── Phase 7: reset for next cycle ───────────────────────────
+            -- ── Phase 7: Dismount and reset ───────────────────────────────
             local char = LocalPlayer.Character
             local hum  = char and char:FindFirstChild("Humanoid")
             if hum then hum.Sit = false end
             teleport(SPAWN_CF)
-            if JobRemote then JobRemote:FireServer("Unemployed") end
-            task.wait(0.05)
+            if JobRemote then JobRemote:FireServer("Truck") end
+            local starter = getTruckStarter()
+            if starter then firePrompt(starter) end
         end
     end)
 end
@@ -634,6 +551,7 @@ task.spawn(function()
                 UI_paragraphs.elapsed:SetDesc("00:00")
             end
         end
+
         if UI_paragraphs.currentMoney then
             UI_paragraphs.currentMoney:SetDesc(fmtRp(readDisplayCash()))
         end
@@ -653,7 +571,6 @@ task.spawn(function()
             UI_paragraphs.youGot:SetDesc(fmtRp(lastEarned))
         end
 
-        -- suppress job screen / map frame each tick
         pcall(function()
             local gui = LocalPlayer:FindFirstChild("PlayerGui")
             if not gui then return end
@@ -700,16 +617,12 @@ local function sendWebhook(title, color, extraFields)
         local cleanUrl = webhookUrl:gsub("%?.*$", "")
         if webhookMsgId then
             local res = req({ Url = cleanUrl .. "/messages/" .. webhookMsgId,
-                              Method = "POST",
-                              Headers = { ["Content-Type"] = "application/json" },
-                              Body = body })
+                              Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
             if res and res.StatusCode and res.StatusCode >= 200 and res.StatusCode < 300 then return end
             webhookMsgId = nil
         end
         local res = req({ Url = cleanUrl .. "?wait=true",
-                          Method = "POST",
-                          Headers = { ["Content-Type"] = "application/json" },
-                          Body = body })
+                          Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
         if res and res.Body then
             local ok, data = pcall(HttpService.JSONDecode, HttpService, res.Body)
             if ok and data and data.id then webhookMsgId = tostring(data.id) end
@@ -723,7 +636,7 @@ local function alertWebhook(reason)
     webhookAlerted = true
     sendWebhook("CDID Truck – Alert", 15548997, {
         { name = "Reason", value = "```" .. tostring(reason) .. "```", inline = false },
-        { name = "Status", value = "```Disconnected```",               inline = true  },
+        { name = "Status", value  = "```Disconnected```",              inline = true  },
     })
 end
 
@@ -740,7 +653,8 @@ pcall(function()
         local function checkPrompt(child)
             if child.Name == "ErrorPrompt" then
                 local area = child:FindFirstChild("MessageArea")
-                local lbl  = area and area.ErrorFrame and area.ErrorFrame:FindFirstChild("ErrorMessage")
+                local lbl  = area and area:FindFirstChild("ErrorFrame")
+                             and area.ErrorFrame:FindFirstChild("ErrorMessage")
                 alertWebhook(lbl and lbl.Text or "Roblox Prompt Disconnected")
             end
         end
@@ -775,28 +689,28 @@ local WindUI = loadstring(game:HttpGet(
 ))()
 
 local Window = WindUI:CreateWindow({
-    Title        = "CDID x Truck",
-    Icon         = "truck",
-    Author       = "DX-SR Hub",
-    Folder       = "DX-SR",
-    Size         = UDim2.fromOffset(580, 480),
-    MinSize      = Vector2.new(560, 360),
-    MaxSize      = Vector2.new(850, 580),
-    ToggleKey    = Enum.KeyCode.V,
-    Transparent  = true,
-    Theme        = "Dark",
-    Resizable    = true,
+    Title       = "CDID x Truck",
+    Icon        = "truck",
+    Author      = "DX-SR Hub",
+    Folder      = "DX-SR",
+    Size        = UDim2.fromOffset(580, 460),
+    MinSize     = Vector2.new(560, 350),
+    MaxSize     = Vector2.new(850, 560),
+    ToggleKey   = Enum.KeyCode.V,
+    Transparent = true,
+    Theme       = "Dark",
+    Resizable   = true,
     SideBarWidth = 200,
     BackgroundImageTransparency = 0.42,
     HideSearchBar    = false,
     ScrollBarEnabled = false,
 })
-Window:Tag({ Title = "v0.0.0.3",  Icon = "github",      Color = Color3.fromHex("#30ff6a"), Radius = 13 })
+Window:Tag({ Title = "v0.0.0.2",  Icon = "github",      Color = Color3.fromHex("#30ff6a"), Radius = 13 })
 Window:Tag({ Title = "DX-SR Hub", Icon = "text-cursor", Color = Color3.fromHex("#1E3A8A"), Radius = 13 })
 WindUI:Popup({
     Title   = "Update log",
     Icon    = "info",
-    Content = "v0.0.0.3 — Malang-only roller + anti-trip teleport",
+    Content = "Made by DX-SR, Initiate success",
     Buttons = { { Title = "Continue", Icon = "arrow-right", Callback = function() end, Variant = "Primary" } },
 })
 
@@ -846,7 +760,6 @@ truckTab:Input({
 truckTab:Section({ Title = "Information", Opened = true })
 pcall(function() truckTab:Space() end)
 
--- countdown bar (bottom of screen)
 do
     local pGui = LocalPlayer:WaitForChild("PlayerGui", 5) or LocalPlayer:FindFirstChild("PlayerGui")
     if pGui then
@@ -858,12 +771,12 @@ do
         sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
         local bg = Instance.new("Frame")
-        bg.Size                    = UDim2.new(1, 0, 0, 36)
-        bg.Position                = UDim2.new(0, 0, 1, -50)
-        bg.BackgroundColor3        = Color3.fromRGB(10, 10, 15)
-        bg.BackgroundTransparency  = 0.25
-        bg.BorderSizePixel         = 0
-        bg.Parent                  = sg
+        bg.Size                   = UDim2.new(1, 0, 0, 36)
+        bg.Position               = UDim2.new(0, 0, 1, -50)
+        bg.BackgroundColor3       = Color3.fromRGB(10, 10, 15)
+        bg.BackgroundTransparency = 0.25
+        bg.BorderSizePixel        = 0
+        bg.Parent                 = sg
 
         local bar = Instance.new("Frame")
         bar.Name             = "BarBg"
@@ -885,39 +798,36 @@ do
         barFill = fill
 
         local lbl = Instance.new("TextLabel")
-        lbl.Size                  = UDim2.new(1, 0, 0, 18)
-        lbl.Position              = UDim2.new(0, 8, 0, 10)
-        lbl.BackgroundTransparency= 1
-        lbl.Font                  = Enum.Font.GothamBold
-        lbl.Text                  = "0s"
-        lbl.TextColor3            = Color3.fromRGB(224, 242, 254)
-        lbl.TextSize              = 13
-        lbl.TextXAlignment        = Enum.TextXAlignment.Left
-        lbl.Parent                = bg
+        lbl.Size                   = UDim2.new(1, 0, 0, 18)
+        lbl.Position               = UDim2.new(0, 8, 0, 10)
+        lbl.BackgroundTransparency = 1
+        lbl.Font                   = Enum.Font.GothamBold
+        lbl.Text                   = "0s"
+        lbl.TextColor3             = Color3.fromRGB(224, 242, 254)
+        lbl.TextSize               = 13
+        lbl.TextXAlignment         = Enum.TextXAlignment.Left
+        lbl.Parent                 = bg
         cdLabel = lbl
 
         sg.Parent = pGui
     end
 end
 
-UI_paragraphs.rollStatus   = truckTab:Paragraph({ Title = "Job Roller",       Desc = "Waiting..." })
-UI_paragraphs.countdown    = truckTab:Paragraph({ Title = "Delay Countdown",  Desc = "0s" })
-UI_paragraphs.elapsed      = truckTab:Paragraph({ Title = "Time Elapsed",     Desc = "00:00" })
-UI_paragraphs.currentMoney = truckTab:Paragraph({ Title = "Current Money",    Desc = "Rp 0" })
-UI_paragraphs.totalEarned  = truckTab:Paragraph({ Title = "Total Earning",    Desc = "Rp 0" })
-UI_paragraphs.perHour      = truckTab:Paragraph({ Title = "Earning / Hour",   Desc = "Rp 0" })
-UI_paragraphs.youGot       = truckTab:Paragraph({ Title = "You Got",          Desc = "Rp 0" })
+UI_paragraphs.countdown    = truckTab:Paragraph({ Title = "Delay Countdown", Desc = "0s" })
+UI_paragraphs.elapsed      = truckTab:Paragraph({ Title = "Time Elapsed",    Desc = "00:00" })
+UI_paragraphs.currentMoney = truckTab:Paragraph({ Title = "Current Money",   Desc = "Rp 0" })
+UI_paragraphs.totalEarned  = truckTab:Paragraph({ Title = "Total Earning",   Desc = "Rp 0" })
+UI_paragraphs.perHour      = truckTab:Paragraph({ Title = "Earning / Hour",  Desc = "Rp 0" })
+UI_paragraphs.youGot       = truckTab:Paragraph({ Title = "You Got",         Desc = "Rp 0" })
 
 -- ── Config tab ─────────────────────────────────────────────────────────────
 local cfgTab = mainSection:Tab({ Title = "Configuration", Icon = "settings" })
 cfgTab:Section({ Title = "Theme", Opened = true })
 pcall(function() cfgTab:Space() end)
 
-local themes = {
-    "Dark","Light","Rose","Plant","Red","Indigo","Sky","Violet",
-    "Amber","Emerald","Midnight","Crimson","Monokai Pro","Cotton Candy",
-    "Mellowsi","Rainbow",
-}
+local themes = { "Dark","Light","Rose","Plant","Red","Indigo","Sky","Violet",
+                 "Amber","Emerald","Midnight","Crimson","Monokai Pro","Cotton Candy",
+                 "Mellowsi","Rainbow" }
 cfgTab:Dropdown({
     Title    = "Select Theme",
     Desc     = "Choose UI Theme",
