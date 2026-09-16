@@ -1,930 +1,981 @@
-local marketplaceService = game:GetService("MarketplaceService")
-local players = game:GetService("Players")
-local runService = game:GetService("RunService")
-local userInputService = game:GetService("UserInputService")
-local coreGui = game:GetService("CoreGui")
-local workspace = game:GetService("Workspace")
-local v1, v2 = pcall(function() return marketplaceService:GetProductInfo(game.PlaceId) end)
-local name = v1 and v2.Name or ""
-
-local f1, localPlayer, currentCamera, v3, v4, v5, v6, screenGui, f2, frame, instance, instance2,
-  instance3, v7, v8, v9, v10, instance4, instance5, instance6, instance7, v11, instance8,
-  instance9, instance10, v12, instance11, instance12, instance13, v13, f3
-
-if not string.find(string.lower(name), "tr legacy") then
-  local trLegacyError = Instance.new("ScreenGui")
-  trLegacyError.Name = "TR_Legacy_Error"
-  trLegacyError.Parent = coreGui
-
-  local instance14 = Instance.new("Frame", trLegacyError)
-  instance14.Size = UDim2.new(0, 380, 0, 110)
-  instance14.Position = UDim2.new(0.5, -190, 0.5, -55)
-  instance14.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
-  instance14.BorderSizePixel = 0
-
-  Instance.new("UICorner", instance14).CornerRadius = UDim.new(0, 10)
-
-  local instance15 = Instance.new("TextLabel", instance14)
-  instance15.Size = UDim2.new(1, -20, 1, 0)
-  instance15.Position = UDim2.new(0, 10, 0, 0)
-  instance15.BackgroundTransparency = 1
-
-  instance15.Text = "âŒ ACCESO DENEGADO\n\nEste script solo funciona en el juego TR Legacy.\nDetectado: "
-    .. (name ~= "" and name or "Desconocido") .. "\nEl script se ha detenido."
-
-  instance15.TextColor3 = Color3.fromRGB(255, 100, 100)
-  instance15.TextSize = 12
-  instance15.Font = Enum.Font.GothamBold
-  instance15.TextWrapped = true
-
-  task.wait(6)
-  trLegacyError:Destroy()
-  return
-else
-  localPlayer = players.LocalPlayer
-  currentCamera = workspace.CurrentCamera
-
-  v3 = {
-    TurboEnabled = false,
-    TurboForce = 5,
-    BrakeEnabled = false,
-    BrakeForce = 5,
-    NoclipEnabled = false,
-    TurboKey = Enum.KeyCode.E,
-    IsBindingKey = false,
-    BetterHandling = false,
-    ESPBox = false,
-    ESPTracer = false,
-    ESPHealth = false,
-    ESPInfo = false,
-    SelectedPlayer = nil,
-    IsSpectating = false,
-  }
-
-  v4 = false
-  v5 = {}
-  v6 = nil
-
-  screenGui = Instance.new("ScreenGui")
-  screenGui.Name = "TRLegacyMenu_" .. tostring(math.random(1000, 9999))
-
-  if syn and syn.protect_gui then
-    syn.protect_gui(screenGui)
-    screenGui.Parent = coreGui
-  elseif gethui then
-    screenGui.Parent = gethui()
-  else
-    screenGui.Parent = coreGui
-  end
-
-  screenGui.ResetOnSpawn = false
-  screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-
-  function f2(parent, p1)
-    local uiCorner = Instance.new("UICorner")
-    uiCorner.CornerRadius = UDim.new(0, p1 or 8)
-    uiCorner.Parent = parent
-
-    return uiCorner
-  end
-
-  frame = Instance.new("Frame")
-  frame.Size = UDim2.new(0, 520, 0, 480)
-  frame.Position = UDim2.new(0.5, -260, 0.5, -240)
-  frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
-  frame.BorderSizePixel = 0
-  frame.Active = true
-  frame.Draggable = true
-  frame.Parent = screenGui
-
-  f2(frame, 12)
-
-  local instance16 = Instance.new("Frame", frame)
-  instance16.Size = UDim2.new(1, 0, 0, 40)
-  instance16.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-  instance16.BorderSizePixel = 0
-
-  f2(instance16, 12)
-
-  local instance17 = Instance.new("TextLabel", instance16)
-  instance17.Size = UDim2.new(1, -90, 1, 0)
-  instance17.Position = UDim2.new(0, 15, 0, 0)
-  instance17.BackgroundTransparency = 1
-  instance17.Text = "âš™ï¸ TR Legacy MENU + Noclip Vehicular con Colisiones"
-  instance17.TextColor3 = Color3.fromRGB(255, 255, 255)
-  instance17.TextSize = 13
-  instance17.Font = Enum.Font.GothamBold
-  instance17.TextXAlignment = Enum.TextXAlignment.Left
-
-  local instance18 = Instance.new("TextButton", instance16)
-  instance18.Size = UDim2.new(0, 30, 0, 30)
-  instance18.Position = UDim2.new(1, -35, 0.5, -15)
-  instance18.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
-  instance18.Text = "X"
-  instance18.TextColor3 = Color3.fromRGB(255, 255, 255)
-  instance18.TextSize = 12
-  instance18.Font = Enum.Font.GothamBold
-
-  f2(instance18, 6)
-
-  instance = Instance.new("Frame", frame)
-  instance.Size = UDim2.new(1, 0, 0, 35)
-  instance.Position = UDim2.new(0, 0, 0, 40)
-  instance.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-  instance.BorderSizePixel = 0
-
-  instance2 = Instance.new("Frame", frame)
-  instance2.Size = UDim2.new(1, -20, 1, -95)
-  instance2.Position = UDim2.new(0, 10, 0, 85)
-  instance2.BackgroundTransparency = 1
-
-  instance3 = Instance.new("TextButton", instance16)
-  instance3.Size = UDim2.new(0, 30, 0, 30)
-  instance3.Position = UDim2.new(1, -70, 0.5, -15)
-  instance3.BackgroundColor3 = Color3.fromRGB(80, 80, 95)
-  instance3.Text = "-"
-  instance3.TextColor3 = Color3.fromRGB(255, 255, 255)
-  instance3.TextSize = 14
-  instance3.Font = Enum.Font.GothamBold
-
-  f2(instance3, 6)
-  v7 = false
-
-  instance3.MouseButton1Click:Connect(function()
-    v7 = not v7
-
-    if v7 then
-      instance3.Text = "+"
-      frame.Size = UDim2.new(0, 520, 0, 40)
-      instance.Visible = false
-      instance2.Visible = false
-    else
-      instance3.Text = "-"
-      frame.Size = UDim2.new(0, 520, 0, 480)
-      instance.Visible = true
-      instance2.Visible = true
-    end
-  end)
-
-  instance18.MouseButton1Click:Connect(function()
-    if v6 then
-      for index, value in ipairs(v6:GetDescendants()) do
-        if value:IsA("BasePart") then
-          value.CanCollide = true
-        end
-      end
-    end
-
-    screenGui:Destroy()
-
-    for key, value2 in pairs(v5) do
-      for key2, value3 in pairs(value2) do
-        local v14 = value3
-        pcall(function() v14:Remove() end)
-      end
-    end
-  end)
-
-  local v15 = { "VehÃ­culo & Turbo", "ESP Profesional", "Lista de Jugadores" }
-  v8 = {}
-  v9 = {}
-  v10 = "VehÃ­culo & Turbo"
-
-  for index2, value4 in ipairs(v15) do
-    local v16 = value4
-
-    local instance19 = Instance.new("TextButton", instance)
-    instance19.Size = UDim2.new(1 / #v15, 0, 1, 0)
-    instance19.Position = UDim2.new((index2 - 1) * (1 / #v15), 0, 0, 0)
-
-    instance19.BackgroundColor3 = v16 == v10 and Color3.fromRGB(40, 40, 50)
-      or Color3.fromRGB(25, 25, 30)
-
-    instance19.Text = v16
-    instance19.TextColor3 = Color3.fromRGB(220, 220, 220)
-    instance19.TextSize = 11
-    instance19.Font = Enum.Font.Gotham
-    instance19.BorderSizePixel = 0
-    instance19.AutoButtonColor = false
-
-    v8[v16] = instance19
-
-    local instance20 = Instance.new("ScrollingFrame", instance2)
-    instance20.Size = UDim2.new(1, 0, 1, 0)
-    instance20.BackgroundTransparency = 1
-    instance20.Visible = v16 == v10
-    instance20.CanvasSize = UDim2.new(0, 0, 0, 0)
-    instance20.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    instance20.ScrollBarThickness = 4
-
-    local instance21 = Instance.new("UIListLayout", instance20)
-    instance21.SortOrder = Enum.SortOrder.LayoutOrder
-    instance21.Padding = UDim.new(0, 10)
-
-    v9[v16] = instance20
-
-    instance19.MouseButton1Click:Connect(function()
-      v10 = v16
-
-      for key3, value5 in pairs(v8) do
-        value5.BackgroundColor3 = key3 == v16 and Color3.fromRGB(40, 40, 50)
-          or Color3.fromRGB(25, 25, 30)
-      end
-
-      for key4, value6 in pairs(v9) do
-        value6.Visible = key4 == v16
-      end
-    end)
-  end
-
-  local function f4(parent2, text)
-    local frame2 = Instance.new("Frame")
-    frame2.Size = UDim2.new(1, 0, 0, 140)
-    frame2.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-    frame2.BorderSizePixel = 0
-    frame2.Parent = parent2
-
-    f2(frame2, 8)
-
-    local instance22 = Instance.new("TextLabel", frame2)
-    instance22.Size = UDim2.new(1, -15, 0, 30)
-    instance22.Position = UDim2.new(0, 15, 0, 0)
-    instance22.BackgroundTransparency = 1
-    instance22.Text = text
-    instance22.TextColor3 = Color3.fromRGB(150, 150, 150)
-    instance22.TextSize = 11
-    instance22.Font = Enum.Font.GothamBold
-    instance22.TextXAlignment = Enum.TextXAlignment.Left
-
-    local instance23 = Instance.new("UIListLayout", frame2)
-    instance23.SortOrder = Enum.SortOrder.LayoutOrder
-    instance23.Padding = UDim.new(0, 8)
-
-    return frame2
-  end
-
-  local function f5(p2, text2, fn)
-    local instance24 = Instance.new("Frame", p2)
-    instance24.Size = UDim2.new(1, -30, 0, 30)
-    instance24.BackgroundTransparency = 1
-
-    local instance25 = Instance.new("TextLabel", instance24)
-    instance25.Size = UDim2.new(0.7, 0, 1, 0)
-    instance25.BackgroundTransparency = 1
-    instance25.Text = text2
-    instance25.TextColor3 = Color3.fromRGB(220, 220, 220)
-    instance25.TextSize = 11
-    instance25.Font = Enum.Font.Gotham
-    instance25.TextXAlignment = Enum.TextXAlignment.Left
-
-    local instance26 = Instance.new("TextButton", instance24)
-    instance26.Size = UDim2.new(0, 40, 0, 22)
-    instance26.Position = UDim2.new(1, -40, 0.5, -11)
-    instance26.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    instance26.Text = ""
-    instance26.AutoButtonColor = false
-
-    f2(instance26, 11)
-
-    local instance27 = Instance.new("Frame", instance26)
-    instance27.Size = UDim2.new(0, 18, 0, 18)
-    instance27.Position = UDim2.new(0, 2, 0.5, -9)
-    instance27.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-
-    f2(instance27, 9)
-    local v17 = false
-
-    instance26.MouseButton1Click:Connect(function()
-      v17 = not v17
-
-      instance26.BackgroundColor3 = v17 and Color3.fromRGB(100, 200, 100)
-        or Color3.fromRGB(60, 60, 60)
-
-      instance27.Position = v17 and UDim2.new(0, 20, 0.5, -9) or UDim2.new(0, 2, 0.5, -9)
-      fn(v17)
-    end)
-  end
-
-  local v18 = f4(v9["VehÃ­culo & Turbo"], "CONFIGURACIÃ“N DE TURBO, FRENO Y NOCLIP")
-  v18.Size = UDim2.new(1, 0, 0, 410)
-
-  f5(v18, "Activar Turbo en VehÃ­culos", function(turboEnabled)
-    v3.TurboEnabled = turboEnabled
-  end)
-
-  f5(v18, "Activar Freno Inverso (Tecla S)", function(brakeEnabled)
-    v3.BrakeEnabled = brakeEnabled
-  end)
-
-  f5(v18, "Manejo Pro (Giro Ultra)", function(betterHandling)
-    v3.BetterHandling = betterHandling
-  end)
-
-  f5(v18, "Noclip con VehÃ­culo (Shift corre mÃ¡s)", function(p3)
-    v3.NoclipEnabled = p3
-
-    if not p3 and v6 then
-      for index3, value7 in ipairs(v6:GetDescendants()) do
-        if value7:IsA("BasePart") then
-          value7.CanCollide = true
-        end
-      end
-
-      v6 = nil
-    end
-  end)
-
-  local instance28 = Instance.new("Frame", v18)
-  instance28.Size = UDim2.new(1, -30, 0, 30)
-  instance28.BackgroundTransparency = 1
-
-  local instance29 = Instance.new("TextLabel", instance28)
-  instance29.Size = UDim2.new(0.6, 0, 1, 0)
-  instance29.BackgroundTransparency = 1
-  instance29.Text = "Tecla de Turbo"
-  instance29.TextColor3 = Color3.fromRGB(220, 220, 220)
-  instance29.TextSize = 11
-  instance29.Font = Enum.Font.Gotham
-  instance29.TextXAlignment = Enum.TextXAlignment.Left
-
-  instance4 = Instance.new("TextButton", instance28)
-  instance4.Size = UDim2.new(0, 90, 0, 24)
-  instance4.Position = UDim2.new(1, -90, 0.5, -12)
-  instance4.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-  instance4.Text = v3.TurboKey.Name
-  instance4.TextColor3 = Color3.fromRGB(255, 255, 255)
-  instance4.TextSize = 11
-  instance4.Font = Enum.Font.GothamBold
-
-  f2(instance4, 6)
-
-  instance4.MouseButton1Click:Connect(function()
-    v3.IsBindingKey = true
-    instance4.Text = "..."
-  end)
-
-  userInputService.InputBegan:Connect(function(input, p4)
-    if v3.IsBindingKey and input.UserInputType == Enum.UserInputType.Keyboard then
-      v3.TurboKey = input.KeyCode
-      instance4.Text = input.KeyCode.Name
-      v3.IsBindingKey = false
-    end
-  end)
-
-  local instance30 = Instance.new("Frame", v18)
-  instance30.Size = UDim2.new(1, -30, 0, 45)
-  instance30.BackgroundTransparency = 1
-
-  local instance31 = Instance.new("TextLabel", instance30)
-  instance31.Size = UDim2.new(0.7, 0, 0, 20)
-  instance31.BackgroundTransparency = 1
-  instance31.Text = "Fuerza del Turbo"
-  instance31.TextColor3 = Color3.fromRGB(220, 220, 220)
-  instance31.TextSize = 11
-  instance31.Font = Enum.Font.Gotham
-  instance31.TextXAlignment = Enum.TextXAlignment.Left
-
-  instance5 = Instance.new("TextLabel", instance30)
-  instance5.Size = UDim2.new(0.3, 0, 0, 20)
-  instance5.Position = UDim2.new(0.7, 0, 0, 0)
-  instance5.BackgroundTransparency = 1
-  instance5.Text = tostring(v3.TurboForce) .. "x"
-  instance5.TextColor3 = Color3.fromRGB(150, 150, 150)
-  instance5.TextSize = 11
-  instance5.Font = Enum.Font.Gotham
-  instance5.TextXAlignment = Enum.TextXAlignment.Right
-
-  instance6 = Instance.new("TextButton", instance30)
-  instance6.Size = UDim2.new(1, 0, 0, 6)
-  instance6.Position = UDim2.new(0, 0, 0, 25)
-  instance6.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-  instance6.Text = ""
-  instance6.AutoButtonColor = false
-
-  f2(instance6, 3)
-
-  instance7 = Instance.new("Frame", instance6)
-  instance7.Size = UDim2.new((v3.TurboForce - 1) / 19, 0, 1, 0)
-  instance7.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
-  instance7.BorderSizePixel = 0
-
-  f2(instance7, 3)
-  v11 = false
-
-  instance6.InputBegan:Connect(function(input2)
-    if input2.UserInputType == Enum.UserInputType.MouseButton1 then
-      v11 = true
-    end
-  end)
-
-  userInputService.InputEnded:Connect(function(input3)
-    if input3.UserInputType == Enum.UserInputType.MouseButton1 then
-      v11 = false
-    end
-  end)
-
-  userInputService.InputChanged:Connect(function(input4)
-    if v11 and input4.UserInputType == Enum.UserInputType.MouseMovement then
-      local v19 = math.clamp((input4.Position.X - instance6.AbsolutePosition.X)
-        / instance6.AbsoluteSize.X, 0, 1)
-
-      v3.TurboForce = math.floor(1 + 19 * v19)
-      instance7.Size = UDim2.new(v19, 0, 1, 0)
-      instance5.Text = tostring(v3.TurboForce) .. "x"
-    end
-  end)
-
-  local instance32 = Instance.new("Frame", v18)
-  instance32.Size = UDim2.new(1, -30, 0, 45)
-  instance32.BackgroundTransparency = 1
-
-  local instance33 = Instance.new("TextLabel", instance32)
-  instance33.Size = UDim2.new(0.7, 0, 0, 20)
-  instance33.BackgroundTransparency = 1
-  instance33.Text = "Fuerza de Freno Inverso (Tecla S)"
-  instance33.TextColor3 = Color3.fromRGB(220, 220, 220)
-  instance33.TextSize = 11
-  instance33.Font = Enum.Font.Gotham
-  instance33.TextXAlignment = Enum.TextXAlignment.Left
-
-  instance8 = Instance.new("TextLabel", instance32)
-  instance8.Size = UDim2.new(0.3, 0, 0, 20)
-  instance8.Position = UDim2.new(0.7, 0, 0, 0)
-  instance8.BackgroundTransparency = 1
-  instance8.Text = tostring(v3.BrakeForce) .. "x"
-  instance8.TextColor3 = Color3.fromRGB(150, 150, 150)
-  instance8.TextSize = 11
-  instance8.Font = Enum.Font.Gotham
-  instance8.TextXAlignment = Enum.TextXAlignment.Right
-
-  instance9 = Instance.new("TextButton", instance32)
-  instance9.Size = UDim2.new(1, 0, 0, 6)
-  instance9.Position = UDim2.new(0, 0, 0, 25)
-  instance9.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-  instance9.Text = ""
-  instance9.AutoButtonColor = false
-
-  f2(instance9, 3)
-
-  instance10 = Instance.new("Frame", instance9)
-  instance10.Size = UDim2.new((v3.BrakeForce - 1) / 19, 0, 1, 0)
-  instance10.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-  instance10.BorderSizePixel = 0
-
-  f2(instance10, 3)
-  v12 = false
-
-  instance9.InputBegan:Connect(function(input5)
-    if input5.UserInputType == Enum.UserInputType.MouseButton1 then
-      v12 = true
-    end
-  end)
-
-  userInputService.InputEnded:Connect(function(input6)
-    if input6.UserInputType == Enum.UserInputType.MouseButton1 then
-      v12 = false
-    end
-  end)
-
-  userInputService.InputChanged:Connect(function(input7)
-    if v12 and input7.UserInputType == Enum.UserInputType.MouseMovement then
-      local v20 = math.clamp((input7.Position.X - instance9.AbsolutePosition.X)
-        / instance9.AbsoluteSize.X, 0, 1)
-
-      v3.BrakeForce = math.floor(1 + 19 * v20)
-      instance10.Size = UDim2.new(v20, 0, 1, 0)
-      instance8.Text = tostring(v3.BrakeForce) .. "x"
-    end
-  end)
-
-  local v21 = f4(v9["ESP Profesional"], "OPCIONES DE ESP")
-  v21.Size = UDim2.new(1, 0, 0, 180)
-
-  f5(v21, "Caja 2D (Box ESP)", function(espBox) v3.ESPBox = espBox end)
-  f5(v21, "LÃ­neas de Rastreo (Tracers)", function(espTracer) v3.ESPTracer = espTracer end)
-  f5(v21, "Barra de Vida (Health Bar)", function(espHealth) v3.ESPHealth = espHealth end)
-  f5(v21, "Nombre y Distancia", function(espInfo) v3.ESPInfo = espInfo end)
-
-  local listaDeJugadores = v9["Lista de Jugadores"]
-
-  local instance34 = Instance.new("Frame", listaDeJugadores)
-  instance34.Size = UDim2.new(1, 0, 0, 95)
-  instance34.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-  instance34.BorderSizePixel = 0
-
-  f2(instance34, 8)
-
-  local instance35 = Instance.new("TextLabel", instance34)
-  instance35.Size = UDim2.new(1, -20, 0, 25)
-  instance35.Position = UDim2.new(0, 10, 0, 5)
-  instance35.BackgroundTransparency = 1
-  instance35.Text = "OBJETIVO SELECCIONADO:"
-  instance35.TextColor3 = Color3.fromRGB(150, 150, 150)
-  instance35.TextSize = 10
-  instance35.Font = Enum.Font.GothamBold
-  instance35.TextXAlignment = Enum.TextXAlignment.Left
-
-  instance11 = Instance.new("TextLabel", instance34)
-  instance11.Size = UDim2.new(1, -20, 0, 25)
-  instance11.Position = UDim2.new(0, 10, 0, 25)
-  instance11.BackgroundTransparency = 1
-  instance11.Text = "Ninguno (Selecciona abajo)"
-  instance11.TextColor3 = Color3.fromRGB(100, 150, 255)
-  instance11.TextSize = 13
-  instance11.Font = Enum.Font.GothamBold
-  instance11.TextXAlignment = Enum.TextXAlignment.Left
-
-  local instance36 = Instance.new("Frame", instance34)
-  instance36.Size = UDim2.new(1, -20, 0, 32)
-  instance36.Position = UDim2.new(0, 10, 0, 55)
-  instance36.BackgroundTransparency = 1
-
-  local instance37 = Instance.new("TextButton", instance36)
-  instance37.Size = UDim2.new(0.48, 0, 1, 0)
-  instance37.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
-  instance37.Text = "âš¡ Teleportarse"
-  instance37.TextColor3 = Color3.fromRGB(255, 255, 255)
-  instance37.TextSize = 11
-  instance37.Font = Enum.Font.GothamBold
-
-  f2(instance37, 6)
-
-  instance12 = Instance.new("TextButton", instance36)
-  instance12.Size = UDim2.new(0.48, 0, 1, 0)
-  instance12.Position = UDim2.new(0.52, 0, 0, 0)
-  instance12.BackgroundColor3 = Color3.fromRGB(200, 150, 100)
-  instance12.Text = "ðŸ‘ï¸ Espectear"
-  instance12.TextColor3 = Color3.fromRGB(255, 255, 255)
-  instance12.TextSize = 11
-  instance12.Font = Enum.Font.GothamBold
-
-  f2(instance12, 6)
-
-  instance37.MouseButton1Click:Connect(function()
-    if v3.SelectedPlayer and v3.SelectedPlayer.Character
-      and v3.SelectedPlayer.Character:FindFirstChild("HumanoidRootPart") then
-      local humanoidRootPart = localPlayer.Character
-        and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-
-      if humanoidRootPart then
-        humanoidRootPart.CFrame = v3.SelectedPlayer.Character.HumanoidRootPart.CFrame
-          + Vector3.new(0, 3, 0)
-      end
-    end
-  end)
-
-  instance12.MouseButton1Click:Connect(function()
-    v3.IsSpectating = not v3.IsSpectating
-
-    if v3.IsSpectating and v3.SelectedPlayer and v3.SelectedPlayer.Character then
-      local humanoid = v3.SelectedPlayer.Character:FindFirstChildOfClass("Humanoid")
-
-      if humanoid then
-        currentCamera.CameraSubject = humanoid
-        instance12.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
-        instance12.Text = "ðŸ‘ï¸ Especteando (Activo)"
-      end
-    else
-      if localPlayer.Character then
-        local humanoid2 = localPlayer.Character:FindFirstChildOfClass("Humanoid")
-
-        if humanoid2 then
-          currentCamera.CameraSubject = humanoid2
-        end
-      end
-
-      instance12.BackgroundColor3 = Color3.fromRGB(200, 150, 100)
-      instance12.Text = "ðŸ‘ï¸ Espectear"
-
-      v3.IsSpectating = false
-    end
-  end)
-
-  local instance38 = Instance.new("Frame", listaDeJugadores)
-  instance38.Size = UDim2.new(1, 0, 0, 210)
-  instance38.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-  instance38.BorderSizePixel = 0
-
-  f2(instance38, 8)
-
-  local instance39 = Instance.new("TextLabel", instance38)
-  instance39.Size = UDim2.new(1, -15, 0, 30)
-  instance39.Position = UDim2.new(0, 15, 0, 0)
-  instance39.BackgroundTransparency = 1
-  instance39.Text = "JUGADORES EN LÃNEA (Haz clic para seleccionar)"
-  instance39.TextColor3 = Color3.fromRGB(150, 150, 150)
-  instance39.TextSize = 10
-  instance39.Font = Enum.Font.GothamBold
-  instance39.TextXAlignment = Enum.TextXAlignment.Left
-
-  instance13 = Instance.new("ScrollingFrame", instance38)
-  instance13.Size = UDim2.new(1, -16, 1, -35)
-  instance13.Position = UDim2.new(0, 8, 0, 30)
-  instance13.BackgroundTransparency = 1
-  instance13.CanvasSize = UDim2.new(0, 0, 0, 0)
-  instance13.AutomaticCanvasSize = Enum.AutomaticSize.Y
-  instance13.ScrollBarThickness = 3
-
-  local instance40 = Instance.new("UIListLayout", instance13)
-  instance40.SortOrder = Enum.SortOrder.LayoutOrder
-  instance40.Padding = UDim.new(0, 5)
-
-  v13 = {}
-
-  function f3()
-    for key5, value8 in pairs(v13) do
-      value8:Destroy()
-    end
-
-    table.clear(v13)
-
-    for index4, value9 in ipairs(players:GetPlayers()) do
-      local v22 = value9
-
-      if v22 ~= localPlayer then
-        local instance41 = Instance.new("TextButton", instance13)
-        instance41.Size = UDim2.new(1, -5, 0, 32)
-
-        instance41.BackgroundColor3 = v3.SelectedPlayer == v22 and Color3.fromRGB(50, 80, 130)
-          or Color3.fromRGB(35, 35, 42)
-
-        instance41.Text = "  " .. v22.Name .. " (@" .. v22.DisplayName .. ")"
-        instance41.TextColor3 = Color3.fromRGB(220, 220, 220)
-        instance41.TextSize = 11
-        instance41.Font = Enum.Font.Gotham
-        instance41.TextXAlignment = Enum.TextXAlignment.Left
-        instance41.AutoButtonColor = false
-
-        f2(instance41, 6)
-
-        instance41.MouseButton1Click:Connect(function()
-          v3.SelectedPlayer = v22
-          instance11.Text = v22.Name .. " (@" .. v22.DisplayName .. ")"
-          f3()
-        end)
-
-        v13[v22] = instance41
-      end
-    end
-  end
-
-  function f1(p5)
-    if not v5[p5] then
-      v5[p5] = {
-        Box = Drawing.new("Square"),
-        Tracer = Drawing.new("Line"),
-        HealthBar = Drawing.new("Square"),
-        HealthBarInner = Drawing.new("Square"),
-        Info = Drawing.new("Text"),
-      }
-
-      local v23 = v5[p5]
-      v23.Box.Thickness = 1.5
-      v23.Box.Filled = false
-      v23.Box.Color = Color3.fromRGB(0, 255, 150)
-      v23.Tracer.Thickness = 1
-      v23.Tracer.Color = Color3.fromRGB(0, 255, 150)
-      v23.HealthBar.Thickness = 1
-      v23.HealthBar.Filled = true
-      v23.HealthBar.Color = Color3.fromRGB(0, 0, 0)
-      v23.HealthBarInner.Thickness = 1
-      v23.HealthBarInner.Filled = true
-      v23.HealthBarInner.Color = Color3.fromRGB(0, 255, 0)
-      v23.Info.Size = 12
-      v23.Info.Center = true
-      v23.Info.Outline = true
-      v23.Info.Color = Color3.fromRGB(255, 255, 255)
-    end
-
-    return v5[p5]
-  end
-
-  players.PlayerAdded:Connect(f3)
-  players.PlayerRemoving:Connect(f3)
-
-  f3()
-
-  players.PlayerRemoving:Connect(function(player)
-    if v5[player] then
-      for key6, value10 in pairs(v5[player]) do
-        local v24 = value10
-        pcall(function() v24:Remove() end)
-      end
-
-      v5[player] = nil
-    end
-
-    if v3.SelectedPlayer == player then
-      v3.SelectedPlayer = nil
-    end
-  end)
-
-  runService.RenderStepped:Connect(function()
-    if localPlayer.Character then
-      local humanoid3 = localPlayer.Character:FindFirstChildOfClass("Humanoid")
-
-      if humanoid3 and humanoid3.SeatPart
-        and (humanoid3.SeatPart:IsA("VehicleSeat") or humanoid3.SeatPart:IsA("Seat")) then
-        local parent3 = humanoid3.SeatPart.Parent
-
-        local primaryPart = parent3.PrimaryPart or parent3:FindFirstChild("HumanoidRootPart")
-          or humanoid3.SeatPart
-
-        if primaryPart then
-          if v3.NoclipEnabled then
-            v6 = parent3
-
-            for index5, value11 in ipairs(parent3:GetDescendants()) do
-              if value11:IsA("BasePart") then
-                value11.CanCollide = false
-              end
-            end
-
-            local cframe = currentCamera.CFrame
-            local vector = Vector3.new()
-
-            if userInputService:IsKeyDown(Enum.KeyCode.W) then
-              vector = vector + cframe.LookVector
-            end
-
-            if userInputService:IsKeyDown(Enum.KeyCode.S) then
-              vector = vector - cframe.LookVector
-            end
-
-            if userInputService:IsKeyDown(Enum.KeyCode.A) then
-              vector = vector - cframe.RightVector
-            end
-
-            if userInputService:IsKeyDown(Enum.KeyCode.D) then
-              vector = vector + cframe.RightVector
-            end
-
-            local v25 = 65
-
-            if userInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-              v25 = 160
-            end
-
-            if vector.Magnitude > 0 then
-              primaryPart.AssemblyLinearVelocity = vector.Unit * v25
-              primaryPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-            else
-              primaryPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-              primaryPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-            end
-          else
-            if v6 then
-              for index6, value12 in ipairs(v6:GetDescendants()) do
-                if value12:IsA("BasePart") then
-                  value12.CanCollide = true
-                end
-              end
-
-              v6 = nil
-            end
-
-            if v3.TurboEnabled and v4 then
-              primaryPart.AssemblyLinearVelocity = primaryPart.AssemblyLinearVelocity
-                + primaryPart.CFrame.LookVector * (v3.TurboForce * 3)
-            end
-
-            if v3.BrakeEnabled and userInputService:IsKeyDown(Enum.KeyCode.S) then
-              primaryPart.AssemblyLinearVelocity = primaryPart.AssemblyLinearVelocity
-                - primaryPart.CFrame.LookVector * (v3.BrakeForce * 3)
-            end
-
-            if v3.BetterHandling then
-              local steer = humanoid3.Steer
-
-              if steer ~= 0 then
-                primaryPart.AssemblyAngularVelocity = Vector3.new(primaryPart.AssemblyAngularVelocity.X, primaryPart.AssemblyAngularVelocity.Y
-                  + steer * 8.5, primaryPart.AssemblyAngularVelocity.Z)
-              else
-                primaryPart.AssemblyAngularVelocity = Vector3.new(primaryPart.AssemblyAngularVelocity.X, primaryPart.AssemblyAngularVelocity.Y
-                  * 0.9, primaryPart.AssemblyAngularVelocity.Z)
-              end
-            end
-          end
-        end
-      elseif v6 then
-        for index7, value13 in ipairs(v6:GetDescendants()) do
-          if value13:IsA("BasePart") then
-            value13.CanCollide = true
-          end
-        end
-
-        v6 = nil
-      end
-    end
-
-    for index8, value14 in ipairs(players:GetPlayers()) do
-      if value14 ~= localPlayer then
-        local v26 = f1(value14)
-        local character = value14.Character
-
-        local humanoidRootPart2 = character
-        humanoidRootPart2 = character and character:FindFirstChild("HumanoidRootPart")
-
-        local humanoid4 = character
-        humanoid4 = character and character:FindFirstChildOfClass("Humanoid")
-
-        local v27 = false
-
-        if character and humanoidRootPart2 and humanoid4 and humanoid4.Health > 0 then
-          local v28, v29 = currentCamera:WorldToViewportPoint(humanoidRootPart2.Position)
-
-          if v29 then
-            v27 = true
-            local head = character:FindFirstChild("Head")
-
-            local worldToViewportPoint = head and currentCamera:WorldToViewportPoint(head.Position + Vector3.new(
-              0, 0.5, 0
-            )) or v28
-
-            local worldToViewportPoint2 = currentCamera:WorldToViewportPoint(humanoidRootPart2.Position
-              - Vector3.new(0, 3, 0))
-
-            local v30 = math.abs(worldToViewportPoint.Y - worldToViewportPoint2.Y)
-            local v31 = v30 / 2
-
-            if v3.ESPBox then
-              v26.Box.Visible = true
-              v26.Box.Size = Vector2.new(v31, v30)
-              v26.Box.Position = Vector2.new(v28.X - v31 / 2, worldToViewportPoint.Y)
-            else
-              v26.Box.Visible = false
-            end
-
-            if v3.ESPTracer then
-              v26.Tracer.Visible = true
-
-              v26.Tracer.From = Vector2.new(
-                currentCamera.ViewportSize.X / 2, currentCamera.ViewportSize.Y
-              )
-
-              v26.Tracer.To = Vector2.new(v28.X, worldToViewportPoint2.Y)
-            else
-              v26.Tracer.Visible = false
-            end
-
-            if v3.ESPHealth then
-              local v32 = math.clamp(humanoid4.Health / humanoid4.MaxHealth, 0, 1)
-              local v33 = v30 * v32
-
-              v26.HealthBar.Visible = true
-              v26.HealthBar.Size = Vector2.new(3, v30)
-              v26.HealthBar.Position = Vector2.new(v28.X - v31 / 2 - 6, worldToViewportPoint.Y)
-              v26.HealthBarInner.Visible = true
-              v26.HealthBarInner.Size = Vector2.new(1, v33)
-
-              v26.HealthBarInner.Position = Vector2.new(
-                v28.X - v31 / 2 - 5, worldToViewportPoint.Y + (v30 - v33)
-              )
-
-              v26.HealthBarInner.Color = Color3.fromRGB(255 * (1 - v32), 255 * v32, 0)
-            else
-              v26.HealthBar.Visible = false
-              v26.HealthBarInner.Visible = false
-            end
-
-            if v3.ESPInfo then
-              local v34 = math.floor((currentCamera.CFrame.Position - humanoidRootPart2.Position).Magnitude)
-
-              v26.Info.Visible = true
-              v26.Info.Text = value14.Name .. " [" .. v34 .. "m]"
-              v26.Info.Position = Vector2.new(v28.X, worldToViewportPoint.Y - 18)
-            else
-              v26.Info.Visible = false
-            end
-          end
-        end
-
-        if not v27 then
-          v26.Box.Visible = false
-          v26.Tracer.Visible = false
-          v26.HealthBar.Visible = false
-          v26.HealthBarInner.Visible = false
-          v26.Info.Visible = false
-        end
-      end
-    end
-  end)
-
-  userInputService.InputBegan:Connect(function(input8, p6)
-    if p6 or v3.IsBindingKey then
-      return
-    end
-
-    if input8.KeyCode == v3.TurboKey then
-      v4 = true
-    end
-  end)
-
-  userInputService.InputEnded:Connect(function(input9)
-    if input9.KeyCode == v3.TurboKey then
-      v4 = false
-    end
-  end)
-
-  return
+local MarketplaceService = game:GetService("MarketplaceService")
+local u2 = MarketplaceService
+local ok, result = pcall(function()
+    return u2:GetProductInfo(game.PlaceId)
+end)
+local v5 = ok and result.Name or ""
+if not string.find(string.lower(v5), "tr legacy") then
+    local CoreGui = game:GetService("CoreGui")
+    local ScreenGui = Instance.new("ScreenGui")
+
+    ScreenGui.Name = "TR_Legacy_Error"
+    ScreenGui.Parent = CoreGui
+
+    local Frame = Instance.new("Frame", ScreenGui)
+
+    Frame.Size = UDim2.new(0, 380, 0, 110)
+    Frame.Position = UDim2.new(0.5, -190, 0.5, -55)
+    Frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+    Frame.BorderSizePixel = 0
+    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 10)
+
+    local TextLabel = Instance.new("TextLabel", Frame)
+
+    TextLabel.Size = UDim2.new(1, -20, 1, 0)
+    TextLabel.Position = UDim2.new(0, 10, 0, 0)
+    TextLabel.BackgroundTransparency = 1
+    TextLabel.Text = "âŒ ACCESO DENEGADO\n\nEste script solo funciona en el juego TR Legacy.\nDetectado: " .. (v5 ~= "" and v5 or "Desconocido") .. "\nEl script se ha detenido."
+    TextLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+    TextLabel.TextSize = 12
+    TextLabel.Font = Enum.Font.GothamBold
+    TextLabel.TextWrapped = true
+    task.wait(6)
+    ScreenGui:Destroy()
+
+    return
 end
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+local CurrentCamera = Workspace.CurrentCamera
+local E = Enum.KeyCode.E
+local t1 = {
+	TurboEnabled = false,
+	TurboForce = 5,
+	BrakeEnabled = false,
+	BrakeForce = 5,
+	NoclipEnabled = false,
+	TurboKey = E,
+	IsBindingKey = false,
+	BetterHandling = false,
+	ESPBox = false,
+	ESPTracer = false,
+	ESPHealth = false,
+	ESPInfo = false,
+	SelectedPlayer = nil,
+	IsSpectating = false
+}
+local t2 = {}
+local u20
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TRLegacyMenu_" .. tostring(math.random(1000, 9999))
+local _syn = syn
+if _syn then
+    _syn = syn.protect_gui
+end
+if _syn then
+    syn.protect_gui(ScreenGui)
+    ScreenGui.Parent = CoreGui
+elseif gethui then
+    ScreenGui.Parent = gethui()
+else
+    ScreenGui.Parent = CoreGui
+end
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+local function v23(p1, p2)
+    local UICorner = Instance.new("UICorner")
+
+    UICorner.CornerRadius = UDim.new(0, p2 or 8)
+    UICorner.Parent = p1
+
+    return UICorner
+end
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 520, 0, 480)
+Frame.Position = UDim2.new(0.5, -260, 0.5, -240)
+Frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+Frame.BorderSizePixel = 0
+Frame.Active = true
+Frame.Draggable = true
+Frame.Parent = ScreenGui
+v23(Frame, 12)
+local Frame2 = Instance.new("Frame", Frame)
+Frame2.Size = UDim2.new(1, 0, 0, 40)
+Frame2.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+Frame2.BorderSizePixel = 0
+v23(Frame2, 12)
+local TextLabel = Instance.new("TextLabel", Frame2)
+TextLabel.Size = UDim2.new(1, -90, 1, 0)
+TextLabel.Position = UDim2.new(0, 15, 0, 0)
+TextLabel.BackgroundTransparency = 1
+TextLabel.Text = "âš™\239\184\143 TR Legacy MENU + Noclip Vehicular con Colisiones"
+TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TextLabel.TextSize = 13
+TextLabel.Font = Enum.Font.GothamBold
+TextLabel.TextXAlignment = Enum.TextXAlignment.Left
+local TextButton = Instance.new("TextButton", Frame2)
+TextButton.Size = UDim2.new(0, 30, 0, 30)
+TextButton.Position = UDim2.new(1, -35, 0.5, -15)
+TextButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
+TextButton.Text = "X"
+TextButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+TextButton.TextSize = 12
+TextButton.Font = Enum.Font.GothamBold
+v23(TextButton, 6)
+local Frame3 = Instance.new("Frame", Frame)
+Frame3.Size = UDim2.new(1, 0, 0, 35)
+Frame3.Position = UDim2.new(0, 0, 0, 40)
+Frame3.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+Frame3.BorderSizePixel = 0
+local Frame4 = Instance.new("Frame", Frame)
+Frame4.Size = UDim2.new(1, -20, 1, -95)
+Frame4.Position = UDim2.new(0, 10, 0, 85)
+Frame4.BackgroundTransparency = 1
+local TextButton2 = Instance.new("TextButton", Frame2)
+TextButton2.Size = UDim2.new(0, 30, 0, 30)
+TextButton2.Position = UDim2.new(1, -70, 0.5, -15)
+TextButton2.BackgroundColor3 = Color3.fromRGB(80, 80, 95)
+TextButton2.Text = "-"
+TextButton2.TextColor3 = Color3.fromRGB(255, 255, 255)
+TextButton2.TextSize = 14
+TextButton2.Font = Enum.Font.GothamBold
+v23(TextButton2, 6)
+local u31 = false
+TextButton2.MouseButton1Click:Connect(function()
+    u31 = not u31
+
+    if u31 then
+        TextButton2.Text = "+"
+        Frame.Size = UDim2.new(0, 520, 0, 40)
+        Frame3.Visible = false
+        Frame4.Visible = false
+
+        return
+    end
+
+    TextButton2.Text = "-"
+    Frame.Size = UDim2.new(0, 520, 0, 480)
+    Frame3.Visible = true
+    Frame4.Visible = true
+end)
+TextButton.MouseButton1Click:Connect(function()
+    if u20 then
+        for _, descendant in ipairs(u20:GetDescendants()) do
+            if descendant:IsA("BasePart") then
+                descendant.CanCollide = true
+            end
+        end
+    end
+
+    ScreenGui:Destroy()
+
+    for _, v in pairs(t2) do
+        for _, v2 in pairs(v) do
+            local v85 = v2
+
+            pcall(function()
+                v85:Remove()
+            end)
+        end
+    end
+end)
+local t3 = {
+	"VehÃ­culo & Turbo",
+	"ESP Profesional",
+	"Lista de Jugadores"
+}
+local t4 = {}
+local t5 = {}
+local s1 = "VehÃ­culo & Turbo"
+for i, v in ipairs(t3) do
+    local v38 = v
+    local TextButton3 = Instance.new("TextButton", Frame3)
+
+    TextButton3.Size = UDim2.new(1 / #t3, 0, 1, 0)
+    TextButton3.Position = UDim2.new((i - 1) * (1 / #t3), 0, 0, 0)
+
+    local v40 = v38 == s1
+
+    if v40 then
+        v40 = Color3.fromRGB(40, 40, 50)
+    end
+
+    if not v40 then
+        v40 = Color3.fromRGB(25, 25, 30)
+    end
+
+    TextButton3.BackgroundColor3 = v40
+    TextButton3.Text = v38
+    TextButton3.TextColor3 = Color3.fromRGB(220, 220, 220)
+    TextButton3.TextSize = 11
+    TextButton3.Font = Enum.Font.Gotham
+    TextButton3.BorderSizePixel = 0
+    TextButton3.AutoButtonColor = false
+    t4[v38] = TextButton3
+
+    local ScrollingFrame = Instance.new("ScrollingFrame", Frame4)
+
+    ScrollingFrame.Size = UDim2.new(1, 0, 1, 0)
+    ScrollingFrame.BackgroundTransparency = 1
+    ScrollingFrame.Visible = v38 == s1
+    ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    ScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    ScrollingFrame.ScrollBarThickness = 4
+
+    local UIListLayout = Instance.new("UIListLayout", ScrollingFrame)
+
+    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    UIListLayout.Padding = UDim.new(0, 10)
+    t5[v38] = ScrollingFrame
+    TextButton3.MouseButton1Click:Connect(function()
+        s1 = v38
+        for v88, v89 in pairs(t4) do
+
+            local v90 = v88 == v38
+
+            if v90 then
+                v90 = Color3.fromRGB(40, 40, 50)
+            end
+
+            if not v90 then
+                v90 = Color3.fromRGB(25, 25, 30)
+            end
+
+            v89.BackgroundColor3 = v90
+        end
+        for k, v3 in pairs(t5) do
+            v3.Visible = k == v38
+        end
+    end)
+end
+local function v43(p3, p4)
+    local Frame5 = Instance.new("Frame")
+
+    Frame5.Size = UDim2.new(1, 0, 0, 140)
+    Frame5.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    Frame5.BorderSizePixel = 0
+    Frame5.Parent = p3
+    v23(Frame5, 8)
+
+    local TextLabel2 = Instance.new("TextLabel", Frame5)
+
+    TextLabel2.Size = UDim2.new(1, -15, 0, 30)
+    TextLabel2.Position = UDim2.new(0, 15, 0, 0)
+    TextLabel2.BackgroundTransparency = 1
+    TextLabel2.Text = p4
+    TextLabel2.TextColor3 = Color3.fromRGB(150, 150, 150)
+    TextLabel2.TextSize = 11
+    TextLabel2.Font = Enum.Font.GothamBold
+    TextLabel2.TextXAlignment = Enum.TextXAlignment.Left
+
+    local UIListLayout = Instance.new("UIListLayout", Frame5)
+
+    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    UIListLayout.Padding = UDim.new(0, 8)
+
+    return Frame5
+end
+local function v44(p5, p6, p7)
+    local Frame6 = Instance.new("Frame", p5)
+
+    Frame6.Size = UDim2.new(1, -30, 0, 30)
+    Frame6.BackgroundTransparency = 1
+
+    local TextLabel3 = Instance.new("TextLabel", Frame6)
+
+    TextLabel3.Size = UDim2.new(0.7, 0, 1, 0)
+    TextLabel3.BackgroundTransparency = 1
+    TextLabel3.Text = p6
+    TextLabel3.TextColor3 = Color3.fromRGB(220, 220, 220)
+    TextLabel3.TextSize = 11
+    TextLabel3.Font = Enum.Font.Gotham
+    TextLabel3.TextXAlignment = Enum.TextXAlignment.Left
+
+    local TextButton4 = Instance.new("TextButton", Frame6)
+
+    TextButton4.Size = UDim2.new(0, 40, 0, 22)
+    TextButton4.Position = UDim2.new(1, -40, 0.5, -11)
+    TextButton4.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    TextButton4.Text = ""
+    TextButton4.AutoButtonColor = false
+    v23(TextButton4, 11)
+
+    local Frame7 = Instance.new("Frame", TextButton4)
+
+    Frame7.Size = UDim2.new(0, 18, 0, 18)
+    Frame7.Position = UDim2.new(0, 2, 0.5, -9)
+    Frame7.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    v23(Frame7, 9)
+
+    local u105 = false
+
+    TextButton4.MouseButton1Click:Connect(function()
+        u105 = not u105
+
+        local v194 = TextButton4
+        local v195 = u105
+
+        if v195 then
+            v195 = Color3.fromRGB(100, 200, 100)
+        end
+
+        if not v195 then
+            v195 = Color3.fromRGB(60, 60, 60)
+        end
+
+        v194.BackgroundColor3 = v195
+
+        local v196 = Frame7
+        local v197 = u105
+
+        if v197 then
+            v197 = UDim2.new(0, 20, 0.5, -9)
+        end
+
+        if not v197 then
+            v197 = UDim2.new(0, 2, 0.5, -9)
+        end
+
+        v196.Position = v197
+        p7(u105)
+    end)
+end
+local v45 = v43(t5["VehÃ­culo & Turbo"], "CONFIGURACIÃ“N DE TURBO, FRENO Y NOCLIP")
+v45.Size = UDim2.new(1, 0, 0, 410)
+v44(v45, "Activar Turbo en VehÃ­culos", function(p8)
+    t1.TurboEnabled = p8
+end)
+v44(v45, "Activar Freno Inverso (Tecla S)", function(p9)
+    t1.BrakeEnabled = p9
+end)
+v44(v45, "Manejo Pro (Giro Ultra)", function(p10)
+    t1.BetterHandling = p10
+end)
+v44(v45, "Noclip con VehÃ­culo (Shift corre mÃ¡s)", function(p11)
+    t1.NoclipEnabled = p11
+
+    if not p11 and u20 then
+        for _, descendant in ipairs(u20:GetDescendants()) do
+            if descendant:IsA("BasePart") then
+                descendant.CanCollide = true
+            end
+        end
+
+        u20 = nil
+    end
+end)
+local Frame8 = Instance.new("Frame", v45)
+Frame8.Size = UDim2.new(1, -30, 0, 30)
+Frame8.BackgroundTransparency = 1
+local TextLabel4 = Instance.new("TextLabel", Frame8)
+TextLabel4.Size = UDim2.new(0.6, 0, 1, 0)
+TextLabel4.BackgroundTransparency = 1
+TextLabel4.Text = "Tecla de Turbo"
+TextLabel4.TextColor3 = Color3.fromRGB(220, 220, 220)
+TextLabel4.TextSize = 11
+TextLabel4.Font = Enum.Font.Gotham
+TextLabel4.TextXAlignment = Enum.TextXAlignment.Left
+local TextButton5 = Instance.new("TextButton", Frame8)
+TextButton5.Size = UDim2.new(0, 90, 0, 24)
+TextButton5.Position = UDim2.new(1, -90, 0.5, -12)
+TextButton5.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+TextButton5.Text = t1.TurboKey.Name
+TextButton5.TextColor3 = Color3.fromRGB(255, 255, 255)
+TextButton5.TextSize = 11
+TextButton5.Font = Enum.Font.GothamBold
+v23(TextButton5, 6)
+TextButton5.MouseButton1Click:Connect(function()
+    t1.IsBindingKey = true
+    TextButton5.Text = "..."
+end)
+UserInputService.InputBegan:Connect(function(input, _)
+    local IsBindingKey = t1.IsBindingKey
+
+    if IsBindingKey then
+        IsBindingKey = input.UserInputType == Enum.UserInputType.Keyboard
+    end
+
+    if IsBindingKey then
+        t1.TurboKey = input.KeyCode
+        TextButton5.Text = input.KeyCode.Name
+        t1.IsBindingKey = false
+    end
+end)
+local Frame9 = Instance.new("Frame", v45)
+Frame9.Size = UDim2.new(1, -30, 0, 45)
+Frame9.BackgroundTransparency = 1
+local TextLabel5 = Instance.new("TextLabel", Frame9)
+TextLabel5.Size = UDim2.new(0.7, 0, 0, 20)
+TextLabel5.BackgroundTransparency = 1
+TextLabel5.Text = "Fuerza del Turbo"
+TextLabel5.TextColor3 = Color3.fromRGB(220, 220, 220)
+TextLabel5.TextSize = 11
+TextLabel5.Font = Enum.Font.Gotham
+TextLabel5.TextXAlignment = Enum.TextXAlignment.Left
+local TextLabel6 = Instance.new("TextLabel", Frame9)
+TextLabel6.Size = UDim2.new(0.3, 0, 0, 20)
+TextLabel6.Position = UDim2.new(0.7, 0, 0, 0)
+TextLabel6.BackgroundTransparency = 1
+TextLabel6.Text = tostring(t1.TurboForce) .. "x"
+TextLabel6.TextColor3 = Color3.fromRGB(150, 150, 150)
+TextLabel6.TextSize = 11
+TextLabel6.Font = Enum.Font.Gotham
+TextLabel6.TextXAlignment = Enum.TextXAlignment.Right
+local TextButton6 = Instance.new("TextButton", Frame9)
+TextButton6.Size = UDim2.new(1, 0, 0, 6)
+TextButton6.Position = UDim2.new(0, 0, 0, 25)
+TextButton6.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+TextButton6.Text = ""
+TextButton6.AutoButtonColor = false
+v23(TextButton6, 3)
+local Frame10 = Instance.new("Frame", TextButton6)
+Frame10.Size = UDim2.new((t1.TurboForce - 1) / 19, 0, 1, 0)
+Frame10.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+Frame10.BorderSizePixel = 0
+v23(Frame10, 3)
+local u54 = false
+TextButton6.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        u54 = true
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        u54 = false
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    local v118 = u54
+
+    if v118 then
+        v118 = input.UserInputType == Enum.UserInputType.MouseMovement
+    end
+
+    if v118 then
+        local v119 = math.clamp((input.Position.X - TextButton6.AbsolutePosition.X) / TextButton6.AbsoluteSize.X, 0, 1)
+
+        t1.TurboForce = math.floor(1 + 19 * v119)
+        Frame10.Size = UDim2.new(v119, 0, 1, 0)
+        TextLabel6.Text = tostring(t1.TurboForce) .. "x"
+    end
+end)
+local Frame11 = Instance.new("Frame", v45)
+Frame11.Size = UDim2.new(1, -30, 0, 45)
+Frame11.BackgroundTransparency = 1
+local TextLabel7 = Instance.new("TextLabel", Frame11)
+TextLabel7.Size = UDim2.new(0.7, 0, 0, 20)
+TextLabel7.BackgroundTransparency = 1
+TextLabel7.Text = "Fuerza de Freno Inverso (Tecla S)"
+TextLabel7.TextColor3 = Color3.fromRGB(220, 220, 220)
+TextLabel7.TextSize = 11
+TextLabel7.Font = Enum.Font.Gotham
+TextLabel7.TextXAlignment = Enum.TextXAlignment.Left
+local TextLabel8 = Instance.new("TextLabel", Frame11)
+TextLabel8.Size = UDim2.new(0.3, 0, 0, 20)
+TextLabel8.Position = UDim2.new(0.7, 0, 0, 0)
+TextLabel8.BackgroundTransparency = 1
+TextLabel8.Text = tostring(t1.BrakeForce) .. "x"
+TextLabel8.TextColor3 = Color3.fromRGB(150, 150, 150)
+TextLabel8.TextSize = 11
+TextLabel8.Font = Enum.Font.Gotham
+TextLabel8.TextXAlignment = Enum.TextXAlignment.Right
+local TextButton7 = Instance.new("TextButton", Frame11)
+TextButton7.Size = UDim2.new(1, 0, 0, 6)
+TextButton7.Position = UDim2.new(0, 0, 0, 25)
+TextButton7.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+TextButton7.Text = ""
+TextButton7.AutoButtonColor = false
+v23(TextButton7, 3)
+local Frame12 = Instance.new("Frame", TextButton7)
+Frame12.Size = UDim2.new((t1.BrakeForce - 1) / 19, 0, 1, 0)
+Frame12.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+Frame12.BorderSizePixel = 0
+v23(Frame12, 3)
+local u60 = false
+TextButton7.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        u60 = true
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        u60 = false
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    local v123 = u60
+
+    if v123 then
+        v123 = input.UserInputType == Enum.UserInputType.MouseMovement
+    end
+
+    if v123 then
+        local v124 = input.Position.X - TextButton7.AbsolutePosition.X
+        local AbsoluteSizeX = TextButton7.AbsoluteSize.X
+        local v126 = math.clamp(v124 / AbsoluteSizeX, 0, 1)
+
+        t1.BrakeForce = math.floor(1 + 19 * v126)
+        Frame12.Size = UDim2.new(v126, 0, 1, 0)
+        TextLabel8.Text = tostring(t1.BrakeForce) .. "x"
+    end
+end)
+local v61 = v43(t5["ESP Profesional"], "OPCIONES DE ESP")
+v61.Size = UDim2.new(1, 0, 0, 180)
+v44(v61, "Caja 2D (Box ESP)", function(p13)
+    t1.ESPBox = p13
+end)
+v44(v61, "LÃ­neas de Rastreo (Tracers)", function(p14)
+    t1.ESPTracer = p14
+end)
+v44(v61, "Barra de Vida (Health Bar)", function(p15)
+    t1.ESPHealth = p15
+end)
+v44(v61, "Nombre y Distancia", function(p16)
+    t1.ESPInfo = p16
+end)
+local v62 = t5["Lista de Jugadores"]
+local Frame13 = Instance.new("Frame", v62)
+Frame13.Size = UDim2.new(1, 0, 0, 95)
+Frame13.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+Frame13.BorderSizePixel = 0
+v23(Frame13, 8)
+local TextLabel9 = Instance.new("TextLabel", Frame13)
+TextLabel9.Size = UDim2.new(1, -20, 0, 25)
+TextLabel9.Position = UDim2.new(0, 10, 0, 5)
+TextLabel9.BackgroundTransparency = 1
+TextLabel9.Text = "OBJETIVO SELECCIONADO:"
+TextLabel9.TextColor3 = Color3.fromRGB(150, 150, 150)
+TextLabel9.TextSize = 10
+TextLabel9.Font = Enum.Font.GothamBold
+TextLabel9.TextXAlignment = Enum.TextXAlignment.Left
+local TextLabel10 = Instance.new("TextLabel", Frame13)
+TextLabel10.Size = UDim2.new(1, -20, 0, 25)
+TextLabel10.Position = UDim2.new(0, 10, 0, 25)
+TextLabel10.BackgroundTransparency = 1
+TextLabel10.Text = "Ninguno (Selecciona abajo)"
+TextLabel10.TextColor3 = Color3.fromRGB(100, 150, 255)
+TextLabel10.TextSize = 13
+TextLabel10.Font = Enum.Font.GothamBold
+TextLabel10.TextXAlignment = Enum.TextXAlignment.Left
+local Frame14 = Instance.new("Frame", Frame13)
+Frame14.Size = UDim2.new(1, -20, 0, 32)
+Frame14.Position = UDim2.new(0, 10, 0, 55)
+Frame14.BackgroundTransparency = 1
+local TextButton8 = Instance.new("TextButton", Frame14)
+TextButton8.Size = UDim2.new(0.48, 0, 1, 0)
+TextButton8.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
+TextButton8.Text = "âš¡ Teleportarse"
+TextButton8.TextColor3 = Color3.fromRGB(255, 255, 255)
+TextButton8.TextSize = 11
+TextButton8.Font = Enum.Font.GothamBold
+v23(TextButton8, 6)
+local TextButton9 = Instance.new("TextButton", Frame14)
+TextButton9.Size = UDim2.new(0.48, 0, 1, 0)
+TextButton9.Position = UDim2.new(0.52, 0, 0, 0)
+TextButton9.BackgroundColor3 = Color3.fromRGB(200, 150, 100)
+TextButton9.Text = "ðŸ‘\239\184\143 Espectear"
+TextButton9.TextColor3 = Color3.fromRGB(255, 255, 255)
+TextButton9.TextSize = 11
+TextButton9.Font = Enum.Font.GothamBold
+v23(TextButton9, 6)
+TextButton8.MouseButton1Click:Connect(function()
+    local SelectedPlayer = t1.SelectedPlayer
+
+    if SelectedPlayer then
+        SelectedPlayer = t1.SelectedPlayer.Character
+
+        if SelectedPlayer then
+            SelectedPlayer = t1.SelectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+        end
+    end
+
+    if SelectedPlayer then
+        local Character = LocalPlayer.Character
+
+        if Character then
+            Character = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        end
+
+        if Character then
+            Character.CFrame = t1.SelectedPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
+        end
+    end
+end)
+TextButton9.MouseButton1Click:Connect(function()
+    t1.IsSpectating = not t1.IsSpectating
+
+    local IsSpectating = t1.IsSpectating
+
+    if IsSpectating then
+        IsSpectating = t1.SelectedPlayer
+
+        if IsSpectating then
+            IsSpectating = t1.SelectedPlayer.Character
+        end
+    end
+
+    if IsSpectating then
+        local Humanoid = t1.SelectedPlayer.Character:FindFirstChildOfClass("Humanoid")
+
+        if Humanoid then
+            CurrentCamera.CameraSubject = Humanoid
+            TextButton9.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+            TextButton9.Text = "ðŸ‘\239\184\143 Especteando (Activo)"
+
+            return
+        end
+    else
+        if LocalPlayer.Character then
+            local Humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+
+            if Humanoid then
+                CurrentCamera.CameraSubject = Humanoid
+            end
+        end
+
+        TextButton9.BackgroundColor3 = Color3.fromRGB(200, 150, 100)
+        TextButton9.Text = "ðŸ‘\239\184\143 Espectear"
+        t1.IsSpectating = false
+    end
+end)
+local Frame15 = Instance.new("Frame", v62)
+Frame15.Size = UDim2.new(1, 0, 0, 210)
+Frame15.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+Frame15.BorderSizePixel = 0
+v23(Frame15, 8)
+local TextLabel11 = Instance.new("TextLabel", Frame15)
+TextLabel11.Size = UDim2.new(1, -15, 0, 30)
+TextLabel11.Position = UDim2.new(0, 15, 0, 0)
+TextLabel11.BackgroundTransparency = 1
+TextLabel11.Text = "JUGADORES EN LÃNEA (Haz clic para seleccionar)"
+TextLabel11.TextColor3 = Color3.fromRGB(150, 150, 150)
+TextLabel11.TextSize = 10
+TextLabel11.Font = Enum.Font.GothamBold
+TextLabel11.TextXAlignment = Enum.TextXAlignment.Left
+local ScrollingFrame = Instance.new("ScrollingFrame", Frame15)
+ScrollingFrame.Size = UDim2.new(1, -16, 1, -35)
+ScrollingFrame.Position = UDim2.new(0, 8, 0, 30)
+ScrollingFrame.BackgroundTransparency = 1
+ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+ScrollingFrame.ScrollBarThickness = 3
+local UIListLayout = Instance.new("UIListLayout", ScrollingFrame)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 5)
+local t6 = {}
+local function u74()
+
+    for v138, v139 in pairs(t6) do
+
+        v139:Destroy()
+    end
+    table.clear(t6)
+    for _, player in ipairs(Players:GetPlayers()) do
+        local v142 = player
+
+        if v142 ~= LocalPlayer then
+            local TextButton10 = Instance.new("TextButton", ScrollingFrame)
+
+            TextButton10.Size = UDim2.new(1, -5, 0, 32)
+
+            local v144 = v142 == t1.SelectedPlayer
+
+            if v144 then
+                v144 = Color3.fromRGB(50, 80, 130)
+            end
+
+            if not v144 then
+                v144 = Color3.fromRGB(35, 35, 42)
+            end
+
+            TextButton10.BackgroundColor3 = v144
+            TextButton10.Text = "  " .. v142.Name .. " (@" .. v142.DisplayName .. ")"
+            TextButton10.TextColor3 = Color3.fromRGB(220, 220, 220)
+            TextButton10.TextSize = 11
+            TextButton10.Font = Enum.Font.Gotham
+            TextButton10.TextXAlignment = Enum.TextXAlignment.Left
+            TextButton10.AutoButtonColor = false
+            v23(TextButton10, 6)
+            TextButton10.MouseButton1Click:Connect(function()
+                t1.SelectedPlayer = v142
+                TextLabel10.Text = v142.Name .. " (@" .. v142.DisplayName .. ")"
+                u74()
+            end)
+            t6[v142] = TextButton10
+        end
+    end
+end
+Players.PlayerAdded:Connect(u74)
+Players.PlayerRemoving:Connect(u74)
+u74()
+local function v75(p17)
+    if not t2[p17] then
+        local v146 = t2
+        local drawing = Drawing.new("Square")
+        local drawing2 = Drawing.new("Line")
+        local drawing3 = Drawing.new("Square")
+        local drawing4 = Drawing.new("Square")
+        local drawing5 = Drawing.new("Text")
+
+        v146[p17] = {
+			Box = drawing,
+			Tracer = drawing2,
+			HealthBar = drawing3,
+			HealthBarInner = drawing4,
+			Info = drawing5
+		}
+
+        local v152 = t2[p17]
+
+        v152.Box.Thickness = 1.5
+        v152.Box.Filled = false
+        v152.Box.Color = Color3.fromRGB(0, 255, 150)
+        v152.Tracer.Thickness = 1
+        v152.Tracer.Color = Color3.fromRGB(0, 255, 150)
+        v152.HealthBar.Thickness = 1
+        v152.HealthBar.Filled = true
+        v152.HealthBar.Color = Color3.fromRGB(0, 0, 0)
+        v152.HealthBarInner.Thickness = 1
+        v152.HealthBarInner.Filled = true
+        v152.HealthBarInner.Color = Color3.fromRGB(0, 255, 0)
+        v152.Info.Size = 12
+        v152.Info.Center = true
+        v152.Info.Outline = true
+        v152.Info.Color = Color3.fromRGB(255, 255, 255)
+    end
+
+    return t2[p17]
+end
+Players.PlayerRemoving:Connect(function(player)
+    if t2[player] then
+        for _, v in pairs(t2[player]) do
+            local v156 = v
+
+            pcall(function()
+                v156:Remove()
+            end)
+        end
+
+        t2[player] = nil
+    end
+
+    if player == t1.SelectedPlayer then
+        t1.SelectedPlayer = nil
+    end
+end)
+RunService.RenderStepped:Connect(function()
+    if LocalPlayer.Character then
+        local Humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        local v158 = Humanoid
+
+        if Humanoid then
+            v158 = Humanoid.SeatPart
+
+            if v158 then
+                v158 = Humanoid.SeatPart:IsA("VehicleSeat")
+
+                if not v158 then
+                    v158 = Humanoid.SeatPart:IsA("Seat")
+                end
+            end
+        end
+
+        if v158 then
+            local SeatPartParent = Humanoid.SeatPart.Parent
+            local PrimaryPart = SeatPartParent.PrimaryPart
+
+            if not PrimaryPart then
+                PrimaryPart = SeatPartParent:FindFirstChild("HumanoidRootPart") or Humanoid.SeatPart
+            end
+
+            if PrimaryPart then
+                if t1.NoclipEnabled then
+                    u20 = SeatPartParent
+
+                    local GetDescendants = SeatPartParent.GetDescendants
+
+                    for _, v in ipairs(GetDescendants(SeatPartParent)) do
+                        if v:IsA("BasePart") then
+                            v.CanCollide = false
+                        end
+                    end
+
+                    local CurrentCameraCFrame = CurrentCamera.CFrame
+                    local vector3 = Vector3.new()
+
+                    if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                        vector3 += CurrentCameraCFrame.LookVector
+                    end
+
+                    if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                        vector3 -= CurrentCameraCFrame.LookVector
+                    end
+
+                    if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                        vector3 -= CurrentCameraCFrame.RightVector
+                    end
+
+                    if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                        vector3 += CurrentCameraCFrame.RightVector
+                    end
+
+                    local n1 = 65
+
+                    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+                        n1 = 160
+                    end
+
+                    if vector3.Magnitude > 0 then
+                        PrimaryPart.AssemblyLinearVelocity = vector3.Unit * n1
+                        PrimaryPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    else
+                        PrimaryPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        PrimaryPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end
+                else
+                    if u20 then
+                        for _, descendant in ipairs(u20:GetDescendants()) do
+                            if descendant:IsA("BasePart") then
+                                descendant.CanCollide = true
+                            end
+                        end
+
+                        u20 = nil
+                    end
+
+                    if t1.TurboEnabled and false then
+                        PrimaryPart.AssemblyLinearVelocity = PrimaryPart.AssemblyLinearVelocity + PrimaryPart.CFrame.LookVector * (t1.TurboForce * 3)
+                    end
+
+                    local BrakeEnabled = t1.BrakeEnabled
+
+                    if BrakeEnabled then
+                        BrakeEnabled = UserInputService:IsKeyDown(Enum.KeyCode.S)
+                    end
+
+                    if BrakeEnabled then
+                        PrimaryPart.AssemblyLinearVelocity = PrimaryPart.AssemblyLinearVelocity - PrimaryPart.CFrame.LookVector * (t1.BrakeForce * 3)
+                    end
+
+                    if t1.BetterHandling then
+                        local Steer = Humanoid.Steer
+
+                        if Steer ~= 0 then
+                            PrimaryPart.AssemblyAngularVelocity = Vector3.new(PrimaryPart.AssemblyAngularVelocity.X, PrimaryPart.AssemblyAngularVelocity.Y + Steer * 8.5, PrimaryPart.AssemblyAngularVelocity.Z)
+                        else
+                            PrimaryPart.AssemblyAngularVelocity = Vector3.new(PrimaryPart.AssemblyAngularVelocity.X, PrimaryPart.AssemblyAngularVelocity.Y * 0.9, PrimaryPart.AssemblyAngularVelocity.Z)
+                        end
+                    end
+                end
+            end
+        elseif u20 then
+            for _, descendant in ipairs(u20:GetDescendants()) do
+                if descendant:IsA("BasePart") then
+                    descendant.CanCollide = true
+                end
+            end
+        end
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local v175 = v75(player)
+            local Character = player.Character
+            local v177 = Character and Character:FindFirstChild("HumanoidRootPart")
+            local v178 = Character
+
+            if Character then
+                v178 = Character:FindFirstChildOfClass("Humanoid")
+            end
+
+            local v179 = false
+            local v180 = Character
+
+            if Character then
+                v180 = v177
+
+                if v177 then
+                    v180 = v178 and v178.Health > 0
+                end
+            end
+
+            if v180 then
+                local v182, t7Result = CurrentCamera:WorldToViewportPoint(v177.Position)
+                if t7Result then
+                    v179 = true
+
+                    local Head = Character:FindFirstChild("Head")
+
+                    if Head then
+                        Head = CurrentCamera:WorldToViewportPoint(Head.Position + Vector3.new(0, 0.5, 0))
+                    end
+
+                    local v184 = Head or v182
+                    local v185 = CurrentCamera:WorldToViewportPoint(v177.Position - Vector3.new(0, 3, 0))
+                    local v186 = math.abs(v184.Y - v185.Y)
+                    local v187 = v186 / 2
+
+                    if t1.ESPBox then
+                        v175.Box.Visible = true
+                        v175.Box.Size = Vector2.new(v187, v186)
+                        v175.Box.Position = Vector2.new(v182.X - v187 / 2, v184.Y)
+                    else
+                        v175.Box.Visible = false
+                    end
+
+                    if t1.ESPTracer then
+                        v175.Tracer.Visible = true
+                        v175.Tracer.From = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y)
+                        v175.Tracer.To = Vector2.new(v182.X, v185.Y)
+                    else
+                        v175.Tracer.Visible = false
+                    end
+
+                    if t1.ESPHealth then
+                        local v188 = math.clamp(v178.Health / v178.MaxHealth, 0, 1)
+                        local v189 = v186 * v188
+
+                        v175.HealthBar.Visible = true
+                        v175.HealthBar.Size = Vector2.new(3, v186)
+                        v175.HealthBar.Position = Vector2.new(v182.X - v187 / 2 - 6, v184.Y)
+                        v175.HealthBarInner.Visible = true
+                        v175.HealthBarInner.Size = Vector2.new(1, v189)
+                        v175.HealthBarInner.Position = Vector2.new(v182.X - v187 / 2 - 5, v184.Y + (v186 - v189))
+                        v175.HealthBarInner.Color = Color3.fromRGB(255 * (1 - v188), 255 * v188, 0)
+                    else
+                        v175.HealthBar.Visible = false
+                        v175.HealthBarInner.Visible = false
+                    end
+
+                    if t1.ESPInfo then
+                        local v190 = math.floor((CurrentCamera.CFrame.Position - v177.Position).Magnitude)
+
+                        v175.Info.Visible = true
+                        v175.Info.Text = player.Name .. " [" .. v190 .. "m]"
+                        v175.Info.Position = Vector2.new(v182.X, v184.Y - 18)
+                    else
+                        v175.Info.Visible = false
+                    end
+                end
+            end
+
+            if not v179 then
+                v175.Box.Visible = false
+                v175.Tracer.Visible = false
+                v175.HealthBar.Visible = false
+                v175.HealthBarInner.Visible = false
+                v175.Info.Visible = false
+            end
+        end
+    end
+end)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed then
+        gameProcessed = t1.IsBindingKey
+    end
+
+    if gameProcessed then
+        return
+    end
+
+    if input.KeyCode ~= t1.TurboKey then
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode ~= t1.TurboKey then
+    end
+end)
