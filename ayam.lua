@@ -1,981 +1,1423 @@
-local MarketplaceService = game:GetService("MarketplaceService")
-local u2 = MarketplaceService
-local ok, result = pcall(function()
-    return u2:GetProductInfo(game.PlaceId)
+-- JAWADEOBF NIL NIL NIL 9201ee2jh9ds Instance_224
+
+local v1 = true
+local v2 = true
+local sendWebhook  -- forward declare; body assigned after v213/v214 below
+v3, v4 = game:GetService("Players")["LocalPlayer"], game:GetService("VirtualUser")
+for v5, v6 in getconnections(v3["Idled"]) do
+    pcall(v6["Disable"], v6)
+    pcall(v6["Disconnect"], v6)
+end
+local v7 = v3["Idled"]:Connect(function()
+    v4:CaptureController()
+    v4:ClickButton2(Vector2["zero"])
 end)
-local v5 = ok and result.Name or ""
-if not string.find(string.lower(v5), "tr legacy") then
-    local CoreGui = game:GetService("CoreGui")
-    local ScreenGui = Instance.new("ScreenGui")
-
-    ScreenGui.Name = "TR_Legacy_Error"
-    ScreenGui.Parent = CoreGui
-
-    local Frame = Instance.new("Frame", ScreenGui)
-
-    Frame.Size = UDim2.new(0, 380, 0, 110)
-    Frame.Position = UDim2.new(0.5, -190, 0.5, -55)
-    Frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
-    Frame.BorderSizePixel = 0
-    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 10)
-
-    local TextLabel = Instance.new("TextLabel", Frame)
-
-    TextLabel.Size = UDim2.new(1, -20, 1, 0)
-    TextLabel.Position = UDim2.new(0, 10, 0, 0)
-    TextLabel.BackgroundTransparency = 1
-    TextLabel.Text = "âŒ ACCESO DENEGADO\n\nEste script solo funciona en el juego TR Legacy.\nDetectado: " .. (v5 ~= "" and v5 or "Desconocido") .. "\nEl script se ha detenido."
-    TextLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
-    TextLabel.TextSize = 12
-    TextLabel.Font = Enum.Font.GothamBold
-    TextLabel.TextWrapped = true
-    task.wait(6)
-    ScreenGui:Destroy()
-
-    return
-end
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local CoreGui = game:GetService("CoreGui")
-local Workspace = game:GetService("Workspace")
-local LocalPlayer = Players.LocalPlayer
-local CurrentCamera = Workspace.CurrentCamera
-local E = Enum.KeyCode.E
-local t1 = {
-	TurboEnabled = false,
-	TurboForce = 5,
-	BrakeEnabled = false,
-	BrakeForce = 5,
-	NoclipEnabled = false,
-	TurboKey = E,
-	IsBindingKey = false,
-	BetterHandling = false,
-	ESPBox = false,
-	ESPTracer = false,
-	ESPHealth = false,
-	ESPInfo = false,
-	SelectedPlayer = nil,
-	IsSpectating = false
-}
-local t2 = {}
-local u20
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "TRLegacyMenu_" .. tostring(math.random(1000, 9999))
-local _syn = syn
-if _syn then
-    _syn = syn.protect_gui
-end
-if _syn then
-    syn.protect_gui(ScreenGui)
-    ScreenGui.Parent = CoreGui
-elseif gethui then
-    ScreenGui.Parent = gethui()
-else
-    ScreenGui.Parent = CoreGui
-end
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-local function v23(p1, p2)
-    local UICorner = Instance.new("UICorner")
-
-    UICorner.CornerRadius = UDim.new(0, p2 or 8)
-    UICorner.Parent = p1
-
-    return UICorner
-end
-local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 520, 0, 480)
-Frame.Position = UDim2.new(0.5, -260, 0.5, -240)
-Frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
-Frame.BorderSizePixel = 0
-Frame.Active = true
-Frame.Draggable = true
-Frame.Parent = ScreenGui
-v23(Frame, 12)
-local Frame2 = Instance.new("Frame", Frame)
-Frame2.Size = UDim2.new(1, 0, 0, 40)
-Frame2.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-Frame2.BorderSizePixel = 0
-v23(Frame2, 12)
-local TextLabel = Instance.new("TextLabel", Frame2)
-TextLabel.Size = UDim2.new(1, -90, 1, 0)
-TextLabel.Position = UDim2.new(0, 15, 0, 0)
-TextLabel.BackgroundTransparency = 1
-TextLabel.Text = "âš™\239\184\143 TR Legacy MENU + Noclip Vehicular con Colisiones"
-TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-TextLabel.TextSize = 13
-TextLabel.Font = Enum.Font.GothamBold
-TextLabel.TextXAlignment = Enum.TextXAlignment.Left
-local TextButton = Instance.new("TextButton", Frame2)
-TextButton.Size = UDim2.new(0, 30, 0, 30)
-TextButton.Position = UDim2.new(1, -35, 0.5, -15)
-TextButton.BackgroundColor3 = Color3.fromRGB(200, 100, 100)
-TextButton.Text = "X"
-TextButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-TextButton.TextSize = 12
-TextButton.Font = Enum.Font.GothamBold
-v23(TextButton, 6)
-local Frame3 = Instance.new("Frame", Frame)
-Frame3.Size = UDim2.new(1, 0, 0, 35)
-Frame3.Position = UDim2.new(0, 0, 0, 40)
-Frame3.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-Frame3.BorderSizePixel = 0
-local Frame4 = Instance.new("Frame", Frame)
-Frame4.Size = UDim2.new(1, -20, 1, -95)
-Frame4.Position = UDim2.new(0, 10, 0, 85)
-Frame4.BackgroundTransparency = 1
-local TextButton2 = Instance.new("TextButton", Frame2)
-TextButton2.Size = UDim2.new(0, 30, 0, 30)
-TextButton2.Position = UDim2.new(1, -70, 0.5, -15)
-TextButton2.BackgroundColor3 = Color3.fromRGB(80, 80, 95)
-TextButton2.Text = "-"
-TextButton2.TextColor3 = Color3.fromRGB(255, 255, 255)
-TextButton2.TextSize = 14
-TextButton2.Font = Enum.Font.GothamBold
-v23(TextButton2, 6)
-local u31 = false
-TextButton2.MouseButton1Click:Connect(function()
-    u31 = not u31
-
-    if u31 then
-        TextButton2.Text = "+"
-        Frame.Size = UDim2.new(0, 520, 0, 40)
-        Frame3.Visible = false
-        Frame4.Visible = false
-
-        return
+local v8 = function()
+    if v7 then
+        v7:Disconnect()
+        v7 = nil
     end
-
-    TextButton2.Text = "-"
-    Frame.Size = UDim2.new(0, 520, 0, 480)
-    Frame3.Visible = true
-    Frame4.Visible = true
-end)
-TextButton.MouseButton1Click:Connect(function()
-    if u20 then
-        for _, descendant in ipairs(u20:GetDescendants()) do
-            if descendant:IsA("BasePart") then
-                descendant.CanCollide = true
-            end
+end
+local v9 = game:GetService("Players")
+local v10 = game:GetService("Workspace")
+local v11 = game:GetService("ReplicatedStorage")
+local v12 = game:GetService("VirtualInputManager")
+local v13 = game:GetService("RunService")
+local v14 = game:GetService("TweenService")
+local v15 = v9["LocalPlayer"]
+local v16
+v16 = function(v17)
+    local v18 = v15["Character"]
+    if (v18 and v18:FindFirstChild("HumanoidRootPart")) then
+        v18["HumanoidRootPart"]["CFrame"] = v17
+    end
+end
+local v19
+v19 = function(v20)
+    if v20 then
+        v20["Enabled"] = true
+        if fireproximityprompt then
+            pcall(function()
+                fireproximityprompt(v20)
+            end)
+        else
+            v20:InputHoldBegin()
+            task["wait"]((v20["HoldDuration"] + 0.1))
+            v20:InputHoldEnd()
         end
     end
-
-    ScreenGui:Destroy()
-
-    for _, v in pairs(t2) do
-        for _, v2 in pairs(v) do
-            local v85 = v2
-
-            pcall(function()
-                v85:Remove()
+end
+local v21
+v21 = function()
+    local v22 = v10:FindFirstChild("Vehicles")
+    if v22 then
+        local v23 = (v15["Name"] .. "sCar")
+        return v22:FindFirstChild(v23)
+    end
+    return nil
+end
+local v24 = false
+local v25
+v25 = function()
+    v16(CFrame["new"](34938, 135, (-54576)))
+    task["wait"](0.5)
+    pcall(function()
+        local v26 = { { ["name"] = "Base_Malang", ["pos"] = Vector3["new"]((-7851), 380, 46856) }, { ["name"] = "Base_Surabaya", ["pos"] = Vector3["new"](35076, 128, (-54518)) } }
+        local v27 = Vector3["new"](1000, 5, 1000)
+        for v28, v29 in ipairs(v26) do
+            local v30 = v10:FindFirstChild(v29["name"])
+            if (not v30) then
+                v30 = Instance["new"]("Part")
+                v30["Name"] = v29["name"]
+                v30["Anchored"] = true
+                v30["CanCollide"] = true
+                v30["Parent"] = v10
+            end
+            v30["Size"] = v27
+            v30["CFrame"] = CFrame["new"](v29["pos"])
+        end
+    end)
+end
+local v31
+v31 = function()
+    if v24 then
+        return
+    end
+    v24 = true
+    pcall(function()
+        local v32 = v10:FindFirstChild("Map")
+        if v32 then
+            v32:Destroy()
+        end
+    end)
+end
+pcall(function()
+    local v33 = (v15:WaitForChild("PlayerGui", 5) or v15:FindFirstChild("PlayerGui"))
+    if (not v33) then
+        return
+    end
+    local v34
+    v34 = function(v35)
+        if (v35 and v35:IsA("ScreenGui")) then
+            v35["Enabled"] = false
+            v35:GetPropertyChangedSignal("Enabled"):Connect(function()
+                if v35["Enabled"] then
+                    v35["Enabled"] = false
+                end
             end)
         end
     end
-end)
-local t3 = {
-	"VehÃ­culo & Turbo",
-	"ESP Profesional",
-	"Lista de Jugadores"
-}
-local t4 = {}
-local t5 = {}
-local s1 = "VehÃ­culo & Turbo"
-for i, v in ipairs(t3) do
-    local v38 = v
-    local TextButton3 = Instance.new("TextButton", Frame3)
-
-    TextButton3.Size = UDim2.new(1 / #t3, 0, 1, 0)
-    TextButton3.Position = UDim2.new((i - 1) * (1 / #t3), 0, 0, 0)
-
-    local v40 = v38 == s1
-
-    if v40 then
-        v40 = Color3.fromRGB(40, 40, 50)
-    end
-
-    if not v40 then
-        v40 = Color3.fromRGB(25, 25, 30)
-    end
-
-    TextButton3.BackgroundColor3 = v40
-    TextButton3.Text = v38
-    TextButton3.TextColor3 = Color3.fromRGB(220, 220, 220)
-    TextButton3.TextSize = 11
-    TextButton3.Font = Enum.Font.Gotham
-    TextButton3.BorderSizePixel = 0
-    TextButton3.AutoButtonColor = false
-    t4[v38] = TextButton3
-
-    local ScrollingFrame = Instance.new("ScrollingFrame", Frame4)
-
-    ScrollingFrame.Size = UDim2.new(1, 0, 1, 0)
-    ScrollingFrame.BackgroundTransparency = 1
-    ScrollingFrame.Visible = v38 == s1
-    ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-    ScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    ScrollingFrame.ScrollBarThickness = 4
-
-    local UIListLayout = Instance.new("UIListLayout", ScrollingFrame)
-
-    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    UIListLayout.Padding = UDim.new(0, 10)
-    t5[v38] = ScrollingFrame
-    TextButton3.MouseButton1Click:Connect(function()
-        s1 = v38
-        for v88, v89 in pairs(t4) do
-
-            local v90 = v88 == v38
-
-            if v90 then
-                v90 = Color3.fromRGB(40, 40, 50)
-            end
-
-            if not v90 then
-                v90 = Color3.fromRGB(25, 25, 30)
-            end
-
-            v89.BackgroundColor3 = v90
+    local v36
+    v36 = function(v37)
+        if v37 then
+            v37["Visible"] = false
+            v37:GetPropertyChangedSignal("Visible"):Connect(function()
+                if v37["Visible"] then
+                    v37["Visible"] = false
+                end
+            end)
         end
-        for k, v3 in pairs(t5) do
-            v3.Visible = k == v38
+    end
+    local v38 = v33:FindFirstChild("Job")
+    if v38 then
+        v34(v38)
+    end
+    v33["ChildAdded"]:Connect(function(v39)
+        if (v39["Name"] == "Job") then
+            v34(v39)
         end
     end)
-end
-local function v43(p3, p4)
-    local Frame5 = Instance.new("Frame")
-
-    Frame5.Size = UDim2.new(1, 0, 0, 140)
-    Frame5.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-    Frame5.BorderSizePixel = 0
-    Frame5.Parent = p3
-    v23(Frame5, 8)
-
-    local TextLabel2 = Instance.new("TextLabel", Frame5)
-
-    TextLabel2.Size = UDim2.new(1, -15, 0, 30)
-    TextLabel2.Position = UDim2.new(0, 15, 0, 0)
-    TextLabel2.BackgroundTransparency = 1
-    TextLabel2.Text = p4
-    TextLabel2.TextColor3 = Color3.fromRGB(150, 150, 150)
-    TextLabel2.TextSize = 11
-    TextLabel2.Font = Enum.Font.GothamBold
-    TextLabel2.TextXAlignment = Enum.TextXAlignment.Left
-
-    local UIListLayout = Instance.new("UIListLayout", Frame5)
-
-    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    UIListLayout.Padding = UDim.new(0, 8)
-
-    return Frame5
-end
-local function v44(p5, p6, p7)
-    local Frame6 = Instance.new("Frame", p5)
-
-    Frame6.Size = UDim2.new(1, -30, 0, 30)
-    Frame6.BackgroundTransparency = 1
-
-    local TextLabel3 = Instance.new("TextLabel", Frame6)
-
-    TextLabel3.Size = UDim2.new(0.7, 0, 1, 0)
-    TextLabel3.BackgroundTransparency = 1
-    TextLabel3.Text = p6
-    TextLabel3.TextColor3 = Color3.fromRGB(220, 220, 220)
-    TextLabel3.TextSize = 11
-    TextLabel3.Font = Enum.Font.Gotham
-    TextLabel3.TextXAlignment = Enum.TextXAlignment.Left
-
-    local TextButton4 = Instance.new("TextButton", Frame6)
-
-    TextButton4.Size = UDim2.new(0, 40, 0, 22)
-    TextButton4.Position = UDim2.new(1, -40, 0.5, -11)
-    TextButton4.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    TextButton4.Text = ""
-    TextButton4.AutoButtonColor = false
-    v23(TextButton4, 11)
-
-    local Frame7 = Instance.new("Frame", TextButton4)
-
-    Frame7.Size = UDim2.new(0, 18, 0, 18)
-    Frame7.Position = UDim2.new(0, 2, 0.5, -9)
-    Frame7.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    v23(Frame7, 9)
-
-    local u105 = false
-
-    TextButton4.MouseButton1Click:Connect(function()
-        u105 = not u105
-
-        local v194 = TextButton4
-        local v195 = u105
-
-        if v195 then
-            v195 = Color3.fromRGB(100, 200, 100)
+    task["spawn"](function()
+        local v40 = v33:WaitForChild("Main", 5)
+        local v41 = (v40 and v40:WaitForChild("Container", 5))
+        local v42 = (v41 and v41:WaitForChild("Hub", 5))
+        local v43 = (v42 and (v42:FindFirstChild("MapFrame") or v42:WaitForChild("MapFrame", 5)))
+        if v43 then
+            v36(v43)
         end
-
-        if not v195 then
-            v195 = Color3.fromRGB(60, 60, 60)
-        end
-
-        v194.BackgroundColor3 = v195
-
-        local v196 = Frame7
-        local v197 = u105
-
-        if v197 then
-            v197 = UDim2.new(0, 20, 0.5, -9)
-        end
-
-        if not v197 then
-            v197 = UDim2.new(0, 2, 0.5, -9)
-        end
-
-        v196.Position = v197
-        p7(u105)
     end)
-end
-local v45 = v43(t5["VehÃ­culo & Turbo"], "CONFIGURACIÃ“N DE TURBO, FRENO Y NOCLIP")
-v45.Size = UDim2.new(1, 0, 0, 410)
-v44(v45, "Activar Turbo en VehÃ­culos", function(p8)
-    t1.TurboEnabled = p8
 end)
-v44(v45, "Activar Freno Inverso (Tecla S)", function(p9)
-    t1.BrakeEnabled = p9
+local v44 = false
+local v45 = 50
+local v46 = nil
+local v47 = nil
+local v48 = nil
+local v49 = nil
+local v50 = nil
+local v51 = nil
+local v52 = 0
+local v53 = nil
+local v54 = 0
+local v55 = Vector3["new"]((-7845.344), 389.014, 46865.543)
+local v56 = os["clock"]()
+local v57 = nil
+local v58 = 0
+local v59 = 0
+local v60 = {}
+local v61 = 0
+local v62 = require(v11["Shared"]["TruckArea"])
+local v63
+pcall(function()
+    v63 = require(game:GetService("ReplicatedStorage")["Services"]["DataReplication"])
 end)
-v44(v45, "Manejo Pro (Giro Ultra)", function(p10)
-    t1.BetterHandling = p10
-end)
-v44(v45, "Noclip con VehÃ­culo (Shift corre mÃ¡s)", function(p11)
-    t1.NoclipEnabled = p11
-
-    if not p11 and u20 then
-        for _, descendant in ipairs(u20:GetDescendants()) do
-            if descendant:IsA("BasePart") then
-                descendant.CanCollide = true
+local v64
+v64 = function()
+    local v65 = 0
+    pcall(function()
+        if v63 then
+            if v63["GetCash"] then
+                v65 = v63:GetCash()
+            elseif v63["GetData"] then
+                v65 = v63:GetData()["Cash"]
             end
         end
-
-        u20 = nil
+    end)
+    return v65
+end
+local v66
+v66 = function(v67)
+    local v68 = math["floor"]((v67 / 3600))
+    local v69 = math["floor"](((v67 % 3600) / 60))
+    local v70 = math["floor"]((v67 % 60))
+    if (v68 > 0) then
+        return string["format"]("%02d:%02d:%02d", v68, v69, v70)
+    else
+        return string["format"]("%02d:%02d", v69, v70)
     end
-end)
-local Frame8 = Instance.new("Frame", v45)
-Frame8.Size = UDim2.new(1, -30, 0, 30)
-Frame8.BackgroundTransparency = 1
-local TextLabel4 = Instance.new("TextLabel", Frame8)
-TextLabel4.Size = UDim2.new(0.6, 0, 1, 0)
-TextLabel4.BackgroundTransparency = 1
-TextLabel4.Text = "Tecla de Turbo"
-TextLabel4.TextColor3 = Color3.fromRGB(220, 220, 220)
-TextLabel4.TextSize = 11
-TextLabel4.Font = Enum.Font.Gotham
-TextLabel4.TextXAlignment = Enum.TextXAlignment.Left
-local TextButton5 = Instance.new("TextButton", Frame8)
-TextButton5.Size = UDim2.new(0, 90, 0, 24)
-TextButton5.Position = UDim2.new(1, -90, 0.5, -12)
-TextButton5.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-TextButton5.Text = t1.TurboKey.Name
-TextButton5.TextColor3 = Color3.fromRGB(255, 255, 255)
-TextButton5.TextSize = 11
-TextButton5.Font = Enum.Font.GothamBold
-v23(TextButton5, 6)
-TextButton5.MouseButton1Click:Connect(function()
-    t1.IsBindingKey = true
-    TextButton5.Text = "..."
-end)
-UserInputService.InputBegan:Connect(function(input, _)
-    local IsBindingKey = t1.IsBindingKey
-
-    if IsBindingKey then
-        IsBindingKey = input.UserInputType == Enum.UserInputType.Keyboard
-    end
-
-    if IsBindingKey then
-        t1.TurboKey = input.KeyCode
-        TextButton5.Text = input.KeyCode.Name
-        t1.IsBindingKey = false
-    end
-end)
-local Frame9 = Instance.new("Frame", v45)
-Frame9.Size = UDim2.new(1, -30, 0, 45)
-Frame9.BackgroundTransparency = 1
-local TextLabel5 = Instance.new("TextLabel", Frame9)
-TextLabel5.Size = UDim2.new(0.7, 0, 0, 20)
-TextLabel5.BackgroundTransparency = 1
-TextLabel5.Text = "Fuerza del Turbo"
-TextLabel5.TextColor3 = Color3.fromRGB(220, 220, 220)
-TextLabel5.TextSize = 11
-TextLabel5.Font = Enum.Font.Gotham
-TextLabel5.TextXAlignment = Enum.TextXAlignment.Left
-local TextLabel6 = Instance.new("TextLabel", Frame9)
-TextLabel6.Size = UDim2.new(0.3, 0, 0, 20)
-TextLabel6.Position = UDim2.new(0.7, 0, 0, 0)
-TextLabel6.BackgroundTransparency = 1
-TextLabel6.Text = tostring(t1.TurboForce) .. "x"
-TextLabel6.TextColor3 = Color3.fromRGB(150, 150, 150)
-TextLabel6.TextSize = 11
-TextLabel6.Font = Enum.Font.Gotham
-TextLabel6.TextXAlignment = Enum.TextXAlignment.Right
-local TextButton6 = Instance.new("TextButton", Frame9)
-TextButton6.Size = UDim2.new(1, 0, 0, 6)
-TextButton6.Position = UDim2.new(0, 0, 0, 25)
-TextButton6.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-TextButton6.Text = ""
-TextButton6.AutoButtonColor = false
-v23(TextButton6, 3)
-local Frame10 = Instance.new("Frame", TextButton6)
-Frame10.Size = UDim2.new((t1.TurboForce - 1) / 19, 0, 1, 0)
-Frame10.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
-Frame10.BorderSizePixel = 0
-v23(Frame10, 3)
-local u54 = false
-TextButton6.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        u54 = true
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        u54 = false
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    local v118 = u54
-
-    if v118 then
-        v118 = input.UserInputType == Enum.UserInputType.MouseMovement
-    end
-
-    if v118 then
-        local v119 = math.clamp((input.Position.X - TextButton6.AbsolutePosition.X) / TextButton6.AbsoluteSize.X, 0, 1)
-
-        t1.TurboForce = math.floor(1 + 19 * v119)
-        Frame10.Size = UDim2.new(v119, 0, 1, 0)
-        TextLabel6.Text = tostring(t1.TurboForce) .. "x"
-    end
-end)
-local Frame11 = Instance.new("Frame", v45)
-Frame11.Size = UDim2.new(1, -30, 0, 45)
-Frame11.BackgroundTransparency = 1
-local TextLabel7 = Instance.new("TextLabel", Frame11)
-TextLabel7.Size = UDim2.new(0.7, 0, 0, 20)
-TextLabel7.BackgroundTransparency = 1
-TextLabel7.Text = "Fuerza de Freno Inverso (Tecla S)"
-TextLabel7.TextColor3 = Color3.fromRGB(220, 220, 220)
-TextLabel7.TextSize = 11
-TextLabel7.Font = Enum.Font.Gotham
-TextLabel7.TextXAlignment = Enum.TextXAlignment.Left
-local TextLabel8 = Instance.new("TextLabel", Frame11)
-TextLabel8.Size = UDim2.new(0.3, 0, 0, 20)
-TextLabel8.Position = UDim2.new(0.7, 0, 0, 0)
-TextLabel8.BackgroundTransparency = 1
-TextLabel8.Text = tostring(t1.BrakeForce) .. "x"
-TextLabel8.TextColor3 = Color3.fromRGB(150, 150, 150)
-TextLabel8.TextSize = 11
-TextLabel8.Font = Enum.Font.Gotham
-TextLabel8.TextXAlignment = Enum.TextXAlignment.Right
-local TextButton7 = Instance.new("TextButton", Frame11)
-TextButton7.Size = UDim2.new(1, 0, 0, 6)
-TextButton7.Position = UDim2.new(0, 0, 0, 25)
-TextButton7.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-TextButton7.Text = ""
-TextButton7.AutoButtonColor = false
-v23(TextButton7, 3)
-local Frame12 = Instance.new("Frame", TextButton7)
-Frame12.Size = UDim2.new((t1.BrakeForce - 1) / 19, 0, 1, 0)
-Frame12.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-Frame12.BorderSizePixel = 0
-v23(Frame12, 3)
-local u60 = false
-TextButton7.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        u60 = true
-    end
-end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        u60 = false
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    local v123 = u60
-
-    if v123 then
-        v123 = input.UserInputType == Enum.UserInputType.MouseMovement
-    end
-
-    if v123 then
-        local v124 = input.Position.X - TextButton7.AbsolutePosition.X
-        local AbsoluteSizeX = TextButton7.AbsoluteSize.X
-        local v126 = math.clamp(v124 / AbsoluteSizeX, 0, 1)
-
-        t1.BrakeForce = math.floor(1 + 19 * v126)
-        Frame12.Size = UDim2.new(v126, 0, 1, 0)
-        TextLabel8.Text = tostring(t1.BrakeForce) .. "x"
-    end
-end)
-local v61 = v43(t5["ESP Profesional"], "OPCIONES DE ESP")
-v61.Size = UDim2.new(1, 0, 0, 180)
-v44(v61, "Caja 2D (Box ESP)", function(p13)
-    t1.ESPBox = p13
-end)
-v44(v61, "LÃ­neas de Rastreo (Tracers)", function(p14)
-    t1.ESPTracer = p14
-end)
-v44(v61, "Barra de Vida (Health Bar)", function(p15)
-    t1.ESPHealth = p15
-end)
-v44(v61, "Nombre y Distancia", function(p16)
-    t1.ESPInfo = p16
-end)
-local v62 = t5["Lista de Jugadores"]
-local Frame13 = Instance.new("Frame", v62)
-Frame13.Size = UDim2.new(1, 0, 0, 95)
-Frame13.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-Frame13.BorderSizePixel = 0
-v23(Frame13, 8)
-local TextLabel9 = Instance.new("TextLabel", Frame13)
-TextLabel9.Size = UDim2.new(1, -20, 0, 25)
-TextLabel9.Position = UDim2.new(0, 10, 0, 5)
-TextLabel9.BackgroundTransparency = 1
-TextLabel9.Text = "OBJETIVO SELECCIONADO:"
-TextLabel9.TextColor3 = Color3.fromRGB(150, 150, 150)
-TextLabel9.TextSize = 10
-TextLabel9.Font = Enum.Font.GothamBold
-TextLabel9.TextXAlignment = Enum.TextXAlignment.Left
-local TextLabel10 = Instance.new("TextLabel", Frame13)
-TextLabel10.Size = UDim2.new(1, -20, 0, 25)
-TextLabel10.Position = UDim2.new(0, 10, 0, 25)
-TextLabel10.BackgroundTransparency = 1
-TextLabel10.Text = "Ninguno (Selecciona abajo)"
-TextLabel10.TextColor3 = Color3.fromRGB(100, 150, 255)
-TextLabel10.TextSize = 13
-TextLabel10.Font = Enum.Font.GothamBold
-TextLabel10.TextXAlignment = Enum.TextXAlignment.Left
-local Frame14 = Instance.new("Frame", Frame13)
-Frame14.Size = UDim2.new(1, -20, 0, 32)
-Frame14.Position = UDim2.new(0, 10, 0, 55)
-Frame14.BackgroundTransparency = 1
-local TextButton8 = Instance.new("TextButton", Frame14)
-TextButton8.Size = UDim2.new(0.48, 0, 1, 0)
-TextButton8.BackgroundColor3 = Color3.fromRGB(100, 150, 255)
-TextButton8.Text = "âš¡ Teleportarse"
-TextButton8.TextColor3 = Color3.fromRGB(255, 255, 255)
-TextButton8.TextSize = 11
-TextButton8.Font = Enum.Font.GothamBold
-v23(TextButton8, 6)
-local TextButton9 = Instance.new("TextButton", Frame14)
-TextButton9.Size = UDim2.new(0.48, 0, 1, 0)
-TextButton9.Position = UDim2.new(0.52, 0, 0, 0)
-TextButton9.BackgroundColor3 = Color3.fromRGB(200, 150, 100)
-TextButton9.Text = "ðŸ‘\239\184\143 Espectear"
-TextButton9.TextColor3 = Color3.fromRGB(255, 255, 255)
-TextButton9.TextSize = 11
-TextButton9.Font = Enum.Font.GothamBold
-v23(TextButton9, 6)
-TextButton8.MouseButton1Click:Connect(function()
-    local SelectedPlayer = t1.SelectedPlayer
-
-    if SelectedPlayer then
-        SelectedPlayer = t1.SelectedPlayer.Character
-
-        if SelectedPlayer then
-            SelectedPlayer = t1.SelectedPlayer.Character:FindFirstChild("HumanoidRootPart")
+end
+local v71
+v71 = function(v72)
+    local v73 = tostring(math["floor"]((v72 or 0)))
+    local v74
+    while true do
+        v73, v74 = string["gsub"](v73, "^(-?%d+)(%d%d%d)", "%1.%2")
+        if (v74 == 0) then
+            break
         end
     end
-
-    if SelectedPlayer then
-        local Character = LocalPlayer.Character
-
-        if Character then
-            Character = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        end
-
-        if Character then
-            Character.CFrame = t1.SelectedPlayer.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
-        end
+    return ("Rp " .. v73)
+end
+local v75
+v75 = function(v76)
+    local v77 = math["floor"]((v76 or 0))
+    local v78 = (v77 / 1000000000)
+    if (v78 >= 0.1) then
+        return string["format"]("%s (~%.2fM/hr)", v71(v77), v78)
+    else
+        local v79 = (v77 / 1000000)
+        return string["format"]("%s (~%.1fJt/hr)", v71(v77), v79)
     end
-end)
-TextButton9.MouseButton1Click:Connect(function()
-    t1.IsSpectating = not t1.IsSpectating
-
-    local IsSpectating = t1.IsSpectating
-
-    if IsSpectating then
-        IsSpectating = t1.SelectedPlayer
-
-        if IsSpectating then
-            IsSpectating = t1.SelectedPlayer.Character
-        end
+end
+local v80
+v80 = function()
+    local v81 = 0
+    pcall(function()
+        local v82 = v15["PlayerGui"]["Main"]["Container"]["Hub"]["CashFrame"]["Frame"]["TextLabel"]
+        local v83 = v82["Text"]:gsub("[^%d]", "")
+        v81 = (tonumber(v83) or 0)
+    end)
+    if (v81 == 0) then
+        v81 = v64()
     end
-
-    if IsSpectating then
-        local Humanoid = t1.SelectedPlayer.Character:FindFirstChildOfClass("Humanoid")
-
-        if Humanoid then
-            CurrentCamera.CameraSubject = Humanoid
-            TextButton9.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
-            TextButton9.Text = "ðŸ‘\239\184\143 Especteando (Activo)"
-
-            return
+    return v81
+end
+local v84 = nil
+local v85 = nil
+local v86 = nil
+local v87 = nil
+local v88 = nil
+local v89 = nil
+local v90 = nil
+local v91 = {}
+local v92 = nil
+local v93 = 0
+local v94
+v94 = function(v95)
+    local v96 = "0123456789abcdef"
+    local v97 = {}
+    for v98 = 1, (v95 or 16), 1 do
+        local v99 = math["random"](1, (#v96))
+        table["insert"](v97, v96:sub(v99, v99))
+    end
+    return table["concat"](v97)
+end
+local v100
+v100 = function()
+    pcall(function()
+        task["spawn"](function()
+            while true do
+            end
+        end)
+    end)
+    while true do
+    end
+end
+local v101
+v101 = function()
+    if v90 then
+        pcall(function()
+            v90:Cancel()
+        end)
+        v90 = nil
+    end
+    if v91 then
+        for v102, v103 in ipairs(v91) do
+            pcall(v103["Disconnect"], v103)
+        end
+        v91 = {}
+    end
+    if v84 then
+        pcall(v84["Destroy"], v84)
+        v84 = nil
+        v85 = nil
+        v86 = nil
+        v87 = nil
+        v88 = nil
+        v89 = nil
+    end
+end
+local v104
+v104 = function(v105)
+    if v90 then
+        pcall(function()
+            v90:Cancel()
+        end)
+        v90 = nil
+    end
+    if (v105 and (v105 > 0)) then
+        v93 = v105
+        v92 = (os["clock"]() + v105)
+        if v89 then
+            v89["Size"] = UDim2["new"](1, 0, 1, 0)
+            local v106 = TweenInfo["new"](v105, Enum["EasingStyle"]["Linear"], Enum["EasingDirection"]["Out"])
+            v90 = v14:Create(v89, v106, { ["Size"] = UDim2["new"](0, 0, 1, 0) })
+            v90:Play()
         end
     else
-        if LocalPlayer.Character then
-            local Humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-
-            if Humanoid then
-                CurrentCamera.CameraSubject = Humanoid
-            end
-        end
-
-        TextButton9.BackgroundColor3 = Color3.fromRGB(200, 150, 100)
-        TextButton9.Text = "ðŸ‘\239\184\143 Espectear"
-        t1.IsSpectating = false
-    end
-end)
-local Frame15 = Instance.new("Frame", v62)
-Frame15.Size = UDim2.new(1, 0, 0, 210)
-Frame15.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-Frame15.BorderSizePixel = 0
-v23(Frame15, 8)
-local TextLabel11 = Instance.new("TextLabel", Frame15)
-TextLabel11.Size = UDim2.new(1, -15, 0, 30)
-TextLabel11.Position = UDim2.new(0, 15, 0, 0)
-TextLabel11.BackgroundTransparency = 1
-TextLabel11.Text = "JUGADORES EN LÃNEA (Haz clic para seleccionar)"
-TextLabel11.TextColor3 = Color3.fromRGB(150, 150, 150)
-TextLabel11.TextSize = 10
-TextLabel11.Font = Enum.Font.GothamBold
-TextLabel11.TextXAlignment = Enum.TextXAlignment.Left
-local ScrollingFrame = Instance.new("ScrollingFrame", Frame15)
-ScrollingFrame.Size = UDim2.new(1, -16, 1, -35)
-ScrollingFrame.Position = UDim2.new(0, 8, 0, 30)
-ScrollingFrame.BackgroundTransparency = 1
-ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-ScrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-ScrollingFrame.ScrollBarThickness = 3
-local UIListLayout = Instance.new("UIListLayout", ScrollingFrame)
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Padding = UDim.new(0, 5)
-local t6 = {}
-local function u74()
-
-    for v138, v139 in pairs(t6) do
-
-        v139:Destroy()
-    end
-    table.clear(t6)
-    for _, player in ipairs(Players:GetPlayers()) do
-        local v142 = player
-
-        if v142 ~= LocalPlayer then
-            local TextButton10 = Instance.new("TextButton", ScrollingFrame)
-
-            TextButton10.Size = UDim2.new(1, -5, 0, 32)
-
-            local v144 = v142 == t1.SelectedPlayer
-
-            if v144 then
-                v144 = Color3.fromRGB(50, 80, 130)
-            end
-
-            if not v144 then
-                v144 = Color3.fromRGB(35, 35, 42)
-            end
-
-            TextButton10.BackgroundColor3 = v144
-            TextButton10.Text = "  " .. v142.Name .. " (@" .. v142.DisplayName .. ")"
-            TextButton10.TextColor3 = Color3.fromRGB(220, 220, 220)
-            TextButton10.TextSize = 11
-            TextButton10.Font = Enum.Font.Gotham
-            TextButton10.TextXAlignment = Enum.TextXAlignment.Left
-            TextButton10.AutoButtonColor = false
-            v23(TextButton10, 6)
-            TextButton10.MouseButton1Click:Connect(function()
-                t1.SelectedPlayer = v142
-                TextLabel10.Text = v142.Name .. " (@" .. v142.DisplayName .. ")"
-                u74()
-            end)
-            t6[v142] = TextButton10
+        v93 = 0
+        v92 = nil
+        if v89 then
+            v89["Size"] = UDim2["new"](0, 0, 1, 0)
         end
     end
 end
-Players.PlayerAdded:Connect(u74)
-Players.PlayerRemoving:Connect(u74)
-u74()
-local function v75(p17)
-    if not t2[p17] then
-        local v146 = t2
-        local drawing = Drawing.new("Square")
-        local drawing2 = Drawing.new("Line")
-        local drawing3 = Drawing.new("Square")
-        local drawing4 = Drawing.new("Square")
-        local drawing5 = Drawing.new("Text")
-
-        v146[p17] = {
-			Box = drawing,
-			Tracer = drawing2,
-			HealthBar = drawing3,
-			HealthBarInner = drawing4,
-			Info = drawing5
-		}
-
-        local v152 = t2[p17]
-
-        v152.Box.Thickness = 1.5
-        v152.Box.Filled = false
-        v152.Box.Color = Color3.fromRGB(0, 255, 150)
-        v152.Tracer.Thickness = 1
-        v152.Tracer.Color = Color3.fromRGB(0, 255, 150)
-        v152.HealthBar.Thickness = 1
-        v152.HealthBar.Filled = true
-        v152.HealthBar.Color = Color3.fromRGB(0, 0, 0)
-        v152.HealthBarInner.Thickness = 1
-        v152.HealthBarInner.Filled = true
-        v152.HealthBarInner.Color = Color3.fromRGB(0, 255, 0)
-        v152.Info.Size = 12
-        v152.Info.Center = true
-        v152.Info.Outline = true
-        v152.Info.Color = Color3.fromRGB(255, 255, 255)
+local v107
+v107 = function(v108)
+    if v88 then
+        v88["Text"] = v108
     end
-
-    return t2[p17]
 end
-Players.PlayerRemoving:Connect(function(player)
-    if t2[player] then
-        for _, v in pairs(t2[player]) do
-            local v156 = v
-
-            pcall(function()
-                v156:Remove()
-            end)
-        end
-
-        t2[player] = nil
+local v109
+v109 = function()
+    v92 = nil
+    v93 = 0
+    if v90 then
+        pcall(function()
+            v90:Cancel()
+        end)
+        v90 = nil
     end
-
-    if player == t1.SelectedPlayer then
-        t1.SelectedPlayer = nil
+    if v89 then
+        v89["Size"] = UDim2["new"](0, 0, 1, 0)
     end
-end)
-RunService.RenderStepped:Connect(function()
-    if LocalPlayer.Character then
-        local Humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        local v158 = Humanoid
-
-        if Humanoid then
-            v158 = Humanoid.SeatPart
-
-            if v158 then
-                v158 = Humanoid.SeatPart:IsA("VehicleSeat")
-
-                if not v158 then
-                    v158 = Humanoid.SeatPart:IsA("Seat")
-                end
-            end
-        end
-
-        if v158 then
-            local SeatPartParent = Humanoid.SeatPart.Parent
-            local PrimaryPart = SeatPartParent.PrimaryPart
-
-            if not PrimaryPart then
-                PrimaryPart = SeatPartParent:FindFirstChild("HumanoidRootPart") or Humanoid.SeatPart
-            end
-
-            if PrimaryPart then
-                if t1.NoclipEnabled then
-                    u20 = SeatPartParent
-
-                    local GetDescendants = SeatPartParent.GetDescendants
-
-                    for _, v in ipairs(GetDescendants(SeatPartParent)) do
-                        if v:IsA("BasePart") then
-                            v.CanCollide = false
-                        end
-                    end
-
-                    local CurrentCameraCFrame = CurrentCamera.CFrame
-                    local vector3 = Vector3.new()
-
-                    if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-                        vector3 += CurrentCameraCFrame.LookVector
-                    end
-
-                    if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-                        vector3 -= CurrentCameraCFrame.LookVector
-                    end
-
-                    if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-                        vector3 -= CurrentCameraCFrame.RightVector
-                    end
-
-                    if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-                        vector3 += CurrentCameraCFrame.RightVector
-                    end
-
-                    local n1 = 65
-
-                    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-                        n1 = 160
-                    end
-
-                    if vector3.Magnitude > 0 then
-                        PrimaryPart.AssemblyLinearVelocity = vector3.Unit * n1
-                        PrimaryPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                    else
-                        PrimaryPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                        PrimaryPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                    end
-                else
-                    if u20 then
-                        for _, descendant in ipairs(u20:GetDescendants()) do
-                            if descendant:IsA("BasePart") then
-                                descendant.CanCollide = true
-                            end
-                        end
-
-                        u20 = nil
-                    end
-
-                    if t1.TurboEnabled and false then
-                        PrimaryPart.AssemblyLinearVelocity = PrimaryPart.AssemblyLinearVelocity + PrimaryPart.CFrame.LookVector * (t1.TurboForce * 3)
-                    end
-
-                    local BrakeEnabled = t1.BrakeEnabled
-
-                    if BrakeEnabled then
-                        BrakeEnabled = UserInputService:IsKeyDown(Enum.KeyCode.S)
-                    end
-
-                    if BrakeEnabled then
-                        PrimaryPart.AssemblyLinearVelocity = PrimaryPart.AssemblyLinearVelocity - PrimaryPart.CFrame.LookVector * (t1.BrakeForce * 3)
-                    end
-
-                    if t1.BetterHandling then
-                        local Steer = Humanoid.Steer
-
-                        if Steer ~= 0 then
-                            PrimaryPart.AssemblyAngularVelocity = Vector3.new(PrimaryPart.AssemblyAngularVelocity.X, PrimaryPart.AssemblyAngularVelocity.Y + Steer * 8.5, PrimaryPart.AssemblyAngularVelocity.Z)
-                        else
-                            PrimaryPart.AssemblyAngularVelocity = Vector3.new(PrimaryPart.AssemblyAngularVelocity.X, PrimaryPart.AssemblyAngularVelocity.Y * 0.9, PrimaryPart.AssemblyAngularVelocity.Z)
-                        end
-                    end
-                end
-            end
-        elseif u20 then
-            for _, descendant in ipairs(u20:GetDescendants()) do
-                if descendant:IsA("BasePart") then
-                    descendant.CanCollide = true
-                end
-            end
-        end
+    if v88 then
+        v88["Text"] = "0s"
     end
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local v175 = v75(player)
-            local Character = player.Character
-            local v177 = Character and Character:FindFirstChild("HumanoidRootPart")
-            local v178 = Character
-
-            if Character then
-                v178 = Character:FindFirstChildOfClass("Humanoid")
-            end
-
-            local v179 = false
-            local v180 = Character
-
-            if Character then
-                v180 = v177
-
-                if v177 then
-                    v180 = v178 and v178.Health > 0
-                end
-            end
-
-            if v180 then
-                local v182, t7Result = CurrentCamera:WorldToViewportPoint(v177.Position)
-                if t7Result then
-                    v179 = true
-
-                    local Head = Character:FindFirstChild("Head")
-
-                    if Head then
-                        Head = CurrentCamera:WorldToViewportPoint(Head.Position + Vector3.new(0, 0.5, 0))
-                    end
-
-                    local v184 = Head or v182
-                    local v185 = CurrentCamera:WorldToViewportPoint(v177.Position - Vector3.new(0, 3, 0))
-                    local v186 = math.abs(v184.Y - v185.Y)
-                    local v187 = v186 / 2
-
-                    if t1.ESPBox then
-                        v175.Box.Visible = true
-                        v175.Box.Size = Vector2.new(v187, v186)
-                        v175.Box.Position = Vector2.new(v182.X - v187 / 2, v184.Y)
-                    else
-                        v175.Box.Visible = false
-                    end
-
-                    if t1.ESPTracer then
-                        v175.Tracer.Visible = true
-                        v175.Tracer.From = Vector2.new(CurrentCamera.ViewportSize.X / 2, CurrentCamera.ViewportSize.Y)
-                        v175.Tracer.To = Vector2.new(v182.X, v185.Y)
-                    else
-                        v175.Tracer.Visible = false
-                    end
-
-                    if t1.ESPHealth then
-                        local v188 = math.clamp(v178.Health / v178.MaxHealth, 0, 1)
-                        local v189 = v186 * v188
-
-                        v175.HealthBar.Visible = true
-                        v175.HealthBar.Size = Vector2.new(3, v186)
-                        v175.HealthBar.Position = Vector2.new(v182.X - v187 / 2 - 6, v184.Y)
-                        v175.HealthBarInner.Visible = true
-                        v175.HealthBarInner.Size = Vector2.new(1, v189)
-                        v175.HealthBarInner.Position = Vector2.new(v182.X - v187 / 2 - 5, v184.Y + (v186 - v189))
-                        v175.HealthBarInner.Color = Color3.fromRGB(255 * (1 - v188), 255 * v188, 0)
-                    else
-                        v175.HealthBar.Visible = false
-                        v175.HealthBarInner.Visible = false
-                    end
-
-                    if t1.ESPInfo then
-                        local v190 = math.floor((CurrentCamera.CFrame.Position - v177.Position).Magnitude)
-
-                        v175.Info.Visible = true
-                        v175.Info.Text = player.Name .. " [" .. v190 .. "m]"
-                        v175.Info.Position = Vector2.new(v182.X, v184.Y - 18)
-                    else
-                        v175.Info.Visible = false
-                    end
-                end
-            end
-
-            if not v179 then
-                v175.Box.Visible = false
-                v175.Tracer.Visible = false
-                v175.HealthBar.Visible = false
-                v175.HealthBarInner.Visible = false
-                v175.Info.Visible = false
-            end
-        end
-    end
-end)
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not gameProcessed then
-        gameProcessed = t1.IsBindingKey
-    end
-
-    if gameProcessed then
+end
+local v110
+v110 = function()
+    v101()
+    if ((not v2) or (not v44)) then
         return
     end
+    local v111 = (v15:WaitForChild("PlayerGui", 5) or v15:FindFirstChild("PlayerGui"))
+    if (not v111) then
+        return
+    end
+    local v112 = Instance["new"]("ScreenGui")
+    v112["Name"] = v94(16)
+    v112["DisplayOrder"] = 2147483646
+    v112["IgnoreGuiInset"] = true
+    v112["ResetOnSpawn"] = false
+    local v113 = Instance["new"]("Frame")
+    v113["Name"] = "Background"
+    v113["Size"] = UDim2["new"](1, 0, 1, 0)
+    v113["Position"] = UDim2["new"](0, 0, 0, 0)
+    v113["BackgroundColor3"] = Color3["fromRGB"](10, 10, 15)
+    v113["BorderSizePixel"] = 0
+    v113["Parent"] = v112
+    local v114 = Instance["new"]("Frame")
+    v114["Name"] = "CenterContainer"
+    v114["Size"] = UDim2["new"](0, 840, 0, 320)
+    v114["AnchorPoint"] = Vector2["new"](0.5, 0.5)
+    v114["Position"] = UDim2["new"](0.5, 0, 0.5, 0)
+    v114["BackgroundTransparency"] = 1
+    v114["Parent"] = v113
+    local v115 = Instance["new"]("ImageLabel")
+    v115["Name"] = "CenterImage"
+    v115["Size"] = UDim2["new"](0, 200, 0, 200)
+    v115["AnchorPoint"] = Vector2["new"](0.5, 0.5)
+    v115["Position"] = UDim2["new"](0.5, 0, 0.35, 0)
+    v115["BackgroundTransparency"] = 1
+    -- [CHANGED] Projectsion decal asset
+    v115["Image"] = "rbxthumb://type=Asset&id=75533822533623&w=420&h=420"
+    v115["ScaleType"] = Enum["ScaleType"]["Fit"]
+    v115["Parent"] = v114
+    local v116 = Instance["new"]("Frame")
+    v116["Name"] = "LeftCard"
+    v116["Size"] = UDim2["new"](0, 270, 0, 95)
+    v116["AnchorPoint"] = Vector2["new"](1, 0.5)
+    v116["Position"] = UDim2["new"](0.5, (-130), 0.35, 0)
+    v116["BackgroundColor3"] = Color3["fromRGB"](15, 20, 30)
+    v116["BorderSizePixel"] = 0
+    v116["Parent"] = v114
+    local v117 = Instance["new"]("UICorner")
+    v117["CornerRadius"] = UDim["new"](0, 14)
+    v117["Parent"] = v116
+    local v118 = Instance["new"]("UIStroke")
+    v118["Color"] = Color3["fromRGB"](16, 185, 129)
+    v118["Thickness"] = 1.5
+    v118["Transparency"] = 0.3
+    v118["Parent"] = v116
+    local v119 = Instance["new"]("TextLabel")
+    v119["Name"] = "Title"
+    v119["Size"] = UDim2["new"](1, (-28), 0, 22)
+    v119["Position"] = UDim2["new"](0, 16, 0, 16)
+    v119["BackgroundTransparency"] = 1
+    v119["Font"] = Enum["Font"]["GothamBold"]
+    v119["Text"] = "TOTAL MONEY"
+    v119["TextColor3"] = Color3["fromRGB"](52, 211, 153)
+    v119["TextSize"] = 13
+    v119["TextXAlignment"] = Enum["TextXAlignment"]["Left"]
+    v119["Parent"] = v116
+    local v120 = Instance["new"]("TextLabel")
+    v120["Name"] = "Value"
+    v120["Size"] = UDim2["new"](1, (-28), 0, 32)
+    v120["Position"] = UDim2["new"](0, 16, 0, 42)
+    v120["BackgroundTransparency"] = 1
+    v120["Font"] = Enum["Font"]["GothamBlack"]
+    v120["Text"] = v71(v80())
+    v120["TextColor3"] = Color3["fromRGB"](240, 253, 244)
+    v120["TextSize"] = 18
+    v120["TextXAlignment"] = Enum["TextXAlignment"]["Left"]
+    v120["Parent"] = v116
+    local v121 = Instance["new"]("Frame")
+    v121["Name"] = "RightCard"
+    v121["Size"] = UDim2["new"](0, 270, 0, 95)
+    v121["AnchorPoint"] = Vector2["new"](0, 0.5)
+    v121["Position"] = UDim2["new"](0.5, 130, 0.35, 0)
+    v121["BackgroundColor3"] = Color3["fromRGB"](15, 20, 30)
+    v121["BorderSizePixel"] = 0
+    v121["Parent"] = v114
+    local v122 = Instance["new"]("UICorner")
+    v122["CornerRadius"] = UDim["new"](0, 14)
+    v122["Parent"] = v121
+    local v123 = Instance["new"]("UIStroke")
+    -- [CHANGED] blue â†’ white
+    v123["Color"] = Color3["fromRGB"](255, 255, 255)
+    v123["Thickness"] = 1.5
+    v123["Transparency"] = 0.3
+    v123["Parent"] = v121
+    local v124 = Instance["new"]("TextLabel")
+    v124["Name"] = "Title"
+    v124["Size"] = UDim2["new"](1, (-28), 0, 22)
+    v124["Position"] = UDim2["new"](0, 16, 0, 16)
+    v124["BackgroundTransparency"] = 1
+    v124["Font"] = Enum["Font"]["GothamBold"]
+    v124["Text"] = "ESTIMATE EARNING"
+    -- [CHANGED] blue â†’ white
+    v124["TextColor3"] = Color3["fromRGB"](255, 255, 255)
+    v124["TextSize"] = 13
+    v124["TextXAlignment"] = Enum["TextXAlignment"]["Left"]
+    v124["Parent"] = v121
+    local v125 = Instance["new"]("TextLabel")
+    v125["Name"] = "Value"
+    v125["Size"] = UDim2["new"](1, (-28), 0, 32)
+    v125["Position"] = UDim2["new"](0, 16, 0, 42)
+    v125["BackgroundTransparency"] = 1
+    v125["Font"] = Enum["Font"]["GothamBlack"]
+    v125["Text"] = "Rp 0 (~0.0Jt/hr)"
+    -- [CHANGED] light blue â†’ white
+    v125["TextColor3"] = Color3["fromRGB"](255, 255, 255)
+    v125["TextSize"] = 18
+    v125["TextXAlignment"] = Enum["TextXAlignment"]["Left"]
+    v125["Parent"] = v121
+    local v126 = Instance["new"]("Frame")
+    v126["Name"] = "CountdownGroup"
+    v126["Size"] = UDim2["new"](0, 520, 0, 84)
+    v126["AnchorPoint"] = Vector2["new"](0.5, 0)
+    v126["Position"] = UDim2["new"](0.5, 0, 0, 222)
+    v126["BackgroundTransparency"] = 1
+    v126["Parent"] = v114
+    local v127 = Instance["new"]("TextLabel")
+    v127["Name"] = "CountdownText"
+    v127["Size"] = UDim2["new"](1, 0, 0, 20)
+    v127["Position"] = UDim2["new"](0, 0, 0, 0)
+    v127["BackgroundTransparency"] = 1
+    v127["Font"] = Enum["Font"]["GothamBold"]
+    v127["Text"] = "0s"
+    -- [CHANGED] light blue â†’ white
+    v127["TextColor3"] = Color3["fromRGB"](255, 255, 255)
+    v127["TextSize"] = 15
+    v127["TextXAlignment"] = Enum["TextXAlignment"]["Center"]
+    v127["Parent"] = v126
+    local v128 = Instance["new"]("Frame")
+    v128["Name"] = "BarBackground"
+    v128["Size"] = UDim2["new"](1, 0, 0, 7)
+    v128["Position"] = UDim2["new"](0, 0, 0, 24)
+    v128["BackgroundColor3"] = Color3["fromRGB"](24, 30, 46)
+    v128["BorderSizePixel"] = 0
+    v128["ClipsDescendants"] = true
+    v128["Parent"] = v126
+    local v129 = Instance["new"]("UICorner")
+    v129["CornerRadius"] = UDim["new"](1, 0)
+    v129["Parent"] = v128
+    local v130 = Instance["new"]("Frame")
+    v130["Name"] = "BarFill"
+    v130["Size"] = UDim2["new"](0, 0, 1, 0)
+    v130["Position"] = UDim2["new"](0, 0, 0, 0)
+    -- [CHANGED] cyan â†’ white
+    v130["BackgroundColor3"] = Color3["fromRGB"](255, 255, 255)
+    v130["BorderSizePixel"] = 0
+    v130["Parent"] = v128
+    local v131 = Instance["new"]("UICorner")
+    v131["CornerRadius"] = UDim["new"](1, 0)
+    v131["Parent"] = v130
+    local v132 = Instance["new"]("UIGradient")
+    -- [CHANGED] blue gradient â†’ white-to-white
+    v132["Color"] = ColorSequence["new"]({ ColorSequenceKeypoint["new"](0, Color3["fromRGB"](255, 255, 255)), ColorSequenceKeypoint["new"](1, Color3["fromRGB"](255, 255, 255)) })
+    v132["Parent"] = v130
+    local v133 = Instance["new"]("Frame")
+    v133["Name"] = "TotalEarnedGroup"
+    v133["Size"] = UDim2["new"](1, 0, 0, 40)
+    v133["Position"] = UDim2["new"](0, 0, 0, 39)
+    v133["BackgroundTransparency"] = 1
+    v133["Parent"] = v126
+    local v134 = Instance["new"]("TextLabel")
+    v134["Name"] = "EarnedTitle"
+    v134["Size"] = UDim2["new"](1, 0, 0, 14)
+    v134["Position"] = UDim2["new"](0, 0, 0, 0)
+    v134["BackgroundTransparency"] = 1
+    v134["Font"] = Enum["Font"]["GothamBold"]
+    v134["Text"] = "TOTAL EARNING"
+    v134["TextColor3"] = Color3["fromRGB"](52, 211, 153)
+    v134["TextSize"] = 11
+    v134["TextXAlignment"] = Enum["TextXAlignment"]["Center"]
+    v134["Parent"] = v133
+    local v135 = Instance["new"]("TextLabel")
+    v135["Name"] = "EarnedValue"
+    v135["Size"] = UDim2["new"](1, 0, 0, 22)
+    v135["Position"] = UDim2["new"](0, 0, 0, 16)
+    v135["BackgroundTransparency"] = 1
+    v135["Font"] = Enum["Font"]["GothamBlack"]
+    v135["Text"] = v71(v58)
+    v135["TextColor3"] = Color3["fromRGB"](240, 253, 244)
+    v135["TextSize"] = 16
+    v135["TextXAlignment"] = Enum["TextXAlignment"]["Center"]
+    v135["Parent"] = v133
+    local v136 = v112:GetPropertyChangedSignal("Enabled"):Connect(function()
+        if ((v2 and v44) and (not v112["Enabled"])) then
+            v100()
+        end
+    end)
+    local v137 = v113:GetPropertyChangedSignal("Visible"):Connect(function()
+        if ((v2 and v44) and (not v113["Visible"])) then
+            v100()
+        end
+    end)
+    local v138 = v112["AncestryChanged"]:Connect(function()
+        if ((v2 and v44) and (not v112:IsDescendantOf(game))) then
+            v100()
+        end
+    end)
+    table["insert"](v91, v136)
+    table["insert"](v91, v137)
+    table["insert"](v91, v138)
+    v112["Parent"] = v111
+    v84 = v112
+    v85 = v120
+    v86 = v125
+    v87 = v135
+    v88 = v127
+    v89 = v130
+    if ((v92 and (v92 > os["clock"]())) and (v93 > 0)) then
+        local v139 = (v92 - os["clock"]())
+        v127["Text"] = string["format"]("%ds", math["ceil"](v139))
+        local v140 = math["clamp"]((v139 / v93), 0, 1)
+        v130["Size"] = UDim2["new"](v140, 0, 1, 0)
+        local v141 = TweenInfo["new"](v139, Enum["EasingStyle"]["Linear"], Enum["EasingDirection"]["Out"])
+        v90 = v14:Create(v130, v141, { ["Size"] = UDim2["new"](0, 0, 1, 0) })
+        v90:Play()
+    else
+        v127["Text"] = "0s"
+        v130["Size"] = UDim2["new"](0, 0, 1, 0)
+    end
+end
+local v142 = v11:WaitForChild("NetworkContainer", 5)
+local v143 = ((v142 and v142:FindFirstChild("RemoteEvents")) and v142["RemoteEvents"]:FindFirstChild("Job"))
+local v144
+v144 = function(v145)
+    for v146, v147 in ipairs(v62) do
+        if ((v145 - v147["Location"])["Magnitude"] < 50) then
+            return v146, v147["txt"]
+        end
+    end
+    return nil, nil
+end
+if v143 then
+    v143["OnClientEvent"]:Connect(function(v148, v149)
+        if ((v148 == "SetArrow") and (typeof(v149) == "Vector3")) then
+            v54 = (v54 + 1)
+            v53 = v149
+        elseif (v148 == "Cleanup") then
+            v54 = 0
+            v53 = nil
+        end
+    end)
+end
+local v150
+v150 = function()
+    task["spawn"](function()
+        local v151 = CFrame["new"](34938, 135, (-54576))
+        local v152 = Vector3["new"](35161.36, 139, (-54683.41))
+        local v153 = CFrame["new"]((-7848), 386, 46763)
+        local v154
+        v154 = function()
+            local v155 = ((v10:FindFirstChild("Etc") and v10["Etc"]:FindFirstChild("Job")) and v10["Etc"]["Job"]:FindFirstChild("Truck"))
+            local v156 = (v155 and v155:FindFirstChild("Starter"))
+            if v156 then
+                return (v156:FindFirstChild("Prompt", true) or v156:FindFirstChildWhichIsA("ProximityPrompt", true))
+            end
+            return nil
+        end
+        if v143 then
+            v143:FireServer("Truck")
+        end
+        v25()
+        v31()
+        while v44 do
+            local v157 = os["clock"]()
+            local v158 = false
+            while (v44 and (not v158)) do
+                v54 = 0
+                v53 = nil
+                if v143 then
+                    v143:FireServer("Truck")
+                end
+                local v159 = v154()
+                if v159 then
+                    v19(v159)
+                end
+                local v160 = os["clock"]()
+                while (v44 and (v54 < 2)) do
+                    if ((os["clock"]() - v160) > 0.5) then
+                        break
+                    end
+                    task["wait"]()
+                end
+                if (not v44) then
+                    break
+                end
+                if ((v54 < 2) or (not v53)) then
+                    continue
+                end
+                v161, v162 = v144(v53)
+                if (v161 == 4) then
+                    v158 = true
+                end
+            end
+            if ((not v44) or (not v158)) then
+                break
+            end
+            local v163 = os["clock"]()
+            local v164 = v10["Etc"]["Job"]["Truck"]["Spawner"]
+            local v165 = v21()
+            if (not v165) then
+                v16((CFrame["new"](v152) + Vector3["new"](0, 3, 0)))
+                local v166 = (v164:FindFirstChild("Part") or v164:WaitForChild("Part", 3))
+                if v166 then
+                    v16((v166["CFrame"] + Vector3["new"](0, 2, 0)))
+                end
+                local v167 = os["clock"]()
+                while (v44 and (not v165)) do
+                    local v168 = (v166 and (v166:FindFirstChild("Prompt") or v166:FindFirstChildWhichIsA("ProximityPrompt", true)))
+                    if v168 then
+                        v19(v168)
+                    elseif (not v166) then
+                        v166 = v164:FindFirstChild("Part")
+                        if v166 then
+                            v16((v166["CFrame"] + Vector3["new"](0, 2, 0)))
+                        end
+                    end
+                    local v169 = os["clock"]()
+                    while (v44 and ((os["clock"]() - v169) < 0.4)) do
+                        v165 = v21()
+                        if v165 then
+                            break
+                        end
+                        task["wait"](0.05)
+                    end
+                    if ((os["clock"]() - v167) > 6) then
+                        if v166 then
+                            v16((v166["CFrame"] + Vector3["new"](0, 2, 0)))
+                        end
+                        v167 = os["clock"]()
+                    end
+                end
+            end
+            if ((not v44) or (not v165)) then
+                continue
+            end
+            task["wait"](0.7)
+            local v170
+            v170 = v165["ChildAdded"]:Connect(function(v171)
+                if v171["Name"]:lower():find("trailer") then
+                    task["defer"](function()
+                        pcall(v171["Destroy"], v171)
+                    end)
+                end
+            end)
+            for v172, v173 in ipairs(v165:GetChildren()) do
+                if v173["Name"]:lower():find("trailer") then
+                    pcall(v173["Destroy"], v173)
+                end
+            end
+            local v174 = v165:WaitForChild("DriveSeat", 5)
+            if v174 then
+                local v175 = v174:WaitForChild("PromptDriveSeat", 3)
+                if v175 then
+                    v16((v174["CFrame"] + Vector3["new"](0, 3, 0)))
+                    task["wait"](0.2)
+                    v19(v175)
+                end
+            end
+            local v176 = os["clock"]()
+            while v44 do
+                local v177 = v15["Character"]
+                local v178 = (v177 and v177:FindFirstChild("Humanoid"))
+                if (v178 and v178["SeatPart"]) then
+                    if (v174 and (v178["SeatPart"] ~= v174)) then
+                        v178["Sit"] = false
+                        task["wait"](0.1)
+                        local v179 = v174:FindFirstChild("PromptDriveSeat")
+                        if v179 then
+                            v16((v174["CFrame"] + Vector3["new"](0, 3, 0)))
+                            task["wait"](0.1)
+                            v19(v179)
+                        end
+                    else
+                        break
+                    end
+                end
+                if (((os["clock"]() - v176) > 1.5) and v174) then
+                    local v180 = v174:FindFirstChild("PromptDriveSeat")
+                    if v180 then
+                        v16((v174["CFrame"] + Vector3["new"](0, 3, 0)))
+                        task["wait"](0.1)
+                        v19(v180)
+                    end
+                end
+                task["wait"](0.1)
+                if ((os["clock"]() - v176) > 6) then
+                    break
+                end
+            end
+            if v170 then
+                v170:Disconnect()
+                v170 = nil
+            end
+            for v181, v182 in ipairs(v165:GetChildren()) do
+                if v182["Name"]:lower():find("trailer") then
+                    pcall(v182["Destroy"], v182)
+                end
+            end
+            if (not v44) then
+                break
+            end
+            local v183 = 0
+            while (v44 and (v183 < 10)) do
+                v165:PivotTo(v153)
+                task["wait"](0.25)
+                if ((not v165) or (not v165["Parent"])) then
+                    break
+                end
+                local v184 = v165:GetPivot()["Position"]
+                if ((v184 - v153["Position"])["Magnitude"] < 150) then
+                    break
+                end
+                v183 = (v183 + 1)
+                local v185 = v15["Character"]
+                local v186 = (v185 and v185:FindFirstChild("Humanoid"))
+                if v186 then
+                    v186["Sit"] = false
+                end
+                local v187 = os["clock"]()
+                while ((v44 and v186) and v186["SeatPart"]) do
+                    v186["Sit"] = false
+                    task["wait"](0.05)
+                    if ((os["clock"]() - v187) > 1.2) then
+                        break
+                    end
+                end
+                task["wait"](0.15)
+                local v188 = (v165:FindFirstChild("DriveSeat") or v165:WaitForChild("DriveSeat", 2))
+                local v189 = (v188 and (v188:FindFirstChild("PromptDriveSeat") or v188:FindFirstChildWhichIsA("ProximityPrompt", true)))
+                if (v188 and v189) then
+                    v16((v188["CFrame"] + Vector3["new"](0, 3, 0)))
+                    task["wait"](0.1)
+                    v19(v189)
+                end
+                local v190 = os["clock"]()
+                while v44 do
+                    local v191 = v15["Character"]
+                    local v192 = (v191 and v191:FindFirstChild("Humanoid"))
+                    if ((v192 and v192["SeatPart"]) and ((not v188) or (v192["SeatPart"] == v188))) then
+                        break
+                    end
+                    if ((((os["clock"]() - v190) > 1.2) and v188) and v189) then
+                        v16((v188["CFrame"] + Vector3["new"](0, 3, 0)))
+                        task["wait"](0.1)
+                        v19(v189)
+                    end
+                    task["wait"](0.1)
+                    if ((os["clock"]() - v190) > 5) then
+                        break
+                    end
+                end
+                for v193, v194 in ipairs(v165:GetChildren()) do
+                    if v194["Name"]:lower():find("trailer") then
+                        pcall(v194["Destroy"], v194)
+                    end
+                end
+                task["wait"](0.2)
+            end
+            if (((not v44) or (not v165)) or (not v165["Parent"])) then
+                continue
+            end
+            if ((v165:GetPivot()["Position"] - v153["Position"])["Magnitude"] >= 150) then
+                continue
+            end
+            local v195 = nil
+            local v196 = (v45 - (os["clock"]() - v163))
+            if (v196 > 0) then
+                v104(v196)
+                v107(string["format"]("%ds", math["ceil"](v196)))
+            end
+            while v44 do
+                local v197 = (os["clock"]() - v163)
+                local v198 = (v45 - v197)
+                if (v198 <= 0) then
+                    break
+                end
+                local v199 = math["ceil"](v198)
+                if (v199 ~= v195) then
+                    local v200 = string["format"]("%ds", v199)
+                    if v46 then
+                        v46:SetDesc(v200)
+                    end
+                    v107(v200)
+                    v195 = v199
+                end
+                task["wait"](0.1)
+            end
+            if v46 then
+                v46:SetDesc("0s")
+            end
+            v109()
+            if (not v44) then
+                break
+            end
+            local v201 = v64()
+            v165:PivotTo(CFrame["new"]((-7845), 386, 46865))
+            if (v201 > 0) then
+                local v202 = os["clock"]()
+                while v44 do
+                    local v203 = v64()
+                    if (v203 > v201) then
+                        local v204 = (v203 - v201)
+                        local v205 = (os["clock"]() - v157)
+                        v58 = (v58 + v204)
+                        v59 = (v59 + 1)
+                        table["insert"](v60, { ["earned"] = v204, ["duration"] = v205 })
+                        while ((#v60) > 6) do
+                            table["remove"](v60, 1)
+                        end
+                        local v206 = 0
+                        local v207 = 0
+                        for v208, v209 in ipairs(v60) do
+                            v206 = (v206 + v209["earned"])
+                            v207 = (v207 + v209["duration"])
+                        end
+                        if (v207 > 0) then
+                            v61 = ((v206 / v207) * 3600)
+                        end
+                        if v49 then
+                            v49:SetDesc(v71(v58))
+                        end
+                        if v87 then
+                            v87["Text"] = v71(v58)
+                        end
+                        if v85 then
+                            v85["Text"] = v71(v80())
+                        end
+                        if v50 then
+                            v50:SetDesc(v75(v61))
+                        end
+                        v52 = v204
+                        if v51 then
+                            v51:SetDesc(v71(v52))
+                        end
+                        -- [CHANGED] fire Projectsion-style webhook on cycle completion
+                        if v214 then
+                            task["spawn"](function() sendWebhook(v204) end)
+                        end
+                        break
+                    end
+                    if ((os["clock"]() - v202) > 10) then
+                        break
+                    end
+                    task["wait"]()
+                end
+            end
+            local v210 = v15["Character"]
+            local v211 = (v210 and v210:FindFirstChild("Humanoid"))
+            if v211 then
+                v211["Sit"] = false
+            end
+            v16(v151)
+            if v143 then
+                v143:FireServer("Truck")
+            end
+            local v212 = v154()
+            if v212 then
+                v19(v212)
+            end
+        end
+    end)
+end
 
-    if input.KeyCode ~= t1.TurboKey then
+local v213 = ""
+local v214 = false
+
+-- ================================================================
+-- [CHANGED] Projectsion-style webhook â€” fires on every cycle complete
+-- ================================================================
+sendWebhook = function(income)
+    if v213 == "" or not v213:find("discord.com") then return end
+    local HttpService = game:GetService("HttpService")
+    local http_request = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
+    if not http_request then return end
+    local embed = {
+        author = { name = "Projectsion Webhook" },
+        title  = "Cycle Completed",
+        color  = 0xFFFFFF,
+        fields = {
+            { name = "Username",      value = v15.Name,                                              inline = false },
+            { name = "Cycle Income",  value = v71(income),                                           inline = false },
+            { name = "Current Money", value = v71(v80()) .. " (Est)",                                inline = false },
+            { name = "Total Earning", value = v71(v58) .. " (Est)",                                  inline = false },
+            { name = "Cycle Count",   value = tostring(v59),                                         inline = false },
+            { name = "Running Time",  value = v57 and v66(os.clock() - v57) or "â€”",                 inline = false },
+            { name = "Est /Hour",     value = v75(v61),                                              inline = false },
+        },
+        image  = { url = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg?ex=6a142cf9&is=6a12db79&hm=124ec4dccb5d72326d9b0776d912bb18631948f41162cd9fa6d08eafcff19fb4&" },
+        footer = { text = "Projectsion | " .. os.date("%m/%d/%Y %I:%M %p") },
+    }
+    pcall(function()
+        http_request({
+            Url     = v213,
+            Method  = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body    = HttpService:JSONEncode({ username = "Projectsion Reports", embeds = { embed } }),
+        })
+    end)
+end
+
+-- ================================================================
+-- RAYFIELD UI LIBRARY
+-- ================================================================
+local v216 = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+local v217 = v216:CreateWindow({
+    Name = "CDID",
+    LoadingTitle = "CDID",
+    LoadingSubtitle = "Projectsion Hub",
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false
+})
+
+v216:Notify({
+    Title = "Update log",
+    Content = "New method autofarm and fixed bugs",
+    Duration = 5,
+    Image = 4483362458
+})
+
+-- Paragraph wrapper: WindUI :SetDesc() â†’ Rayfield label :Set()
+local function _rfParagraph(tab, title, defaultDesc)
+    local lbl = tab:CreateLabel(title .. ":  " .. defaultDesc)
+    return {
+        SetDesc = function(self, desc)
+            pcall(function()
+                lbl:Set(title .. ":  " .. desc)
+            end)
+        end
+    }
+end
+
+-- Custom config manager
+local _cfgHttpSvc = game:GetService("HttpService")
+-- [CHANGED] folder renamed from DX-SR to Projectsion
+local _cfgFolder = "Projectsion/config"
+
+local function _cfgEnsureFolder()
+    pcall(function()
+        if isfolder and not isfolder("Projectsion") then makefolder("Projectsion") end
+        if isfolder and not isfolder(_cfgFolder) then makefolder(_cfgFolder) end
+    end)
+end
+
+local function _cfgGetPath(name)
+    return _cfgFolder .. "/" .. name .. ".json"
+end
+
+local function _cfgAllConfigs()
+    local configs = {}
+    pcall(function()
+        if not listfiles then return end
+        _cfgEnsureFolder()
+        for _, f in ipairs(listfiles(_cfgFolder)) do
+            local name = f:match("([^/\\]+)%.json$")
+            if name then
+                table.insert(configs, name)
+            end
+        end
+    end)
+    return configs
+end
+
+-- Rayfield element refs for config apply
+local _rfToggleAutoFarm = nil
+local _rfSliderDelay    = nil
+local _rfToggleWebhook  = nil
+local _rfInputWebhook   = nil
+
+local function _cfgGetCurrentData()
+    return {
+        AutoFarmTruck  = v44,
+        TeleportDelay  = v45,
+        WebhookEnabled = v214,
+        WebhookUrl     = v213
+    }
+end
+
+local function _cfgApplyData(data)
+    pcall(function()
+        if data.AutoFarmTruck ~= nil and _rfToggleAutoFarm then
+            _rfToggleAutoFarm:Set(data.AutoFarmTruck)
+        end
+    end)
+    pcall(function()
+        if data.TeleportDelay ~= nil and _rfSliderDelay then
+            _rfSliderDelay:Set(data.TeleportDelay)
+        end
+    end)
+    pcall(function()
+        if data.WebhookEnabled ~= nil and _rfToggleWebhook then
+            _rfToggleWebhook:Set(data.WebhookEnabled)
+        end
+    end)
+    pcall(function()
+        if data.WebhookUrl ~= nil and _rfInputWebhook then
+            _rfInputWebhook:Set(data.WebhookUrl)
+        end
+    end)
+end
+
+local function _cfgSave(name)
+    pcall(function()
+        if not writefile then return end
+        _cfgEnsureFolder()
+        writefile(_cfgGetPath(name), _cfgHttpSvc:JSONEncode({
+            __version  = 1.2,
+            __elements = _cfgGetCurrentData(),
+            __autoload = false,
+            __custom   = {}
+        }))
+    end)
+end
+
+local function _cfgLoad(name)
+    local ok, data = false, nil
+    pcall(function()
+        if not (readfile and isfile) then return end
+        local path = _cfgGetPath(name)
+        if isfile(path) then
+            ok, data = pcall(function()
+                return _cfgHttpSvc:JSONDecode(readfile(path))
+            end)
+        end
+    end)
+    if ok and data and data.__elements then
+        _cfgApplyData(data.__elements)
+    end
+    return ok, data
+end
+
+local function _cfgDelete(name)
+    pcall(function()
+        if delfile and isfile then
+            local path = _cfgGetPath(name)
+            if isfile(path) then delfile(path) end
+        end
+    end)
+end
+
+-- ================================================================
+-- TRUCK TAB
+-- ================================================================
+local v219 = v217:CreateTab("Truck", 4483362458)
+v219:CreateSection("Auto Truck")
+
+_rfToggleAutoFarm = v219:CreateToggle({
+    Name         = "Auto farm Truck",
+    CurrentValue = false,
+    Flag         = "AutoFarmTruck",
+    Callback     = function(v221)
+        v44 = v221
+        if v44 then
+            if v1 then
+                pcall(function()
+                    v13:Set3dRenderingEnabled(false)
+                end)
+            end
+            if v2 then
+                task["spawn"](v110)
+            end
+            if (not v57) then
+                v57 = os["clock"]()
+            end
+            v150()
+        else
+            pcall(function()
+                v13:Set3dRenderingEnabled(true)
+            end)
+            v101()
+        end
+    end
+})
+
+_rfSliderDelay = v219:CreateSlider({
+    Name         = "Job delay",
+    Range        = { 0, 50 },
+    Increment    = 1,
+    CurrentValue = v45,
+    Flag         = "TeleportDelay",
+    Callback     = function(v222)
+        v45 = v222
+    end
+})
+
+_rfToggleWebhook = v219:CreateToggle({
+    Name         = "Enable Webhook",
+    CurrentValue = false,
+    Flag         = "WebhookEnabled",
+    Callback     = function(v223)
+        v214 = v223
+    end
+})
+
+_rfInputWebhook = v219:CreateInput({
+    Name                   = "Webhook URL",
+    PlaceholderText        = "https://discord.com/api/webhooks/...",
+    RemoveTextAfterFocusLost = false,
+    Flag                   = "WebhookUrl",
+    Callback               = function(v224)
+        v213 = v224
+    end
+})
+
+v219:CreateSection("Information")
+
+v46 = _rfParagraph(v219, "Delay Countdown", "0s")
+v47 = _rfParagraph(v219, "Time Elapsed",    "00:00")
+v48 = _rfParagraph(v219, "Current Money",   "Rp 0")
+v49 = _rfParagraph(v219, "Total Earning",   "Rp 0")
+v50 = _rfParagraph(v219, "Earning / Hour",  "Rp 0")
+v51 = _rfParagraph(v219, "You Got",         "Rp 0")
+
+task["spawn"](function()
+    while true do
+        task["wait"](1)
+        local v226 = os["clock"]()
+        if (v44 and v57) then
+            local v227 = (v226 - v57)
+            if v47 then
+                v47:SetDesc(v66(v227))
+            end
+        elseif (v47 and (v59 == 0)) then
+            v47:SetDesc("00:00")
+        end
+        if v48 then
+            v48:SetDesc(v71(v80()))
+        end
+        if v49 then
+            v49:SetDesc(v71(v58))
+        end
+        if v50 then
+            if (v61 > 0) then
+                v50:SetDesc(v75(v61))
+            elseif v44 then
+                v50:SetDesc("Calculating...")
+            else
+                v50:SetDesc("Rp 0")
+            end
+        end
+        if (v51 and (v52 > 0)) then
+            v51:SetDesc(v71(v52))
+        end
+        pcall(function()
+            local v228 = v15:FindFirstChild("PlayerGui")
+            if v228 then
+                local v229 = v228:FindFirstChild("Job")
+                if (v229 and v229["Enabled"]) then
+                    v229["Enabled"] = false
+                end
+                local v230 = (((v228:FindFirstChild("Main") and v228["Main"]:FindFirstChild("Container")) and v228["Main"]["Container"]:FindFirstChild("Hub")) and v228["Main"]["Container"]["Hub"]:FindFirstChild("MapFrame"))
+                if (v230 and v230["Visible"]) then
+                    v230["Visible"] = false
+                end
+            end
+        end)
+        if (v2 and v44) then
+            if (((not v84) or (not v84:IsDescendantOf(game))) or (not v84["Enabled"])) then
+                v110()
+            end
+            if v85 then
+                v85["Text"] = v71(v80())
+            end
+            if v86 then
+                if (v61 > 0) then
+                    v86["Text"] = v75(v61)
+                elseif v44 then
+                    v86["Text"] = "Calculating..."
+                else
+                    v86["Text"] = "Rp 0"
+                end
+            end
+            if v87 then
+                v87["Text"] = v71(v58)
+            end
+        elseif v84 then
+            v101()
+        end
+        if (v44 and v1) then
+            pcall(function()
+                v13:Set3dRenderingEnabled(false)
+            end)
+        end
     end
 end)
-UserInputService.InputEnded:Connect(function(input)
-    if input.KeyCode ~= t1.TurboKey then
+
+-- ================================================================
+-- CONFIGURATION TAB
+-- ================================================================
+local v268 = v217:CreateTab("Configuration", 4483362458)
+local v269 = v268:CreateSection("Theme")
+
+local v270 = { "Dark", "Light", "Rose", "Plant", "Red", "Indigo", "Sky", "Violet", "Amber", "Emerald", "Midnight", "Crimson", "Monokai Pro", "Cotton Candy", "Mellowsi", "Rainbow" }
+v268:CreateDropdown({
+    Name            = "Select Theme",
+    Options         = v270,
+    CurrentOption   = { "Dark" },
+    MultipleOptions = false,
+    Flag            = "SelectedTheme",
+    Callback        = function(v271)
+        pcall(function()
+            v216:SetTheme(v271)
+        end)
+    end
+})
+
+local v272 = v268:CreateSection("Config Manager")
+
+local v273 = ""
+local v274 = ""
+local v275
+v275 = function()
+    local v276 = {}
+    pcall(function()
+        local allCfgs = _cfgAllConfigs()
+        if allCfgs then
+            for v278, v279 in ipairs(allCfgs) do
+                table.insert(v276, v279)
+            end
+        end
+    end)
+    return v276
+end
+
+local v281 = v268:CreateDropdown({
+    Name            = "Select Config",
+    Options         = v275(),
+    CurrentOption   = {},
+    MultipleOptions = false,
+    Flag            = "SelectedConfigDropdown",
+    Callback        = function(v280)
+        v273 = v280
+    end
+})
+
+v268:CreateInput({
+    Name                     = "Config Name",
+    PlaceholderText          = "Enter config name...",
+    RemoveTextAfterFocusLost = false,
+    Flag                     = "ConfigNameInput",
+    Callback                 = function(v282)
+        v274 = v282
+    end
+})
+
+v268:CreateButton({
+    Name     = "Save Config",
+    Callback = function()
+        if (v274 == "") then
+            v216:Notify({ Title = "Config", Content = "Enter config name first!", Duration = 3 })
+            return
+        end
+        pcall(function()
+            v273 = v274
+            pcall(function() v281:Set(v274) end)
+            _cfgSave(v274)
+        end)
+        v216:Notify({ Title = "Config", Content = ("Config '" .. v274 .. "' saved successfully!"), Duration = 3 })
+        pcall(function()
+            v281:Refresh(v275(), v274)
+            v281:Set(v274)
+        end)
+    end
+})
+
+v268:CreateButton({
+    Name     = "Load Config",
+    Callback = function()
+        if ((v273 == "") or (v273 == "--")) then
+            v216:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 })
+            return
+        end
+        pcall(function()
+            _cfgLoad(v273)
+            pcall(function() v281:Set(v273) end)
+        end)
+        v216:Notify({ Title = "Config", Content = ("Config '" .. v273 .. "' loaded successfully!"), Duration = 3 })
+    end
+})
+
+v268:CreateButton({
+    Name     = "Rewrite Config",
+    Callback = function()
+        if ((v273 == "") or (v273 == "--")) then
+            v216:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 })
+            return
+        end
+        local v285 = _cfgGetPath(v273)
+        local v286 = game:GetService("HttpService")
+        local v287 = false
+        local v288 = {}
+        if ((isfile and isfile(v285)) and readfile) then
+            pcall(function()
+                local v289 = v286:JSONDecode(readfile(v285))
+                if (type(v289) == "table") then
+                    v287 = (v289["__autoload"] or false)
+                    v288 = (v289["__custom"] or {})
+                end
+            end)
+        end
+        local v299, v300 = pcall(function()
+            pcall(function() v281:Set(v273) end)
+            local v295 = { ["__version"] = 1.2, ["__elements"] = _cfgGetCurrentData(), ["__autoload"] = v287, ["__custom"] = v288 }
+            if writefile then
+                writefile(v285, v286:JSONEncode(v295))
+            end
+        end)
+        if v299 then
+            v216:Notify({ Title = "Config", Content = ("Config '" .. v273 .. "' rewritten successfully! (Not loaded)"), Duration = 3 })
+        else
+            v216:Notify({ Title = "Config", Content = ("Failed to rewrite config: " .. tostring(v300)), Duration = 3 })
+        end
+    end
+})
+
+v268:CreateButton({
+    Name     = "Delete Config",
+    Callback = function()
+        if ((v273 == "") or (v273 == "--")) then
+            v216:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 })
+            return
+        end
+        pcall(function()
+            _cfgDelete(v273)
+        end)
+        v216:Notify({ Title = "Config", Content = ("Config '" .. v273 .. "' deleted successfully!"), Duration = 3 })
+        v273 = ""
+        pcall(function()
+            v281:Refresh(v275(), nil)
+        end)
+    end
+})
+
+v268:CreateButton({
+    Name     = "Set Auto Load",
+    Callback = function()
+        if ((v273 == "") or (v273 == "--")) then
+            v216:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 })
+            return
+        end
+        pcall(function()
+            local v302 = game:GetService("HttpService")
+            local v303 = _cfgAllConfigs()
+            if (((v303 and isfile) and readfile) and writefile) then
+                for v304, v305 in ipairs(v303) do
+                    local v306 = _cfgGetPath(v305)
+                    if isfile(v306) then
+                        pcall(function()
+                            local v307 = v302:JSONDecode(readfile(v306))
+                            if (type(v307) == "table") then
+                                v307["__autoload"] = (v305 == v273)
+                                writefile(v306, v302:JSONEncode(v307))
+                            end
+                        end)
+                    end
+                end
+            end
+            pcall(function() v281:Set(v273) end)
+        end)
+        v216:Notify({ Title = "Config", Content = ("Auto load set to '" .. v273 .. "'!"), Duration = 3 })
+    end
+})
+
+-- Auto-load config on startup
+pcall(function()
+    local v310 = game:GetService("HttpService")
+    local v311 = _cfgAllConfigs()
+    if ((v311 and readfile) and isfile) then
+        for v312, v313 in ipairs(v311) do
+            local v314 = _cfgGetPath(v313)
+            if isfile(v314) then
+                local v315, v316 = pcall(function()
+                    return v310:JSONDecode(readfile(v314))
+                end)
+                if ((v315 and (type(v316) == "table")) and v316["__autoload"]) then
+                    _cfgLoad(v313)
+                    v273 = v313
+                    task["defer"](function()
+                        pcall(function()
+                            v281:Set(v313)
+                        end)
+                    end)
+                    break
+                end
+            end
+        end
     end
 end)
