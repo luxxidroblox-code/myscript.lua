@@ -9,9 +9,9 @@ local UserInputService  = game:GetService("UserInputService")
 local VirtualUser       = game:GetService("VirtualUser")
 local TweenService      = game:GetService("TweenService")
 
-local LocalPlayer  = Players.LocalPlayer
-local PlayerGui    = LocalPlayer:WaitForChild("PlayerGui")
-local PlayerScripts= LocalPlayer:WaitForChild("PlayerScripts")
+local LocalPlayer   = Players.LocalPlayer
+local PlayerGui     = LocalPlayer:WaitForChild("PlayerGui")
+local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
 
 -- ── WindUI loader ─────────────────────────────────────────────
 local WindUI = loadstring(game:HttpGet(
@@ -41,7 +41,6 @@ function ConfigManager:CreateConfig(name)
         WindUI:Notify({ Title = "Config", Content = "Enter config name first!", Duration = 3 })
         return
     end
-    -- FIX: mkdir guard before writefile
     if not isfolder(CONFIG_DIR) then makefolder(CONFIG_DIR) end
     writefile(CONFIG_DIR .. name .. CONFIG_EXT, HttpService:JSONEncode(defaultConfig))
     WindUI:Notify({ Title = "Config", Content = "'" .. name .. "' saved!", Duration = 3 })
@@ -88,7 +87,7 @@ function ConfigManager:Delete(name)
     end
     local path = CONFIG_DIR .. name .. CONFIG_EXT
     if isfile(path) then
-        delfile(path)   -- FIX: was writefile(path, "") — use delfile
+        delfile(path)
         WindUI:Notify({ Title = "Config", Content = "'" .. name .. "' deleted!", Duration = 3 })
         self:Refresh()
     end
@@ -104,13 +103,10 @@ function ConfigManager:SetAutoLoad(name, state)
     })
 end
 
--- FIX: Refresh was completely broken — it looped over an empty table it was
--- trying to fill, and used isfile() on a directory path.
 function ConfigManager:Refresh()
     self.AllConfigs = {}
     if not isfolder(CONFIG_DIR) then return end
     for _, entry in ipairs(listfiles(CONFIG_DIR)) do
-        -- listfiles returns full paths; strip dir prefix + extension
         local fileName = entry:match("([^/\\]+)$")
         if fileName then
             local stem = fileName:match("^(.+)" .. CONFIG_EXT .. "$")
@@ -151,9 +147,9 @@ local JobRemote       = nil
 
 local function getWorkspaceRefs()
     local ws = {
-        Barista         = workspace:FindFirstChild("Barista"),
-        BaristaCustomers= workspace:WaitForChild("BaristaCustomers", 30),
-        NEW_JOB         = workspace:FindFirstChild("NEW_JOB"),
+        Barista          = workspace:FindFirstChild("Barista"),
+        BaristaCustomers = workspace:WaitForChild("BaristaCustomers", 30),
+        NEW_JOB          = workspace:FindFirstChild("NEW_JOB"),
     }
     ws.Stations    = ws.Barista and ws.Barista:FindFirstChild("Stations")
     ws.RecipeBoard = ws.Barista and ws.Barista:FindFirstChild("RecipeBoard")
@@ -202,24 +198,24 @@ local function fireProximityPrompt(prompt)
 end
 
 local STATION_POSITIONS = {
-    BeanHopper     = Vector3.new(8415.3,   23.5, 53.8085098),
-    Brewer         = Vector3.new(8416.7,   23.5, 53.8085098),
-    Steamer        = Vector3.new(8419,     23.5, 53.8085098),
-    Milk           = Vector3.new(8426.7,   23.5, 53.8085098),
-    IceMaker       = Vector3.new(8431,     23.5, 53.8085098),
-    CreamDispenser = Vector3.new(8433.7,   23.5, 53.8085098),
-    Carbonator     = Vector3.new(8436.2,   23.5, 53.8085098),
-    BobaPot        = Vector3.new(8436.4,   23.5, 53.8085098),
+    BeanHopper     = Vector3.new(8415.3,     23.5, 53.8085098),
+    Brewer         = Vector3.new(8416.7,     23.5, 53.8085098),
+    Steamer        = Vector3.new(8419,       23.5, 53.8085098),
+    Milk           = Vector3.new(8426.7,     23.5, 53.8085098),
+    IceMaker       = Vector3.new(8431,       23.5, 53.8085098),
+    CreamDispenser = Vector3.new(8433.7,     23.5, 53.8085098),
+    Carbonator     = Vector3.new(8436.2,     23.5, 53.8085098),
+    BobaPot        = Vector3.new(8436.4,     23.5, 53.8085098),
     WaterTap       = Vector3.new(8436.50586, 23.5, 18.9660721),
-    TeaBox         = Vector3.new(8438.5,   23.5, 53.8085098),
-    LemonBoard     = Vector3.new(8441,     23.5, 53.8085098),
-    MatchaJar      = Vector3.new(8441.2,   23.5, 53.8085098),
-    ChocolateJar   = Vector3.new(8443.2,   23.5, 53.8085098),
-    CreamJar       = Vector3.new(8443.6,   23.5, 53.8085098),
-    FlavourBottle  = Vector3.new(8449,     23.5, 53.8085098),
-    CupRack        = Vector3.new(8413.8,   23.5, 53.8085098),
-    Trash          = Vector3.new(8409.1,   23.5, 53.8085098),
-    BrewHoldArea   = Vector3.new(8415.4,   23.5, 53.8085098),
+    TeaBox         = Vector3.new(8438.5,     23.5, 53.8085098),
+    LemonBoard     = Vector3.new(8441,       23.5, 53.8085098),
+    MatchaJar      = Vector3.new(8441.2,     23.5, 53.8085098),
+    ChocolateJar   = Vector3.new(8443.2,     23.5, 53.8085098),
+    CreamJar       = Vector3.new(8443.6,     23.5, 53.8085098),
+    FlavourBottle  = Vector3.new(8449,       23.5, 53.8085098),
+    CupRack        = Vector3.new(8413.8,     23.5, 53.8085098),
+    Trash          = Vector3.new(8409.1,     23.5, 53.8085098),
+    BrewHoldArea   = Vector3.new(8415.4,     23.5, 53.8085098),
 }
 
 local lastCupState  = nil
@@ -233,7 +229,6 @@ local function attachListener()
     if not BaristaRemote then return end
 
     baristaConn = BaristaRemote.OnClientEvent:Connect(function(action, data, extra)
-        -- FIX: removed the broken select(2,...) — capture extra as a real param
         if action == "CupState" and type(data) == "table" then
             lastCupState = data
             AutofarmBarista.CurrentStep = tostring(data.nextStep or data.nextStation or "?")
@@ -275,8 +270,6 @@ local function autoBrewMinigame()
         task.wait(0.05); t += 1
     end
 
-    -- FIX: firesignal on OnClientEvent is only valid with a RemoteEvent connection,
-    -- not as a minigame trigger. Fire the actual server action instead.
     BaristaRemote:FireServer("BrewStart")
     task.wait(0.3)
 
@@ -387,8 +380,6 @@ local function takeOrderFromCustomer(customer, ws, orderIndex)
     if servePrompt then fireProximityPrompt(servePrompt) end
     task.wait(0.5)
 
-    -- FIX: was clearing lastOrderData right before waiting on it.
-    -- Reset only here, after the FireServer + prompt sequence.
     lastOrderData = nil
     local t = 0
     while not lastOrderData and t < 150 and AutofarmBarista.Running do
@@ -527,8 +518,6 @@ local function startJob()
 
     task.wait(2)
     if NpcDialogRemote then
-        -- FIX: firesignal was used to fake a server→client event. This is the
-        -- correct local NpcDialog trigger pattern for CDI's dialog system.
         firesignal(NpcDialogRemote.OnClientEvent, "Start", {
             lines = { "Welcome back!", "Counter is yours." },
             jobId = "Barista",
@@ -615,8 +604,8 @@ local Window = WindUI:CreateWindow({
     Resizable        = true,
     Draggable        = true,
     SideBarWidth     = 200,
-    MinSize          = UDim2.new(0, 560, 0, 350),
-    MaxSize          = UDim2.new(0, 850, 0, 580),
+    MinSize          = Vector2.new(560, 350),   -- FIX: UDim2 → Vector2
+    MaxSize          = Vector2.new(850, 580),   -- FIX: UDim2 → Vector2
     ToggleKey        = Enum.KeyCode.V,
     ScrollBarEnabled = true,
     HideSearchBar    = false,
@@ -680,7 +669,7 @@ task.spawn(function()
     end
 end)
 
--- Settings Tab
+-- ── Settings Tab ──────────────────────────────────────────────
 local settingsTab = Window:CreateTab({ Title = "Settings", Icon = "settings" })
 settingsTab:CreateSection({ Title = "Configuration" })
 
@@ -746,7 +735,7 @@ settingsTab:CreateToggle({
     end,
 })
 
--- Theme Tab
+-- ── Theme Tab ─────────────────────────────────────────────────
 local themeTab = Window:CreateTab({ Title = "Theme", Icon = "palette" })
 themeTab:CreateSection({ Title = "Select Theme" })
 
@@ -767,7 +756,7 @@ themeTab:CreateDropdown({
     end,
 })
 
--- Info Tab
+-- ── Info Tab ──────────────────────────────────────────────────
 local infoTab = Window:CreateTab({ Title = "Information", Icon = "info" })
 infoTab:CreateSection({ Title = "Script Hub" })
 infoTab:CreateParagraph({ Title = "Hub",     Content = "DX-SR Hub" })
@@ -783,7 +772,7 @@ WindUI:Notify({
     Icon     = "coffee",
 })
 
--- Auto load on start
+-- ── Auto load on start ────────────────────────────────────────
 ConfigManager:Refresh()
 if ConfigManager.AutoLoad and ConfigManager.Flags.SelectedConfigDropdown then
     ConfigManager:Load(ConfigManager.Flags.SelectedConfigDropdown)
