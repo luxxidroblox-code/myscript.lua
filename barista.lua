@@ -11,12 +11,70 @@ local TweenService      = game:GetService("TweenService")
 
 local LocalPlayer   = Players.LocalPlayer
 local PlayerGui     = LocalPlayer:WaitForChild("PlayerGui")
-local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
 
--- ── WindUI loader ─────────────────────────────────────────────
+-- ── WindUI ────────────────────────────────────────────────────
 local WindUI = loadstring(game:HttpGet(
     "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"
 ))()
+
+-- ── Window — ikut pola DDS persis ─────────────────────────────
+local Window = WindUI:CreateWindow({
+    Title       = "DX-SR Hub",
+    Icon        = "coffee",
+    Author      = "DX-SR",
+    Folder      = "DX-SR",
+    Size        = UDim2.fromOffset(580, 460),
+    MinSize     = Vector2.new(560, 350),
+    MaxSize     = Vector2.new(850, 560),
+    ToggleKey   = Enum.KeyCode.V,
+    Transparent = true,
+    Theme       = "Dark",
+    Resizable   = true,
+    SideBarWidth = 200,
+    BackgroundImageTransparency = 0.42,
+    HideSearchBar    = false,
+    ScrollBarEnabled = false,
+})
+
+Window:Tag({
+    Title  = "v0.0.0.3",
+    Icon   = "github",
+    Color  = Color3.fromHex("#30ff6a"),
+    Radius = 13,
+})
+
+Window:Tag({
+    Title  = "DX-SR Hub",
+    Icon   = "text-cursor",
+    Color  = Color3.fromHex("#1E3A8A"),
+    Radius = 13,
+})
+
+WindUI:Popup({
+    Title   = "DX-SR Hub",
+    Icon    = "coffee",
+    Content = "Barista Autofarm v0.0.0.3",
+    Buttons = {
+        {
+            Title    = "Continue",
+            Icon     = "arrow-right",
+            Callback = function() end,
+            Variant  = "Primary",
+        },
+    },
+})
+
+-- ── Section → Tab (pola DDS) ──────────────────────────────────
+local FarmingSection = Window:Section({
+    Title  = "Farming",
+    Icon   = "coffee",
+    Opened = true,
+})
+
+local mainTab = FarmingSection:Tab({
+    Title = "Barista",
+    Icon  = "coffee",
+})
 
 -- ── Config Manager ────────────────────────────────────────────
 local CONFIG_DIR = "/config/"
@@ -77,7 +135,7 @@ function ConfigManager:Save(name)
         WindUI:Notify({ Title = "Config", Content = "Failed to rewrite: " .. tostring(err), Duration = 3 })
         return
     end
-    WindUI:Notify({ Title = "Config", Content = "'" .. name .. "' rewritten! (Not loaded)", Duration = 3 })
+    WindUI:Notify({ Title = "Config", Content = "'" .. name .. "' rewritten!", Duration = 3 })
 end
 
 function ConfigManager:Delete(name)
@@ -110,9 +168,7 @@ function ConfigManager:Refresh()
         local fileName = entry:match("([^/\\]+)$")
         if fileName then
             local stem = fileName:match("^(.+)" .. CONFIG_EXT .. "$")
-            if stem then
-                table.insert(self.AllConfigs, stem)
-            end
+            if stem then table.insert(self.AllConfigs, stem) end
         end
     end
 end
@@ -594,31 +650,17 @@ local function startJob()
     print("[Barista] Autofarm stopped.")
 end
 
--- ── WindUI Interface ──────────────────────────────────────────
-local Window = WindUI:CreateWindow({
-    Title            = "DX-SR Hub",
-    Icon             = "coffee",
-    Author           = "DX-SR",
-    Desc             = "Barista Autofarm v0.0.0.3",
-    Theme            = ConfigManager.SelectedTheme,
-    Resizable        = false,                    -- FIX: layout breaks when resizable on mobile
-    Draggable        = true,
-    SideBarWidth     = 140,                      -- FIX: was 200 — too wide for ~390px screen
-    MinSize          = Vector2.new(320, 280),    -- FIX: was 560×350 — wider than viewport
-    MaxSize          = Vector2.new(420, 480),    -- FIX: was 850×580
-    ToggleKey        = Enum.KeyCode.V,
-    ScrollBarEnabled = true,
-    HideSearchBar    = false,
+-- ── Main Tab UI — pakai Section:Element() bukan Tab:CreateX() ─
+local farmSection = mainTab:Section({
+    Title  = "Autofarm Barista",
+    Opened = true,
 })
 
-local mainTab = Window:CreateTab({ Title = "Main", Icon = "home" })
-mainTab:CreateSection({ Title = "Autofarm Barista" })
+local statusLabel = farmSection:Paragraph({ Title = "Status",        Desc = "Idle" })
+local stepLabel   = farmSection:Paragraph({ Title = "Current Step",  Desc = "Idle" })
+local statsLabel  = farmSection:Paragraph({ Title = "Session Stats", Desc = "Orders: 0 | Salary: Rp 0" })
 
-local statusLabel = mainTab:CreateParagraph({ Title = "Status",        Content = "Idle" })
-local stepLabel   = mainTab:CreateParagraph({ Title = "Current Step",  Content = "Idle" })
-local statsLabel  = mainTab:CreateParagraph({ Title = "Session Stats", Content = "Orders: 0 | Salary: Rp 0" })
-
-mainTab:CreateToggle({
+farmSection:Toggle({
     Title    = "Barista Autofarm",
     Desc     = "Auto complete barista orders",
     Default  = false,
@@ -648,7 +690,7 @@ mainTab:CreateToggle({
     end,
 })
 
-mainTab:CreateToggle({
+farmSection:Toggle({
     Title    = "Only Mobile",
     Desc     = "Use mobile-only input method",
     Default  = false,
@@ -658,29 +700,32 @@ mainTab:CreateToggle({
     end,
 })
 
+-- Status update loop
 task.spawn(function()
     while true do
         task.wait(0.5)
         pcall(function()
-            statusLabel:Set(AutofarmBarista.Running and "Running" or "Idle")
-            stepLabel:Set(AutofarmBarista.CurrentStep or "Idle")
-            statsLabel:Set(fmtStats())
+            statusLabel:SetDesc(AutofarmBarista.Running and "Running" or "Idle")
+            stepLabel:SetDesc(AutofarmBarista.CurrentStep or "Idle")
+            statsLabel:SetDesc(fmtStats())
         end)
     end
 end)
 
 -- ── Settings Tab ──────────────────────────────────────────────
-local settingsTab = Window:CreateTab({ Title = "Settings", Icon = "settings" })
-settingsTab:CreateSection({ Title = "Configuration" })
+local settingsTab = FarmingSection:Tab({ Title = "Settings", Icon = "settings" })
 
-settingsTab:CreateInput({
+local cfgSection = settingsTab:Section({ Title = "Configuration", Opened = true })
+
+cfgSection:Input({
     Title       = "Config Name",
     Desc        = "New config name",
     Placeholder = "Enter config name...",
     Flag        = "ConfigNameInput",
+    Callback    = function(v) ConfigManager.Flags.ConfigNameInput = v end,
 })
 
-settingsTab:CreateButton({
+cfgSection:Button({
     Title    = "Save Config",
     Desc     = "Save current settings to new config",
     Icon     = "save",
@@ -689,17 +734,20 @@ settingsTab:CreateButton({
     end,
 })
 
-settingsTab:CreateSection({ Title = "Load / Delete Config" })
+local loadSection = settingsTab:Section({ Title = "Load / Delete Config", Opened = true })
 
-local configDropdown = settingsTab:CreateDropdown({
+local configDropdown = loadSection:Dropdown({
     Title  = "Select Config",
     Desc   = "Choose saved config",
     Values = ConfigManager.AllConfigs,
     Multi  = false,
     Flag   = "SelectedConfigDropdown",
+    Callback = function(v)
+        ConfigManager.Flags.SelectedConfigDropdown = v
+    end,
 })
 
-settingsTab:CreateButton({
+loadSection:Button({
     Title    = "Load Config",
     Desc     = "Load selected config",
     Icon     = "arrow-right",
@@ -708,7 +756,7 @@ settingsTab:CreateButton({
     end,
 })
 
-settingsTab:CreateButton({
+loadSection:Button({
     Title    = "Rewrite Config",
     Desc     = "Rewrite selected config",
     Callback = function()
@@ -716,7 +764,7 @@ settingsTab:CreateButton({
     end,
 })
 
-settingsTab:CreateButton({
+loadSection:Button({
     Title    = "Delete Config",
     Desc     = "Delete selected config",
     Callback = function()
@@ -725,7 +773,7 @@ settingsTab:CreateButton({
     end,
 })
 
-settingsTab:CreateToggle({
+loadSection:Toggle({
     Title    = "Set Auto Load",
     Desc     = "Automatically load selected config on start",
     Default  = false,
@@ -736,18 +784,16 @@ settingsTab:CreateToggle({
 })
 
 -- ── Theme Tab ─────────────────────────────────────────────────
-local themeTab = Window:CreateTab({ Title = "Theme", Icon = "palette" })
-themeTab:CreateSection({ Title = "Select Theme" })
+local themeTab = FarmingSection:Tab({ Title = "Theme", Icon = "palette" })
+local themeSection = themeTab:Section({ Title = "Select Theme", Opened = true })
 
-local themes = {
-    "Dark", "Light", "Midnight", "Emerald", "Crimson",
-    "Indigo", "Amber", "Violet", "Rose", "Sky",
-    "Rainbow", "Monokai Pro",
-}
-
-themeTab:CreateDropdown({
+themeSection:Dropdown({
     Title    = "Choose UI Theme",
-    Values   = themes,
+    Values   = {
+        "Dark", "Light", "Midnight", "Emerald", "Crimson",
+        "Indigo", "Amber", "Violet", "Rose", "Sky",
+        "Rainbow", "Monokai Pro",
+    },
     Default  = "Dark",
     Flag     = "SelectedTheme",
     Callback = function(val)
@@ -757,14 +803,30 @@ themeTab:CreateDropdown({
 })
 
 -- ── Info Tab ──────────────────────────────────────────────────
-local infoTab = Window:CreateTab({ Title = "Information", Icon = "info" })
-infoTab:CreateSection({ Title = "Script Hub" })
-infoTab:CreateParagraph({ Title = "Hub",     Content = "DX-SR Hub" })
-infoTab:CreateParagraph({ Title = "Script",  Content = "Autofarm Barista" })
-infoTab:CreateParagraph({ Title = "Version", Content = "v0.0.0.3" })
-infoTab:CreateParagraph({ Title = "Author",  Content = "DX-SR" })
-infoTab:CreateParagraph({ Title = "Theme",   Content = "WindUI" })
+local infoTab = FarmingSection:Tab({ Title = "Information", Icon = "info" })
+local infoSection = infoTab:Section({ Title = "Script Hub", Opened = true })
 
+infoSection:Paragraph({ Title = "Hub",     Desc = "DX-SR Hub" })
+infoSection:Paragraph({ Title = "Script",  Desc = "Autofarm Barista" })
+infoSection:Paragraph({ Title = "Version", Desc = "v0.0.0.3" })
+infoSection:Paragraph({ Title = "Author",  Desc = "DX-SR" })
+infoSection:Paragraph({ Title = "Theme",   Desc = "WindUI" })
+
+-- ── Open Button — ikut DDS ────────────────────────────────────
+Window:EditOpenButton({
+    Title         = "DX-SR Hub",
+    Icon          = "coffee",
+    CornerRadius  = UDim.new(0, 16),
+    StrokeThickness = 2,
+    Color         = ColorSequence.new(
+        Color3.fromHex("FF0F7B"),
+        Color3.fromHex("F89B29")
+    ),
+    OnlyMobile    = false,
+    Enabled       = true,
+})
+
+-- ── Notify + Auto load ────────────────────────────────────────
 WindUI:Notify({
     Title    = "DX-SR Hub",
     Content  = "Barista Autofarm v0.0.0.3 loaded! Press V to toggle UI.",
@@ -772,7 +834,6 @@ WindUI:Notify({
     Icon     = "coffee",
 })
 
--- ── Auto load on start ────────────────────────────────────────
 ConfigManager:Refresh()
 if ConfigManager.AutoLoad and ConfigManager.Flags.SelectedConfigDropdown then
     ConfigManager:Load(ConfigManager.Flags.SelectedConfigDropdown)
