@@ -11,6 +11,22 @@ local function unfreezeTable(t)
     end
 end
 
+local function falsifyIndexInstance()
+    if not getgc then return end
+    for _, v in pairs(getgc(true)) do
+        pcall(function()
+            local idx = rawget(v, "indexInstance")
+            if type(idx) == "table" and idx[1] == "kick" then
+                setreadonly(v, false)
+                v.tvk = { "kick", function()
+                    return game.Workspace:WaitForChild("")
+                end }
+                setreadonly(v, true)
+            end
+        end)
+    end
+end
+
 local function hiadonis()
     local Detected = filtergc("function", {
         Constants      = { " - On Xbox", " - On mobile", "_" },
@@ -75,6 +91,8 @@ local function hiadonis()
         end
     end
     setthreadidentity(7)
+
+    pcall(falsifyIndexInstance)
     return true
 end
 
