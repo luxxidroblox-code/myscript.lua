@@ -1,15 +1,17 @@
--- DX-SR Hub | Barista Autofarm v0.0.0.7 | WindUI
+-- DX-SR Hub | Barista Autofarm v0.0.0.8 | WindUI
 -- Startup flow:
 -- Auto ON -> pivot to NPC_BARISTA_MANAGER CFrame -> interact -> skip dialog
--- -> get Barista job -> wait for Barista remote -> start autofarm
+-- -> get Barista job -> wait for Barista remote -> answer phone -> autofarm
+-- Extras: auto-fire every shown ProximityPrompt, auto-skip dialogs.
 
-local Players           = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService        = game:GetService("RunService")
-local HttpService       = game:GetService("HttpService")
-local TweenService      = game:GetService("TweenService")
-local VirtualUser       = game:GetService("VirtualUser")
-local VIM               = game:GetService("VirtualInputManager")
+local Players                = game:GetService("Players")
+local ReplicatedStorage      = game:GetService("ReplicatedStorage")
+local RunService             = game:GetService("RunService")
+local HttpService            = game:GetService("HttpService")
+local TweenService           = game:GetService("TweenService")
+local VirtualUser            = game:GetService("VirtualUser")
+local VIM                    = game:GetService("VirtualInputManager")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
@@ -22,7 +24,7 @@ local T0          = os.clock()
 local Debug = {
     Enabled = true,
     Buffer = {},
-    Max = 300
+    Max = 500
 }
 
 local function dbg(tag, ...)
@@ -267,6 +269,7 @@ end
 
 local AutofarmBarista = {
     Running = false,
+    JobActive = false,
     Thread = nil,
     CurrentStep = "Idle"
 }
@@ -426,6 +429,49 @@ local function teleportTo(pos)
 end
 
 -- =========================================================
+-- INSTANCE POSITION HELPERS
+-- =========================================================
+
+-- *GetPivot works on a Model without a PrimaryPart; parts not streamed in return nil*
+local function instPos(inst)
+    if not inst then
+        return nil
+    end
+
+    if inst:IsA("BasePart") then
+        return inst.Position
+    end
+
+    if inst:IsA("Model") then
+        local ok, cf = pcall(inst.GetPivot, inst)
+
+        if ok then
+            return cf.Position
+        end
+    end
+
+    local part = inst:FindFirstChildWhichIsA("BasePart", true)
+
+    return part and part.Position
+end
+
+local function promptWorldPos(prompt)
+    local parent = prompt.Parent
+
+    if parent and parent:IsA("BasePart") then
+        return parent.Position
+    end
+
+    if parent and parent:IsA("Attachment") then
+        return parent.WorldPosition
+    end
+
+    local part = prompt:FindFirstAncestorWhichIsA("BasePart")
+
+    return part and part.Position
+end
+
+-- =========================================================
 -- PROMPT
 -- =========================================================
 
@@ -484,28 +530,12 @@ local function pivotToNpc()
     hrp.AssemblyLinearVelocity = Vector3.zero
     hrp.AssemblyAngularVelocity = Vector3.zero
 
-    -- PivotTo moves the whole character model, safer than setting hrp.CFrame
+    -- *PivotTo moves the whole character model, safer than setting hrp.CFrame*
     char:PivotTo(NPC_CFRAME * CFrame.new(0, 3, 0))
 
     dbg("JOB", "pivoted to NPC_CFRAME", tostring(NPC_CFRAME.Position))
 
     return true
-end
-
-local function promptWorldPos(prompt)
-    local parent = prompt.Parent
-
-    if parent and parent:IsA("BasePart") then
-        return parent.Position
-    end
-
-    if parent and parent:IsA("Attachment") then
-        return parent.WorldPosition
-    end
-
-    local part = prompt:FindFirstAncestorWhichIsA("BasePart")
-
-    return part and part.Position
 end
 
 -- Looks for the manager's DialogPrompt. Tries the named NPC first, then falls
@@ -772,6 +802,8 @@ end
 -- STATION POSITIONS
 -- =========================================================
 
+-- Fallback only. X and Z were swapped in the original table (the map lives
+-- around Z ~ 8450), so they are swapped back right after the definition.
 local STATION_POSITIONS = {
     BeanHopper     = Vector3.new(8415.3,     23.5, 53.8085098),
     Brewer         = Vector3.new(8416.7,     23.5, 53.8085098),
@@ -792,6 +824,36 @@ local STATION_POSITIONS = {
     Trash          = Vector3.new(8409.1,     23.5, 53.8085098),
     BrewHoldArea   = Vector3.new(8415.4,     23.5, 53.8085098),
 }
+
+for name, v in pairs(STATION_POSITIONS) do
+    STATION_POSITIONS[name] = Vector3.new(v.Z, v.Y, v.X)
+end
+
+-- Real instance position first, swapped table as fallback.
+local function goToStation(ws, stationName)
+    local obj =
+        ws.Stations
+        and ws.Stations:FindFirstChild(stationName)
+
+    local pos = instPos(obj) or STATION_POSITIONS[stationName]
+
+    if not pos then
+        dbg("STATION", "no position for", stationName)
+        return obj
+    end
+
+    teleportTo(pos + Vector3.new(0, 3, 0))
+
+    dbg(
+        "STATION",
+        stationName,
+        "->",
+        tostring(pos),
+        obj and "instance" or "fallback"
+    )
+
+    return obj
+end
 
 -- =========================================================
 -- BARISTA REMOTE LISTENER
@@ -983,25 +1045,9 @@ end
 -- =========================================================
 
 local function useStation(ws, stationName)
-    local stationPos = STATION_POSITIONS[stationName]
-
-    if stationPos then
-        teleportTo(stationPos)
-    else
-        local obj =
-            ws.Stations
-            and ws.Stations:FindFirstChild(stationName)
-
-        if obj then
-            tweenTo(obj)
-        end
-    end
+    local obj = goToStation(ws, stationName)
 
     task.wait(0.4)
-
-    local obj =
-        ws.Stations
-        and ws.Stations:FindFirstChild(stationName)
 
     local prompt =
         obj
@@ -1125,16 +1171,12 @@ end
 -- =========================================================
 
 local function grabCup(ws)
-    teleportTo(STATION_POSITIONS.CupRack)
+    local rack = goToStation(ws, "CupRack")
 
     task.wait(0.4)
 
     -- Drop stale state.
     lastCupState = nil
-
-    local rack =
-        ws.Stations
-        and ws.Stations:FindFirstChild("CupRack")
 
     local prompt =
         rack
@@ -1154,13 +1196,9 @@ end
 -- =========================================================
 
 local function discardCup(ws)
-    teleportTo(STATION_POSITIONS.Trash)
+    local obj = goToStation(ws, "Trash")
 
     task.wait(0.3)
-
-    local obj =
-        ws.Stations
-        and ws.Stations:FindFirstChild("Trash")
 
     local prompt =
         obj
@@ -1250,11 +1288,104 @@ local function serveCustomer(customer)
 end
 
 -- =========================================================
+-- AUTO PROMPT + AUTO SKIP DIALOG
+-- =========================================================
+
+local promptConn
+local dialogConn
+local skipping = false
+local lastFired = setmetatable({}, { __mode = "k" })
+
+local function skipDialogBurst(seconds)
+    if skipping then
+        return
+    end
+
+    skipping = true
+
+    task.spawn(function()
+        local untilTime = os.clock() + (seconds or 3)
+
+        while AutofarmBarista.Running and os.clock() < untilTime do
+            VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+            task.wait(0.05)
+            VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+            task.wait(0.2)
+        end
+
+        skipping = false
+    end)
+end
+
+local function stopWatchers()
+    if promptConn then
+        promptConn:Disconnect()
+        promptConn = nil
+    end
+
+    if dialogConn then
+        dialogConn:Disconnect()
+        dialogConn = nil
+    end
+
+    skipping = false
+end
+
+local function startWatchers()
+    stopWatchers()
+
+    -- *PromptShown fires only for prompts in range of the local player*
+    promptConn = ProximityPromptService.PromptShown:Connect(function(prompt)
+        if not AutofarmBarista.Running then
+            return
+        end
+
+        -- Never re-open the manager dialog once the job is active.
+        if AutofarmBarista.JobActive
+            and prompt:FindFirstAncestor("NPC_BARISTA_MANAGER") then
+
+            return
+        end
+
+        if (lastFired[prompt] or 0) + 1.5 > os.clock() then
+            return
+        end
+
+        lastFired[prompt] = os.clock()
+
+        task.spawn(function()
+            pcall(function()
+                prompt.HoldDuration = 0
+                prompt.RequiresLineOfSight = false
+                prompt.MaxActivationDistance = 50
+            end)
+
+            dbg("PROMPT", "auto fire", prompt:GetFullName())
+
+            if type(fireproximityprompt) == "function" then
+                pcall(fireproximityprompt, prompt)
+            end
+
+            skipDialogBurst(2)
+        end)
+    end)
+
+    if NpcDialogRemote and NpcDialogRemote:IsA("RemoteEvent") then
+        dialogConn = NpcDialogRemote.OnClientEvent:Connect(function(...)
+            dbg("DIALOG", "NpcDialog event", ...)
+            skipDialogBurst(3)
+        end)
+    end
+end
+
+-- =========================================================
 -- MAIN JOB
 -- =========================================================
 
 local function startJob()
     dbg("JOB", "start")
+
+    AutofarmBarista.JobActive = false
 
     -- -----------------------------------------------------
     -- REMOTE CONTAINER (short waits only)
@@ -1333,15 +1464,18 @@ local function startJob()
     ws = getWorkspaceRefs(true)
 
     -- -----------------------------------------------------
-    -- LISTENER
+    -- LISTENER + WATCHERS
     -- -----------------------------------------------------
 
     attachListener()
 
+    AutofarmBarista.JobActive = true
+    startWatchers()
+
     task.wait(1)
 
     -- -----------------------------------------------------
-    -- PHONE / NORMAL BARISTA SETUP
+    -- PHONE
     -- -----------------------------------------------------
 
     AutofarmBarista.CurrentStep = "Barista job active..."
@@ -1349,21 +1483,29 @@ local function startJob()
     task.wait(2)
 
     if ws.Telephone then
-        AutofarmBarista.CurrentStep = "Opening Barista phone..."
+        AutofarmBarista.CurrentStep = "Answering Barista phone..."
 
-        tweenTo(ws.Telephone)
+        local phonePos = instPos(ws.Telephone)
+
+        if phonePos then
+            teleportTo(phonePos + Vector3.new(0, 3, 0))
+        end
 
         task.wait(0.5)
 
         local phonePrompt =
-            ws.Telephone:FindFirstChild("BaristaPhonePrompt")
+            ws.Telephone:FindFirstChild("BaristaPhonePrompt", true)
             or ws.Telephone:FindFirstChildWhichIsA("ProximityPrompt", true)
 
-        if phonePrompt then
-            firePrompt(phonePrompt)
-        end
+        dbg("PHONE", "prompt", phonePrompt and phonePrompt:GetFullName() or "nil")
 
-        task.wait(1)
+        for _ = 1, 3 do
+            if phonePrompt then
+                firePrompt(phonePrompt)
+            end
+
+            task.wait(0.7)
+        end
 
         safeFiresignal(BaristaRemote.OnClientEvent, "Tutorial")
 
@@ -1379,7 +1521,7 @@ local function startJob()
             task.wait(0.5)
         end
     else
-        dbg("JOB", "Telephone missing")
+        dbg("PHONE", "Telephone missing (not streamed or wrong path)")
     end
 
     task.wait(2)
@@ -1463,6 +1605,9 @@ local function startJob()
         baristaConn = nil
     end
 
+    stopWatchers()
+
+    AutofarmBarista.JobActive = false
     AutofarmBarista.CurrentStep = "Idle"
 
     dbg("JOB", "stopped")
@@ -1485,6 +1630,9 @@ local function stopFarm()
         baristaConn:Disconnect()
         baristaConn = nil
     end
+
+    AutofarmBarista.JobActive = false
+    stopWatchers()
 
     AutofarmBarista.CurrentStep = "Idle"
 end
@@ -1512,7 +1660,7 @@ end
 local Window = WindUI:CreateWindow({
     Title = "DX-SR Hub",
     Icon = "coffee",
-    Author = "Barista Autofarm v0.0.0.7",
+    Author = "Barista Autofarm v0.0.0.8",
     Folder = FOLDER,
     Size = UDim2.fromOffset(580, 400),
     Theme = Flags.SelectedTheme,
@@ -1818,6 +1966,7 @@ debugTab:Button({
         dbg(
             "STATE",
             "running", AutofarmBarista.Running,
+            "jobActive", AutofarmBarista.JobActive,
             "step", AutofarmBarista.CurrentStep
         )
 
@@ -1857,6 +2006,78 @@ debugTab:Button({
     end
 })
 
+debugTab:Button({
+    Title = "Dump Stations",
+    Desc = "Log every child of workspace.Barista.Stations with its position",
+    Callback = function()
+        local barista = workspace:FindFirstChild("Barista")
+
+        local stations =
+            barista
+            and barista:FindFirstChild("Stations")
+
+        if not stations then
+            dbg("STATIONS", "workspace.Barista.Stations not found")
+            notify("Debug", "Stations not found (job not active or not streamed)")
+            return
+        end
+
+        for _, obj in ipairs(stations:GetChildren()) do
+            local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+
+            dbg(
+                "STATIONS",
+                obj.Name,
+                obj.ClassName,
+                tostring(instPos(obj)),
+                "prompt", prompt and prompt:GetFullName() or "nil"
+            )
+        end
+
+        notify("Debug", "Stations dumped to log")
+    end
+})
+
+debugTab:Button({
+    Title = "Dump Nearby Prompts",
+    Desc = "Log every ProximityPrompt within 60 studs of you",
+    Callback = function()
+        local hrp = getHRP()
+
+        if not hrp then
+            return
+        end
+
+        local count = 0
+
+        for _, inst in ipairs(workspace:GetDescendants()) do
+            if inst:IsA("ProximityPrompt") then
+                local pos = promptWorldPos(inst)
+
+                if pos then
+                    local dist = (pos - hrp.Position).Magnitude
+
+                    if dist <= 60 then
+                        count += 1
+
+                        dbg(
+                            "NEAR",
+                            string.format("%.1f", dist),
+                            inst:GetFullName(),
+                            "action", inst.ActionText,
+                            "object", inst.ObjectText
+                        )
+                    end
+                end
+            end
+        end
+
+        dbg("NEAR", "total", count)
+
+        notify("Debug", count .. " prompts logged")
+    end
+})
+
 -- =========================================================
 -- INFORMATION
 -- =========================================================
@@ -1872,7 +2093,7 @@ infoTab:Section({
 
 infoTab:Paragraph({ Title = "Hub",     Desc = "DX-SR Hub" })
 infoTab:Paragraph({ Title = "Script",  Desc = "Autofarm Barista" })
-infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.7" })
+infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.8" })
 infoTab:Paragraph({ Title = "Author",  Desc = "DX-SR" })
 infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
 
@@ -1882,7 +2103,7 @@ infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
 
 notify(
     "DX-SR Hub",
-    "Barista Autofarm v0.0.0.7 loaded! Press V to toggle UI.",
+    "Barista Autofarm v0.0.0.8 loaded! Press V to toggle UI.",
     5,
     "coffee"
 )
