@@ -45,8 +45,9 @@ local TWEEN_SPEED      = 100
 local ARRIVE_DELAY     = 60
 local INCOME_THRESHOLD = 30_000_000
 local STAFF_GROUP_ID   = 269201883
-local PLATFORM_DROP    = 6      -- studs below vehicle pivot to platform top
-local PLATFORM_SIZE    = 2048   -- engine max per axis
+local PLATFORM_DROP    = 8      -- studs below spawn root height to platform top
+local PLATFORM_TILE    = 2048   -- engine max size per axis
+local PLATFORM_RADIUS  = 3      -- grid (2*R+1)^2 tiles around spawn -> 7x7
 
 -- ── state ─────────────────────────────────────────────────────────────────
 local isWaitingInZone      = false
@@ -62,8 +63,7 @@ local isWebhookRunning     = false
 local busOptions           = {}
 local isCycleResetting     = false
 local lockedRootPart       = nil
-local farmPlatform         = nil
-local platformConn         = nil
+local platformFolder       = nil
 
 -- ── recovery state ────────────────────────────────────────────────────────
 local lastCheckpointName   = ""
@@ -206,46 +206,50 @@ local function unlockVehicle()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- FARM PLATFORM  (follows vehicle, sits PLATFORM_DROP studs below pivot)
+-- FARM PLATFORM  (static grid, anchored at spawn, PLATFORM_DROP below root)
 -- ══════════════════════════════════════════════════════════════════════════
-local function getFarmModel()
-    local char = LP.Character
-    if not char then return nil end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum and hum.SeatPart then
-        local veh = hum.SeatPart:FindFirstAncestorOfClass("Model")
-        if veh then return veh end
-    end
-    return char
-end
-
 local function destroyPlatform()
-    if platformConn then platformConn:Disconnect() platformConn = nil end
-    if farmPlatform then farmPlatform:Destroy() farmPlatform = nil end
+    if platformFolder then
+        platformFolder:Destroy()
+        platformFolder = nil
+    end
 end
 
 local function createPlatform()
     destroyPlatform()
 
-    local plat        = Instance.new("Part")
-    plat.Name         = HttpService:GenerateGUID(false)
-    plat.Size         = Vector3.new(PLATFORM_SIZE, 4, PLATFORM_SIZE)
-    plat.Anchored     = true
-    plat.CanCollide   = true
-    plat.CanQuery     = false
-    plat.CanTouch     = false
-    plat.CastShadow   = false
-    plat.Transparency = 1
-    plat.Parent       = workspace
-    farmPlatform      = plat
+    local char = LP.Character or LP.CharacterAdded:Wait()
+    local root = char:WaitForChild("HumanoidRootPart", 5)
+    if not root then return end
 
-    platformConn = RunService.Heartbeat:Connect(function()
-        if not plat.Parent then return end
-        local model = getFarmModel()
-        if not model then return end
-        local pos = model:GetPivot().Position
-        plat.CFrame = CFrame.new(pos.X, pos.Y - PLATFORM_DROP - plat.Size.Y / 2, pos.Z)
-    end)
+    local origin    = root.Position
+    local thickness = 4
+    local topY      = origin.Y - PLATFORM_DROP
+    local centerY   = topY - thickness / 2
+
+    local folder  = Instance.new("Folder")
+    folder.Name   = HttpService:GenerateGUID(false)
+    folder.Parent = workspace
+    platformFolder = folder
+
+    for ix = -PLATFORM_RADIUS, PLATFORM_RADIUS do
+        for iz = -PLATFORM_RADIUS, PLATFORM_RADIUS do
+            local tile        = Instance.new("Part")
+            tile.Size         = Vector3.new(PLATFORM_TILE, thickness, PLATFORM_TILE)
+            tile.Position     = Vector3.new(
+                origin.X + ix * PLATFORM_TILE,
+                centerY,
+                origin.Z + iz * PLATFORM_TILE
+            )
+            tile.Anchored     = true
+            tile.CanCollide   = true
+            tile.CanQuery     = false
+            tile.CanTouch     = false
+            tile.CastShadow   = false
+            tile.Transparency = 1
+            tile.Parent       = folder
+        end
+    end
 end
 
 -- ── get owned bus from workspace ──────────────────────────────────────────
