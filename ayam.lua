@@ -1,8 +1,10 @@
--- DX-SR Hub | Barista Autofarm v0.0.0.9 | WindUI
+-- DX-SR Hub | Barista Autofarm v0.0.0.10 | WindUI
 -- Startup flow:
 -- Auto ON -> pivot to NPC_BARISTA_MANAGER CFrame -> interact -> skip dialog
--- -> get Barista job -> wait for Barista remote -> answer phone -> autofarm
+-- -> get Barista job -> wait for Barista remote -> answer phone (exactly 2x)
+-- -> autofarm
 -- Extras: every shown ProximityPrompt is fired ONCE per show cycle,
+-- phone prompts are hard-capped at 2 fires per session,
 -- dialogs are skipped until the dialog GUI is gone.
 
 local Players                = game:GetService("Players")
@@ -473,12 +475,49 @@ local function promptWorldPos(prompt)
 end
 
 -- =========================================================
+-- PHONE PROMPT GUARD
+-- =========================================================
+
+-- The phone prompt hides while its dialog is open and shows again afterwards.
+-- A show/hide watcher reads that as a new prompt and fires it forever.
+-- Phone prompts are therefore excluded from the watcher and hard-capped here.
+local PHONE_MAX_FIRES = 2
+local phoneFires = 0
+local telephoneRef
+
+local function isPhonePrompt(prompt)
+    if not prompt then
+        return false
+    end
+
+    if telephoneRef and prompt:IsDescendantOf(telephoneRef) then
+        return true
+    end
+
+    if prompt.Name:lower():find("phone", 1, true) then
+        return true
+    end
+
+    local ancestor = prompt.Parent
+
+    while ancestor and ancestor ~= workspace do
+        if ancestor.Name:lower():find("phone", 1, true) then
+            return true
+        end
+
+        ancestor = ancestor.Parent
+    end
+
+    return false
+end
+
+-- =========================================================
 -- PROMPT (single fire guard)
 -- =========================================================
 
 -- One fire per prompt inside FIRE_WINDOW seconds, no matter who asks
 -- (manual step code or the auto watcher). Duplicates return true without
--- firing again.
+-- firing again. Phone prompts additionally stop after PHONE_MAX_FIRES.
 local FIRE_WINDOW = 1.2
 local lastFire = setmetatable({}, { __mode = "k" })
 
@@ -497,6 +536,17 @@ local function firePrompt(prompt)
     if lastFire[prompt] and now - lastFire[prompt] < FIRE_WINDOW then
         dbg("PROMPT", "skip duplicate", prompt:GetFullName())
         return true
+    end
+
+    if isPhonePrompt(prompt) then
+        if phoneFires >= PHONE_MAX_FIRES then
+            dbg("PHONE", "cap reached, not firing", phoneFires, "/", PHONE_MAX_FIRES)
+            return true
+        end
+
+        phoneFires += 1
+
+        dbg("PHONE", "fire", phoneFires, "/", PHONE_MAX_FIRES)
     end
 
     lastFire[prompt] = now
@@ -592,6 +642,21 @@ local function triggerDialogSkip(minSeconds)
 
         skipping = false
     end)
+end
+
+-- Blocks until the skip loop is finished and no dialog GUI is open.
+local function waitDialogDone(maxSeconds)
+    local startTime = os.clock()
+
+    task.wait(0.5)
+
+    while
+        AutofarmBarista.Running
+        and (skipping or isDialogOpen())
+        and os.clock() - startTime < (maxSeconds or SKIP_HARD_CAP)
+    do
+        task.wait(0.3)
+    end
 end
 
 -- =========================================================
@@ -1431,6 +1496,11 @@ local function startWatchers()
             return
         end
 
+        -- Phone is handled by the dedicated 2x routine, never by the watcher.
+        if isPhonePrompt(prompt) then
+            return
+        end
+
         -- Never re-open the manager dialog once the job is active.
         if AutofarmBarista.JobActive
             and prompt:FindFirstAncestor("NPC_BARISTA_MANAGER") then
@@ -1472,6 +1542,9 @@ local function startJob()
     dbg("JOB", "start")
 
     AutofarmBarista.JobActive = false
+
+    phoneFires = 0
+    telephoneRef = nil
 
     -- -----------------------------------------------------
     -- REMOTE CONTAINER (short waits only)
@@ -1549,6 +1622,8 @@ local function startJob()
 
     ws = getWorkspaceRefs(true)
 
+    telephoneRef = ws.Telephone
+
     -- -----------------------------------------------------
     -- LISTENER + WATCHERS
     -- -----------------------------------------------------
@@ -1561,7 +1636,7 @@ local function startJob()
     task.wait(1)
 
     -- -----------------------------------------------------
-    -- PHONE (single interact, dialog skipped until closed)
+    -- PHONE (exactly PHONE_MAX_FIRES interacts, dialog finished in between)
     -- -----------------------------------------------------
 
     AutofarmBarista.CurrentStep = "Barista job active..."
@@ -1585,30 +1660,29 @@ local function startJob()
 
         dbg("PHONE", "prompt", phonePrompt and phonePrompt:GetFullName() or "nil")
 
-        -- The watcher may already have fired it on PromptShown; firePrompt
-        -- ignores the duplicate. Never more than one fire per show cycle.
         if phonePrompt then
-            firePrompt(phonePrompt)
+            for attempt = 1, PHONE_MAX_FIRES do
+                if not AutofarmBarista.Running then
+                    break
+                end
+
+                dbg("PHONE", "attempt", attempt, "/", PHONE_MAX_FIRES)
+
+                firePrompt(phonePrompt)
+
+                triggerDialogSkip(3)
+
+                waitDialogDone(SKIP_HARD_CAP)
+
+                -- longer than FIRE_WINDOW so the second fire is never
+                -- swallowed as a duplicate
+                task.wait(1.5)
+            end
         end
-
-        triggerDialogSkip(3)
-
-        task.wait(1)
 
         safeFiresignal(BaristaRemote.OnClientEvent, "Tutorial")
 
         task.wait(0.3)
-
-        -- Wait for the phone dialog to finish before continuing.
-        local waitStart = os.clock()
-
-        while
-            AutofarmBarista.Running
-            and (skipping or isDialogOpen())
-            and os.clock() - waitStart < SKIP_HARD_CAP
-        do
-            task.wait(0.3)
-        end
 
         for _ = 1, 26 do
             if not AutofarmBarista.Running then
@@ -1759,7 +1833,7 @@ end
 local Window = WindUI:CreateWindow({
     Title = "DX-SR Hub",
     Icon = "coffee",
-    Author = "Barista Autofarm v0.0.0.9",
+    Author = "Barista Autofarm v0.0.0.10",
     Folder = FOLDER,
     Size = UDim2.fromOffset(580, 400),
     Theme = Flags.SelectedTheme,
@@ -2067,7 +2141,8 @@ debugTab:Button({
             "running", AutofarmBarista.Running,
             "jobActive", AutofarmBarista.JobActive,
             "step", AutofarmBarista.CurrentStep,
-            "skipping", skipping
+            "skipping", skipping,
+            "phoneFires", phoneFires .. "/" .. PHONE_MAX_FIRES
         )
 
         dbg(
@@ -2189,7 +2264,8 @@ debugTab:Button({
                             string.format("%.1f", dist),
                             inst:GetFullName(),
                             "action", inst.ActionText,
-                            "object", inst.ObjectText
+                            "object", inst.ObjectText,
+                            "phone", isPhonePrompt(inst)
                         )
                     end
                 end
@@ -2217,7 +2293,7 @@ infoTab:Section({
 
 infoTab:Paragraph({ Title = "Hub",     Desc = "DX-SR Hub" })
 infoTab:Paragraph({ Title = "Script",  Desc = "Autofarm Barista" })
-infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.9" })
+infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.10" })
 infoTab:Paragraph({ Title = "Author",  Desc = "DX-SR" })
 infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
 
@@ -2227,7 +2303,7 @@ infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
 
 notify(
     "DX-SR Hub",
-    "Barista Autofarm v0.0.0.9 loaded! Press V to toggle UI.",
+    "Barista Autofarm v0.0.0.10 loaded! Press V to toggle UI.",
     5,
     "coffee"
 )
