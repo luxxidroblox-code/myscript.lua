@@ -1,6 +1,7 @@
--- DX-SR Hub | Barista Autofarm v0.0.0.6 | WindUI
+-- DX-SR Hub | Barista Autofarm v0.0.0.7 | WindUI
 -- Startup flow:
--- Auto ON -> pivot to NPC_BARISTA_MANAGER CFrame -> interact -> skip dialog -> get Barista job
+-- Auto ON -> pivot to NPC_BARISTA_MANAGER CFrame -> interact -> skip dialog
+-- -> get Barista job -> wait for Barista remote -> start autofarm
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -299,12 +300,19 @@ end
 -- WORKSPACE REFERENCES
 -- =========================================================
 
-local function getWorkspaceRefs()
+-- waitCustomers = false before the job (BaristaCustomers does not exist yet,
+-- waiting on it would block the whole startup for 30s).
+local function getWorkspaceRefs(waitCustomers)
     local ws = {
         Barista = workspace:FindFirstChild("Barista"),
-        BaristaCustomers = workspace:WaitForChild("BaristaCustomers", 30),
         NEW_JOB = workspace:FindFirstChild("NEW_JOB")
     }
+
+    if waitCustomers then
+        ws.BaristaCustomers = workspace:WaitForChild("BaristaCustomers", 30)
+    else
+        ws.BaristaCustomers = workspace:FindFirstChild("BaristaCustomers")
+    end
 
     ws.Stations =
         ws.Barista
@@ -453,14 +461,16 @@ end
 -- BARISTA NPC JOB ACQUISITION
 -- =========================================================
 
--- CFrame of NPC_BARISTA_MANAGER. The character is pivoted here BEFORE the
--- NPC is looked up, so StreamingEnabled has time to stream the model in.
+-- CFrame of NPC_BARISTA_MANAGER. The character is pivoted here FIRST,
+-- everything else (NPC lookup, prompt, dialog) happens afterwards.
 local NPC_CFRAME = CFrame.new(
     -13.505, 23.252, 8451.661,
     0.891, -0.000, -0.454,
     0.000, 1.000, -0.000,
     0.454, 0.000, 0.891
 )
+
+local NPC_PROMPT_RADIUS = 30
 
 local function pivotToNpc()
     local char = LocalPlayer.Character
@@ -477,114 +487,156 @@ local function pivotToNpc()
     -- PivotTo moves the whole character model, safer than setting hrp.CFrame
     char:PivotTo(NPC_CFRAME * CFrame.new(0, 3, 0))
 
-    dbg("JOB", "pivoted to NPC_CFRAME")
+    dbg("JOB", "pivoted to NPC_CFRAME", tostring(NPC_CFRAME.Position))
 
     return true
 end
 
-local function findManagerNpc(ws)
-    local npc = ws and ws.NpcManager
+local function promptWorldPos(prompt)
+    local parent = prompt.Parent
 
-    if npc and npc.Parent then
-        return npc
+    if parent and parent:IsA("BasePart") then
+        return parent.Position
     end
 
-    local barista = workspace:FindFirstChild("Barista")
-
-    npc =
-        barista
-        and (
-            barista:FindFirstChild("NPC_BARISTA_MANAGER")
-            or barista:WaitForChild("NPC_BARISTA_MANAGER", 8)
-        )
-
-    if npc then
-        return npc
+    if parent and parent:IsA("Attachment") then
+        return parent.WorldPosition
     end
 
-    return workspace:FindFirstChild("NPC_BARISTA_MANAGER", true)
+    local part = prompt:FindFirstAncestorWhichIsA("BasePart")
+
+    return part and part.Position
+end
+
+-- Looks for the manager's DialogPrompt. Tries the named NPC first, then falls
+-- back to the closest ProximityPrompt around NPC_CFRAME. Retries for up to
+-- `timeout` seconds so StreamingEnabled can stream the NPC in after the pivot.
+local function findManagerPrompt(timeout)
+    local deadline = os.clock() + timeout
+
+    repeat
+        local barista = workspace:FindFirstChild("Barista")
+
+        local npc =
+            barista and barista:FindFirstChild("NPC_BARISTA_MANAGER")
+            or workspace:FindFirstChild("NPC_BARISTA_MANAGER", true)
+
+        if npc then
+            local prompt =
+                npc:FindFirstChild("DialogPrompt", true)
+                or npc:FindFirstChildWhichIsA("ProximityPrompt", true)
+
+            if prompt then
+                dbg("JOB", "prompt via NPC model:", prompt:GetFullName())
+                return prompt, npc
+            end
+        end
+
+        local bestPrompt
+        local bestDist = NPC_PROMPT_RADIUS
+
+        for _, inst in ipairs(workspace:GetDescendants()) do
+            if inst:IsA("ProximityPrompt") then
+                local pos = promptWorldPos(inst)
+
+                if pos then
+                    local dist = (pos - NPC_CFRAME.Position).Magnitude
+
+                    if dist < bestDist then
+                        bestDist = dist
+                        bestPrompt = inst
+                    end
+                end
+            end
+        end
+
+        if bestPrompt then
+            dbg(
+                "JOB",
+                "prompt via CFrame radius:",
+                bestPrompt:GetFullName(),
+                "dist",
+                bestDist
+            )
+
+            return bestPrompt, nil
+        end
+
+        task.wait(0.5)
+    until os.clock() >= deadline or not AutofarmBarista.Running
+
+    return nil, nil
 end
 
 local function getBaristaJob(ws, jobRemote)
+    -- -----------------------------------------------------
+    -- 1. TELEPORT TO NPC CFRAME
+    -- -----------------------------------------------------
+
     AutofarmBarista.CurrentStep = "Going to Barista Manager..."
 
-    dbg("JOB", "Teleporting to NPC_BARISTA_MANAGER")
+    dbg("JOB", "step 1: teleport to NPC CFrame")
 
-    -- Teleport first. The NPC lookup happens afterwards.
     if not pivotToNpc() then
         return false
     end
 
-    task.wait(0.7)
+    task.wait(1)
 
     if not AutofarmBarista.Running then
         return false
     end
 
-    local npc = findManagerNpc(ws)
+    -- -----------------------------------------------------
+    -- 2. FIND PROMPT (NPC streams in after the pivot)
+    -- -----------------------------------------------------
 
-    if not npc then
-        dbg("JOB", "NPC_BARISTA_MANAGER not found after pivot")
+    dbg("JOB", "step 2: locate DialogPrompt")
+
+    local prompt, npc = findManagerPrompt(10)
+
+    if not prompt then
+        dbg("JOB", "DialogPrompt not found near NPC CFrame")
         return false
     end
 
-    if ws then
+    if ws and npc then
         ws.NpcManager = npc
     end
 
-    local root =
-        npc:FindFirstChild("HumanoidRootPart")
-        or npc:FindFirstChild("Head")
-
-    if not root then
-        dbg("JOB", "Manager has no HumanoidRootPart/Head")
-        return false
-    end
-
     local hrp = getHRP()
+    local pPos = promptWorldPos(prompt)
 
     dbg(
         "JOB",
-        "distance to NPC:",
-        hrp and (hrp.Position - root.Position).Magnitude or "nil"
+        "distance to prompt:",
+        (hrp and pPos) and (hrp.Position - pPos).Magnitude or "nil"
     )
 
-    -- Locate DialogPrompt.
-    local prompt =
-        root:FindFirstChild("DialogPrompt")
-        or root:FindFirstChildWhichIsA("ProximityPrompt", true)
-
-    if not prompt then
-        prompt =
-            npc:FindFirstChild("DialogPrompt", true)
-            or npc:FindFirstChildWhichIsA("ProximityPrompt", true)
-    end
-
-    if not prompt then
-        dbg("JOB", "DialogPrompt not found")
-        return false
-    end
-
-    dbg("JOB", "Interacting with Barista Manager")
+    -- -----------------------------------------------------
+    -- 3. INTERACT
+    -- -----------------------------------------------------
 
     AutofarmBarista.CurrentStep = "Interacting with Manager..."
 
-    -- Make interaction instant.
+    dbg("JOB", "step 3: interact")
+
     pcall(function()
         prompt.RequiresLineOfSight = false
         prompt.MaxActivationDistance = 50
         prompt.HoldDuration = 0
     end)
 
-    -- CDID/BCA-style interaction.
     local interacted = false
 
     if type(fireproximityprompt) == "function" then
-        local ok = pcall(function()
-            fireproximityprompt(prompt)
-        end)
+        local ok, err = pcall(fireproximityprompt, prompt)
 
         interacted = ok
+
+        if not ok then
+            dbg("JOB", "fireproximityprompt failed:", err)
+        end
     else
         pcall(function()
             prompt:InputHoldBegin()
@@ -604,15 +656,15 @@ local function getBaristaJob(ws, jobRemote)
 
     task.wait(0.8)
 
-    -- =====================================================
-    -- SKIP NPC DIALOG
-    -- =====================================================
+    -- -----------------------------------------------------
+    -- 4. SKIP NPC DIALOG
+    -- -----------------------------------------------------
 
     AutofarmBarista.CurrentStep = "Skipping Manager dialog..."
 
-    dbg("JOB", "Advancing NPC dialog")
+    dbg("JOB", "step 4: skip dialog")
 
-    for i = 1, 10 do
+    for _ = 1, 10 do
         if not AutofarmBarista.Running then
             return false
         end
@@ -628,9 +680,11 @@ local function getBaristaJob(ws, jobRemote)
 
     task.wait(0.8)
 
-    -- =====================================================
-    -- CHECK WHETHER BARISTA JOB WAS ASSIGNED
-    -- =====================================================
+    -- -----------------------------------------------------
+    -- 5. CONFIRM BARISTA JOB
+    -- -----------------------------------------------------
+
+    dbg("JOB", "step 5: confirm job")
 
     local gotJob = false
     local jobConnection
@@ -652,9 +706,9 @@ local function getBaristaJob(ws, jobRemote)
 
     while
         AutofarmBarista.Running
+        and not gotJob
         and os.clock() - startTime < 10
     do
-        -- Check Job GUI.
         local jobGui = PlayerGui:FindFirstChild("Job")
 
         local baristaGui =
@@ -666,7 +720,6 @@ local function getBaristaJob(ws, jobRemote)
             break
         end
 
-        -- Some games expose the active job elsewhere.
         local character = LocalPlayer.Character
 
         if character then
@@ -681,7 +734,10 @@ local function getBaristaJob(ws, jobRemote)
             end
         end
 
-        if gotJob then
+        -- The Barista remote / workspace folder only exist once the job is
+        -- active, so their appearance also confirms the job.
+        if workspace:FindFirstChild("BaristaCustomers") then
+            gotJob = true
             break
         end
 
@@ -705,9 +761,8 @@ local function getBaristaJob(ws, jobRemote)
 
     -- The interaction can succeed even when this client
     -- does not expose SetJob/Job GUI immediately.
-    dbg("JOB", "Job confirmation not detected")
+    dbg("JOB", "Job confirmation not detected, continuing anyway")
 
-    -- Give the server another short window.
     task.wait(1)
 
     return true
@@ -1201,12 +1256,16 @@ end
 local function startJob()
     dbg("JOB", "start")
 
+    -- -----------------------------------------------------
+    -- REMOTE CONTAINER (short waits only)
+    -- -----------------------------------------------------
+
     local container =
-        ReplicatedStorage:WaitForChild("NetworkContainer", 30)
+        ReplicatedStorage:WaitForChild("NetworkContainer", 15)
 
     local remotes =
         container
-        and container:WaitForChild("RemoteEvents", 30)
+        and container:WaitForChild("RemoteEvents", 15)
 
     if not remotes then
         dbg("JOB", "RemoteEvents not found")
@@ -1216,12 +1275,49 @@ local function startJob()
         return
     end
 
-    -- =====================================================
-    -- GET REMOTES
-    -- =====================================================
+    -- Job / NpcDialog are optional here. The Barista remote is NOT awaited
+    -- yet: it only appears after the job is acquired.
+    JobRemote = remotes:FindFirstChild("Job")
+    NpcDialogRemote = remotes:FindFirstChild("NpcDialog")
 
-    JobRemote = remotes:WaitForChild("Job", 30)
-    NpcDialogRemote = remotes:WaitForChild("NpcDialog", 60)
+    dbg(
+        "JOB",
+        "remotes",
+        "Job", JobRemote ~= nil,
+        "NpcDialog", NpcDialogRemote ~= nil,
+        "Barista", remotes:FindFirstChild("Barista") ~= nil
+    )
+
+    -- -----------------------------------------------------
+    -- 1..5: TELEPORT -> INTERACT -> SKIP DIALOG -> GET JOB
+    -- -----------------------------------------------------
+
+    local ws = getWorkspaceRefs(false)
+
+    local jobStarted = getBaristaJob(ws, JobRemote)
+
+    if not jobStarted then
+        dbg("JOB", "Failed to acquire Barista job")
+
+        notify("Barista", "Failed to get Barista job. Check Debug log.", 5)
+
+        AutofarmBarista.Running = false
+
+        return
+    end
+
+    if not AutofarmBarista.Running then
+        return
+    end
+
+    -- -----------------------------------------------------
+    -- 6: NOW wait for the Barista remote and workspace
+    -- -----------------------------------------------------
+
+    AutofarmBarista.CurrentStep = "Waiting for Barista remote..."
+
+    dbg("JOB", "step 6: waiting for Barista remote")
+
     BaristaRemote = remotes:WaitForChild("Barista", 60)
 
     if not BaristaRemote then
@@ -1232,40 +1328,21 @@ local function startJob()
         return
     end
 
-    -- =====================================================
-    -- WORKSPACE
-    -- =====================================================
+    dbg("JOB", "Barista remote ready")
 
-    local ws = getWorkspaceRefs()
+    ws = getWorkspaceRefs(true)
 
-    -- =====================================================
-    -- GET BARISTA JOB
-    -- =====================================================
-
-    local jobStarted = getBaristaJob(ws, JobRemote)
-
-    if not jobStarted then
-        dbg("JOB", "Failed to acquire Barista job")
-
-        AutofarmBarista.Running = false
-
-        return
-    end
-
-    -- Refresh refs: streaming may have loaded more of the map after the pivot.
-    ws = getWorkspaceRefs()
-
-    -- =====================================================
+    -- -----------------------------------------------------
     -- LISTENER
-    -- =====================================================
+    -- -----------------------------------------------------
 
     attachListener()
 
     task.wait(1)
 
-    -- =====================================================
+    -- -----------------------------------------------------
     -- PHONE / NORMAL BARISTA SETUP
-    -- =====================================================
+    -- -----------------------------------------------------
 
     AutofarmBarista.CurrentStep = "Barista job active..."
 
@@ -1307,9 +1384,9 @@ local function startJob()
 
     task.wait(2)
 
-    -- =====================================================
+    -- -----------------------------------------------------
     -- CUSTOMER LOOP
-    -- =====================================================
+    -- -----------------------------------------------------
 
     local orderIndex = 1
 
@@ -1350,10 +1427,6 @@ local function startJob()
             continue
         end
 
-        -- =================================================
-        -- TAKE ORDER
-        -- =================================================
-
         local orderData = takeOrderFromCustomer(target, orderIndex)
 
         if not orderData then
@@ -1368,17 +1441,9 @@ local function startJob()
 
         lastOrderData = nil
 
-        -- =================================================
-        -- MAKE DRINK
-        -- =================================================
-
         local result = makeDrink(orderData, ws)
 
         dbg("JOB", "make result", result)
-
-        -- =================================================
-        -- SERVE
-        -- =================================================
 
         if result == "done" then
             serveCustomer(target)
@@ -1389,9 +1454,9 @@ local function startJob()
         task.wait(0.5)
     end
 
-    -- =====================================================
+    -- -----------------------------------------------------
     -- CLEANUP
-    -- =====================================================
+    -- -----------------------------------------------------
 
     if baristaConn then
         baristaConn:Disconnect()
@@ -1447,7 +1512,7 @@ end
 local Window = WindUI:CreateWindow({
     Title = "DX-SR Hub",
     Icon = "coffee",
-    Author = "Barista Autofarm v0.0.0.6",
+    Author = "Barista Autofarm v0.0.0.7",
     Folder = FOLDER,
     Size = UDim2.fromOffset(580, 400),
     Theme = Flags.SelectedTheme,
@@ -1807,7 +1872,7 @@ infoTab:Section({
 
 infoTab:Paragraph({ Title = "Hub",     Desc = "DX-SR Hub" })
 infoTab:Paragraph({ Title = "Script",  Desc = "Autofarm Barista" })
-infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.6" })
+infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.7" })
 infoTab:Paragraph({ Title = "Author",  Desc = "DX-SR" })
 infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
 
@@ -1817,7 +1882,7 @@ infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
 
 notify(
     "DX-SR Hub",
-    "Barista Autofarm v0.0.0.6 loaded! Press V to toggle UI.",
+    "Barista Autofarm v0.0.0.7 loaded! Press V to toggle UI.",
     5,
     "coffee"
 )
