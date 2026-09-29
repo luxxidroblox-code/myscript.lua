@@ -1,8 +1,9 @@
--- DX-SR Hub | Barista Autofarm v0.0.0.8 | WindUI
+-- DX-SR Hub | Barista Autofarm v0.0.0.9 | WindUI
 -- Startup flow:
 -- Auto ON -> pivot to NPC_BARISTA_MANAGER CFrame -> interact -> skip dialog
 -- -> get Barista job -> wait for Barista remote -> answer phone -> autofarm
--- Extras: auto-fire every shown ProximityPrompt, auto-skip dialogs.
+-- Extras: every shown ProximityPrompt is fired ONCE per show cycle,
+-- dialogs are skipped until the dialog GUI is gone.
 
 local Players                = game:GetService("Players")
 local ReplicatedStorage      = game:GetService("ReplicatedStorage")
@@ -472,8 +473,14 @@ local function promptWorldPos(prompt)
 end
 
 -- =========================================================
--- PROMPT
+-- PROMPT (single fire guard)
 -- =========================================================
+
+-- One fire per prompt inside FIRE_WINDOW seconds, no matter who asks
+-- (manual step code or the auto watcher). Duplicates return true without
+-- firing again.
+local FIRE_WINDOW = 1.2
+local lastFire = setmetatable({}, { __mode = "k" })
 
 local function firePrompt(prompt)
     if not prompt then
@@ -484,6 +491,15 @@ local function firePrompt(prompt)
         dbg("PROMPT", "fireproximityprompt unsupported")
         return false
     end
+
+    local now = os.clock()
+
+    if lastFire[prompt] and now - lastFire[prompt] < FIRE_WINDOW then
+        dbg("PROMPT", "skip duplicate", prompt:GetFullName())
+        return true
+    end
+
+    lastFire[prompt] = now
 
     pcall(function()
         prompt.HoldDuration = 0
@@ -498,9 +514,84 @@ local function firePrompt(prompt)
         return false
     end
 
+    dbg("PROMPT", "fired", prompt:GetFullName())
+
     task.wait(0.3)
 
     return true
+end
+
+-- =========================================================
+-- DIALOG DETECTION + SKIP
+-- =========================================================
+
+-- Any enabled ScreenGui in PlayerGui whose name contains one of these
+-- (case-insensitive) counts as an open dialog. Use Debug > Dump Dialog GUIs
+-- to find the real name if a dialog is not detected.
+local DIALOG_PATTERNS = { "dialog", "dialogue", "conversation" }
+
+local function isDialogOpen()
+    for _, gui in ipairs(PlayerGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and gui.Enabled then
+            local n = gui.Name:lower()
+
+            for _, pattern in ipairs(DIALOG_PATTERNS) do
+                if n:find(pattern, 1, true) then
+                    return true, gui.Name
+                end
+            end
+        end
+    end
+
+    return false, nil
+end
+
+local function pressReturn()
+    VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+    task.wait(0.05)
+    VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+end
+
+local SKIP_HARD_CAP = 20
+local skipping = false
+local skipMinUntil = 0
+
+-- Presses Return until the dialog GUI is gone (and at least `minSeconds`
+-- have passed since the latest trigger). Hard cap protects against a
+-- permanently-enabled GUI matching the pattern.
+local function triggerDialogSkip(minSeconds)
+    skipMinUntil = math.max(skipMinUntil, os.clock() + (minSeconds or 2))
+
+    if skipping then
+        return
+    end
+
+    skipping = true
+
+    task.spawn(function()
+        local startTime = os.clock()
+
+        dbg("DIALOG", "skip start")
+
+        while
+            AutofarmBarista.Running
+            and os.clock() - startTime < SKIP_HARD_CAP
+        do
+            local open = isDialogOpen()
+
+            if not open and os.clock() >= skipMinUntil then
+                break
+            end
+
+            pressReturn()
+
+            task.wait(0.2)
+        end
+
+        dbg("DIALOG", "skip end", string.format("%.1fs", os.clock() - startTime))
+
+        skipping = false
+    end)
 end
 
 -- =========================================================
@@ -644,7 +735,7 @@ local function getBaristaJob(ws, jobRemote)
     )
 
     -- -----------------------------------------------------
-    -- 3. INTERACT
+    -- 3. INTERACT (once)
     -- -----------------------------------------------------
 
     AutofarmBarista.CurrentStep = "Interacting with Manager..."
@@ -660,6 +751,8 @@ local function getBaristaJob(ws, jobRemote)
     local interacted = false
 
     if type(fireproximityprompt) == "function" then
+        lastFire[prompt] = os.clock()
+
         local ok, err = pcall(fireproximityprompt, prompt)
 
         interacted = ok
@@ -687,25 +780,34 @@ local function getBaristaJob(ws, jobRemote)
     task.wait(0.8)
 
     -- -----------------------------------------------------
-    -- 4. SKIP NPC DIALOG
+    -- 4. SKIP NPC DIALOG (until the dialog GUI closes)
     -- -----------------------------------------------------
 
     AutofarmBarista.CurrentStep = "Skipping Manager dialog..."
 
     dbg("JOB", "step 4: skip dialog")
 
-    for _ = 1, 10 do
-        if not AutofarmBarista.Running then
-            return false
-        end
+    local presses = 0
 
-        VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+    while AutofarmBarista.Running do
+        presses += 1
 
-        task.wait(0.05)
-
-        VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+        pressReturn()
 
         task.wait(0.25)
+
+        if presses >= 10 and not isDialogOpen() then
+            break
+        end
+
+        if presses >= 80 then
+            dbg("JOB", "dialog skip hit press cap")
+            break
+        end
+    end
+
+    if not AutofarmBarista.Running then
+        return false
     end
 
     task.wait(0.8)
@@ -1288,39 +1390,27 @@ local function serveCustomer(customer)
 end
 
 -- =========================================================
--- AUTO PROMPT + AUTO SKIP DIALOG
+-- AUTO PROMPT WATCHER
 -- =========================================================
 
-local promptConn
+local promptShownConn
+local promptHiddenConn
 local dialogConn
-local skipping = false
-local lastFired = setmetatable({}, { __mode = "k" })
 
-local function skipDialogBurst(seconds)
-    if skipping then
-        return
-    end
-
-    skipping = true
-
-    task.spawn(function()
-        local untilTime = os.clock() + (seconds or 3)
-
-        while AutofarmBarista.Running and os.clock() < untilTime do
-            VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-            task.wait(0.05)
-            VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-            task.wait(0.2)
-        end
-
-        skipping = false
-    end)
-end
+-- true while a prompt is on screen and was already fired for this show cycle.
+-- Cleared on PromptHidden, so the prompt fires again only after it leaves
+-- range / disappears and shows up again.
+local firedShown = setmetatable({}, { __mode = "k" })
 
 local function stopWatchers()
-    if promptConn then
-        promptConn:Disconnect()
-        promptConn = nil
+    if promptShownConn then
+        promptShownConn:Disconnect()
+        promptShownConn = nil
+    end
+
+    if promptHiddenConn then
+        promptHiddenConn:Disconnect()
+        promptHiddenConn = nil
     end
 
     if dialogConn then
@@ -1329,13 +1419,14 @@ local function stopWatchers()
     end
 
     skipping = false
+    skipMinUntil = 0
 end
 
 local function startWatchers()
     stopWatchers()
 
     -- *PromptShown fires only for prompts in range of the local player*
-    promptConn = ProximityPromptService.PromptShown:Connect(function(prompt)
+    promptShownConn = ProximityPromptService.PromptShown:Connect(function(prompt)
         if not AutofarmBarista.Running then
             return
         end
@@ -1347,33 +1438,28 @@ local function startWatchers()
             return
         end
 
-        if (lastFired[prompt] or 0) + 1.5 > os.clock() then
+        if firedShown[prompt] then
             return
         end
 
-        lastFired[prompt] = os.clock()
+        firedShown[prompt] = true
 
         task.spawn(function()
-            pcall(function()
-                prompt.HoldDuration = 0
-                prompt.RequiresLineOfSight = false
-                prompt.MaxActivationDistance = 50
-            end)
+            firePrompt(prompt)
 
-            dbg("PROMPT", "auto fire", prompt:GetFullName())
-
-            if type(fireproximityprompt) == "function" then
-                pcall(fireproximityprompt, prompt)
-            end
-
-            skipDialogBurst(2)
+            triggerDialogSkip(2)
         end)
+    end)
+
+    promptHiddenConn = ProximityPromptService.PromptHidden:Connect(function(prompt)
+        firedShown[prompt] = nil
     end)
 
     if NpcDialogRemote and NpcDialogRemote:IsA("RemoteEvent") then
         dialogConn = NpcDialogRemote.OnClientEvent:Connect(function(...)
             dbg("DIALOG", "NpcDialog event", ...)
-            skipDialogBurst(3)
+
+            triggerDialogSkip(3)
         end)
     end
 end
@@ -1475,7 +1561,7 @@ local function startJob()
     task.wait(1)
 
     -- -----------------------------------------------------
-    -- PHONE
+    -- PHONE (single interact, dialog skipped until closed)
     -- -----------------------------------------------------
 
     AutofarmBarista.CurrentStep = "Barista job active..."
@@ -1491,7 +1577,7 @@ local function startJob()
             teleportTo(phonePos + Vector3.new(0, 3, 0))
         end
 
-        task.wait(0.5)
+        task.wait(0.8)
 
         local phonePrompt =
             ws.Telephone:FindFirstChild("BaristaPhonePrompt", true)
@@ -1499,17 +1585,30 @@ local function startJob()
 
         dbg("PHONE", "prompt", phonePrompt and phonePrompt:GetFullName() or "nil")
 
-        for _ = 1, 3 do
-            if phonePrompt then
-                firePrompt(phonePrompt)
-            end
-
-            task.wait(0.7)
+        -- The watcher may already have fired it on PromptShown; firePrompt
+        -- ignores the duplicate. Never more than one fire per show cycle.
+        if phonePrompt then
+            firePrompt(phonePrompt)
         end
+
+        triggerDialogSkip(3)
+
+        task.wait(1)
 
         safeFiresignal(BaristaRemote.OnClientEvent, "Tutorial")
 
         task.wait(0.3)
+
+        -- Wait for the phone dialog to finish before continuing.
+        local waitStart = os.clock()
+
+        while
+            AutofarmBarista.Running
+            and (skipping or isDialogOpen())
+            and os.clock() - waitStart < SKIP_HARD_CAP
+        do
+            task.wait(0.3)
+        end
 
         for _ = 1, 26 do
             if not AutofarmBarista.Running then
@@ -1660,7 +1759,7 @@ end
 local Window = WindUI:CreateWindow({
     Title = "DX-SR Hub",
     Icon = "coffee",
-    Author = "Barista Autofarm v0.0.0.8",
+    Author = "Barista Autofarm v0.0.0.9",
     Folder = FOLDER,
     Size = UDim2.fromOffset(580, 400),
     Theme = Flags.SelectedTheme,
@@ -1967,7 +2066,8 @@ debugTab:Button({
             "STATE",
             "running", AutofarmBarista.Running,
             "jobActive", AutofarmBarista.JobActive,
-            "step", AutofarmBarista.CurrentStep
+            "step", AutofarmBarista.CurrentStep,
+            "skipping", skipping
         )
 
         dbg(
@@ -2002,7 +2102,31 @@ debugTab:Button({
             hrp and (hrp.Position - NPC_CFRAME.Position).Magnitude or "nil"
         )
 
+        local open, guiName = isDialogOpen()
+
+        dbg("STATE", "dialogOpen", open, "gui", guiName)
+
         notify("Debug", "State dumped to log")
+    end
+})
+
+debugTab:Button({
+    Title = "Dump Dialog GUIs",
+    Desc = "Log every enabled ScreenGui (open a dialog first, then press)",
+    Callback = function()
+        local count = 0
+
+        for _, gui in ipairs(PlayerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                count += 1
+
+                dbg("GUI", gui.Name, "children", #gui:GetChildren())
+            end
+        end
+
+        dbg("GUI", "total enabled", count)
+
+        notify("Debug", count .. " enabled GUIs logged")
     end
 })
 
@@ -2093,7 +2217,7 @@ infoTab:Section({
 
 infoTab:Paragraph({ Title = "Hub",     Desc = "DX-SR Hub" })
 infoTab:Paragraph({ Title = "Script",  Desc = "Autofarm Barista" })
-infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.8" })
+infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.9" })
 infoTab:Paragraph({ Title = "Author",  Desc = "DX-SR" })
 infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
 
@@ -2103,7 +2227,7 @@ infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
 
 notify(
     "DX-SR Hub",
-    "Barista Autofarm v0.0.0.8 loaded! Press V to toggle UI.",
+    "Barista Autofarm v0.0.0.9 loaded! Press V to toggle UI.",
     5,
     "coffee"
 )
