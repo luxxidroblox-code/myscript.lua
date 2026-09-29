@@ -1,7 +1,6 @@
 -- DX-SR Hub | Barista Autofarm v0.0.0.6 | WindUI
 -- Startup flow:
--- Auto ON -> exact CFrame teleport to NPC_BARISTA_MANAGER
--- -> interact -> skip dialog -> get Barista job
+-- Auto ON -> pivot to NPC_BARISTA_MANAGER CFrame -> interact -> skip dialog -> get Barista job
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -9,7 +8,7 @@ local RunService        = game:GetService("RunService")
 local HttpService       = game:GetService("HttpService")
 local TweenService      = game:GetService("TweenService")
 local VirtualUser       = game:GetService("VirtualUser")
-local VIM                = game:GetService("VirtualInputManager")
+local VIM               = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
@@ -280,31 +279,6 @@ local lastOrderData
 local baristaConn
 
 -- =========================================================
--- EXACT BARISTA MANAGER CFRAME
--- =========================================================
-
-local BARISTA_MANAGER_CFRAME = CFrame.new(
-    -13.505,
-    23.252,
-    8451.661,
-    0.891,
-    -0.000,
-    -0.454,
-    0.000,
-    1.000,
-    -0.000,
-    0.454,
-    0.000,
-    0.891
-)
-
-dbg(
-    "CONFIG",
-    "Manager CFrame:",
-    tostring(BARISTA_MANAGER_CFRAME)
-)
-
--- =========================================================
 -- SIGNAL HELPER
 -- =========================================================
 
@@ -327,16 +301,9 @@ end
 
 local function getWorkspaceRefs()
     local ws = {
-        Barista =
-            workspace:FindFirstChild("Barista"),
-
-        BaristaCustomers =
-            workspace:FindFirstChild(
-                "BaristaCustomers"
-            ),
-
-        NEW_JOB =
-            workspace:FindFirstChild("NEW_JOB")
+        Barista = workspace:FindFirstChild("Barista"),
+        BaristaCustomers = workspace:WaitForChild("BaristaCustomers", 30),
+        NEW_JOB = workspace:FindFirstChild("NEW_JOB")
     }
 
     ws.Stations =
@@ -345,9 +312,7 @@ local function getWorkspaceRefs()
 
     ws.NpcManager =
         ws.Barista
-        and ws.Barista:FindFirstChild(
-            "NPC_BARISTA_MANAGER"
-        )
+        and ws.Barista:FindFirstChild("NPC_BARISTA_MANAGER")
 
     local cafe =
         ws.NEW_JOB
@@ -392,119 +357,24 @@ end
 -- MOVEMENT
 -- =========================================================
 
-local function teleportTo(target)
-    local hrp = getHRP()
-
-    if not hrp then
-        dbg(
-            "TP",
-            "HumanoidRootPart not found"
-        )
-
-        return false
-    end
-
-    local targetCFrame
-
-    if typeof(target) == "CFrame" then
-
-        targetCFrame = target
-
-    elseif typeof(target) == "Vector3" then
-
-        targetCFrame = CFrame.new(target)
-
-    elseif typeof(target) == "Instance" then
-
-        if target:IsA("BasePart") then
-            targetCFrame = target.CFrame
-        else
-            local part =
-                target:FindFirstChildWhichIsA(
-                    "BasePart",
-                    true
-                )
-
-            if part then
-                targetCFrame = part.CFrame
-            end
-        end
-    end
-
-    if not targetCFrame then
-        dbg(
-            "TP",
-            "Invalid teleport target"
-        )
-
-        return false
-    end
-
-    hrp.AssemblyLinearVelocity =
-        Vector3.zero
-
-    hrp.AssemblyAngularVelocity =
-        Vector3.zero
-
-    dbg(
-        "TP",
-        "Teleporting to",
-        tostring(targetCFrame.Position)
-    )
-
-    dbg(
-        "TP",
-        "Rotation:",
-        tostring(targetCFrame - targetCFrame.Position)
-    )
-
-    hrp.CFrame =
-        targetCFrame
-
-    task.wait(0.15)
-
-    local distance =
-        (
-            hrp.Position
-            - targetCFrame.Position
-        ).Magnitude
-
-    dbg(
-        "TP",
-        "Distance after teleport:",
-        string.format(
-            "%.2f",
-            distance
-        )
-    )
-
-    return distance < 10
-end
-
 local function tweenTo(target, duration)
     local hrp = getHRP()
 
     if not hrp or not target then
-        return false
+        return
     end
 
     local pos
 
     if typeof(target) == "Vector3" then
-
         pos = target
 
     elseif target:IsA("BasePart") then
-
         pos = target.Position
 
     else
-
         local part =
-            target:FindFirstChildWhichIsA(
-                "BasePart",
-                true
-            )
+            target:FindFirstChildWhichIsA("BasePart", true)
 
         pos =
             part
@@ -512,43 +382,39 @@ local function tweenTo(target, duration)
     end
 
     if not pos then
-        dbg(
-            "TWEEN",
-            "no position for target"
-        )
-
-        return false
+        dbg("TWEEN", "no position for target")
+        return
     end
 
-    local tween =
-        TweenService:Create(
-            hrp,
-
-            TweenInfo.new(
-                duration or 0.8,
-                Enum.EasingStyle.Quad,
-                Enum.EasingDirection.Out
-            ),
-
-            {
-                CFrame =
-                    CFrame.new(
-                        pos
-                        + Vector3.new(
-                            0,
-                            3,
-                            0
-                        )
-                    )
-            }
-        )
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(
+            duration or 0.8,
+            Enum.EasingStyle.Quad,
+            Enum.EasingDirection.Out
+        ),
+        {
+            CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+        }
+    )
 
     tween:Play()
     tween.Completed:Wait()
 
     task.wait(0.3)
+end
 
-    return true
+local function teleportTo(pos)
+    local hrp = getHRP()
+
+    if not hrp then
+        return
+    end
+
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyAngularVelocity = Vector3.zero
+
+    hrp.CFrame = CFrame.new(pos)
 end
 
 -- =========================================================
@@ -557,20 +423,11 @@ end
 
 local function firePrompt(prompt)
     if not prompt then
-        dbg(
-            "PROMPT",
-            "nil prompt"
-        )
-
         return false
     end
 
     if type(fireproximityprompt) ~= "function" then
-        dbg(
-            "PROMPT",
-            "fireproximityprompt unsupported"
-        )
-
+        dbg("PROMPT", "fireproximityprompt unsupported")
         return false
     end
 
@@ -580,27 +437,12 @@ local function firePrompt(prompt)
         prompt.MaxActivationDistance = 50
     end)
 
-    local ok, err =
-        pcall(
-            fireproximityprompt,
-            prompt
-        )
+    local ok, err = pcall(fireproximityprompt, prompt)
 
     if not ok then
-        dbg(
-            "PROMPT",
-            "fire failed:",
-            err
-        )
-
+        dbg("PROMPT", "fire failed:", err)
         return false
     end
-
-    dbg(
-        "PROMPT",
-        "fired:",
-        prompt:GetFullName()
-    )
 
     task.wait(0.3)
 
@@ -608,302 +450,157 @@ local function firePrompt(prompt)
 end
 
 -- =========================================================
--- FIND BARISTA MANAGER
--- =========================================================
-
-local function findBaristaManager(ws)
-    if ws and ws.NpcManager then
-        return ws.NpcManager
-    end
-
-    dbg(
-        "JOB",
-        "Searching for NPC_BARISTA_MANAGER..."
-    )
-
-    local barista =
-        workspace:FindFirstChild("Barista")
-
-    if barista then
-        local npc =
-            barista:FindFirstChild(
-                "NPC_BARISTA_MANAGER"
-            )
-
-        if npc then
-            dbg(
-                "JOB",
-                "Manager found:",
-                npc:GetFullName()
-            )
-
-            return npc
-        end
-    end
-
-    -- Fallback recursive search.
-    local found =
-        workspace:FindFirstChild(
-            "NPC_BARISTA_MANAGER",
-            true
-        )
-
-    if found then
-        dbg(
-            "JOB",
-            "Manager found recursively:",
-            found:GetFullName()
-        )
-
-        return found
-    end
-
-    dbg(
-        "JOB",
-        "NPC_BARISTA_MANAGER not found"
-    )
-
-    return nil
-end
-
--- =========================================================
--- FIND MANAGER PROMPT
--- =========================================================
-
-local function findManagerPrompt(npc)
-    if not npc then
-        return nil
-    end
-
-    local root =
-        npc:FindFirstChild(
-            "HumanoidRootPart"
-        )
-        or npc:FindFirstChild(
-            "Head"
-        )
-
-    if root then
-        local namedPrompt =
-            root:FindFirstChild(
-                "DialogPrompt"
-            )
-
-        if namedPrompt then
-            return namedPrompt
-        end
-
-        local proximityPrompt =
-            root:FindFirstChildWhichIsA(
-                "ProximityPrompt",
-                true
-            )
-
-        if proximityPrompt then
-            return proximityPrompt
-        end
-    end
-
-    local namedPrompt =
-        npc:FindFirstChild(
-            "DialogPrompt",
-            true
-        )
-
-    if namedPrompt then
-        return namedPrompt
-    end
-
-    local proximityPrompt =
-        npc:FindFirstChildWhichIsA(
-            "ProximityPrompt",
-            true
-        )
-
-    if proximityPrompt then
-        return proximityPrompt
-    end
-
-    return nil
-end
-
--- =========================================================
 -- BARISTA NPC JOB ACQUISITION
 -- =========================================================
 
+-- CFrame of NPC_BARISTA_MANAGER. The character is pivoted here BEFORE the
+-- NPC is looked up, so StreamingEnabled has time to stream the model in.
+local NPC_CFRAME = CFrame.new(
+    -13.505, 23.252, 8451.661,
+    0.891, -0.000, -0.454,
+    0.000, 1.000, -0.000,
+    0.454, 0.000, 0.891
+)
+
+local function pivotToNpc()
+    local char = LocalPlayer.Character
+    local hrp = getHRP()
+
+    if not char or not hrp then
+        dbg("JOB", "character/HRP missing")
+        return false
+    end
+
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyAngularVelocity = Vector3.zero
+
+    -- PivotTo moves the whole character model, safer than setting hrp.CFrame
+    char:PivotTo(NPC_CFRAME * CFrame.new(0, 3, 0))
+
+    dbg("JOB", "pivoted to NPC_CFRAME")
+
+    return true
+end
+
+local function findManagerNpc(ws)
+    local npc = ws and ws.NpcManager
+
+    if npc and npc.Parent then
+        return npc
+    end
+
+    local barista = workspace:FindFirstChild("Barista")
+
+    npc =
+        barista
+        and (
+            barista:FindFirstChild("NPC_BARISTA_MANAGER")
+            or barista:WaitForChild("NPC_BARISTA_MANAGER", 8)
+        )
+
+    if npc then
+        return npc
+    end
+
+    return workspace:FindFirstChild("NPC_BARISTA_MANAGER", true)
+end
+
 local function getBaristaJob(ws, jobRemote)
+    AutofarmBarista.CurrentStep = "Going to Barista Manager..."
+
+    dbg("JOB", "Teleporting to NPC_BARISTA_MANAGER")
+
+    -- Teleport first. The NPC lookup happens afterwards.
+    if not pivotToNpc() then
+        return false
+    end
+
+    task.wait(0.7)
 
     if not AutofarmBarista.Running then
         return false
     end
 
-    AutofarmBarista.CurrentStep =
-        "Going to Barista Manager..."
-
-    dbg(
-        "JOB",
-        "Starting Barista Manager teleport"
-    )
-
-    -- =====================================================
-    -- FORCE EXACT TELEPORT
-    -- =====================================================
-
-    local success =
-        teleportTo(
-            BARISTA_MANAGER_CFRAME
-        )
-
-    if not success then
-        dbg(
-            "JOB",
-            "Manager teleport verification failed"
-        )
-    else
-        dbg(
-            "JOB",
-            "Manager teleport successful"
-        )
-    end
-
-    task.wait(0.8)
-
-    if not AutofarmBarista.Running then
-        return false
-    end
-
-    -- =====================================================
-    -- FIND NPC
-    -- =====================================================
-
-    local npc =
-        findBaristaManager(ws)
+    local npc = findManagerNpc(ws)
 
     if not npc then
-        dbg(
-            "JOB",
-            "Manager model unavailable after teleport"
-        )
-
+        dbg("JOB", "NPC_BARISTA_MANAGER not found after pivot")
         return false
     end
 
+    if ws then
+        ws.NpcManager = npc
+    end
+
+    local root =
+        npc:FindFirstChild("HumanoidRootPart")
+        or npc:FindFirstChild("Head")
+
+    if not root then
+        dbg("JOB", "Manager has no HumanoidRootPart/Head")
+        return false
+    end
+
+    local hrp = getHRP()
+
     dbg(
         "JOB",
-        "Manager model:",
-        npc:GetFullName()
+        "distance to NPC:",
+        hrp and (hrp.Position - root.Position).Magnitude or "nil"
     )
 
-    -- =====================================================
-    -- FIND PROMPT
-    -- =====================================================
-
+    -- Locate DialogPrompt.
     local prompt =
-        findManagerPrompt(npc)
+        root:FindFirstChild("DialogPrompt")
+        or root:FindFirstChildWhichIsA("ProximityPrompt", true)
 
     if not prompt then
+        prompt =
+            npc:FindFirstChild("DialogPrompt", true)
+            or npc:FindFirstChildWhichIsA("ProximityPrompt", true)
+    end
 
-        dbg(
-            "JOB",
-            "DialogPrompt not found"
-        )
-
-        for _, obj in ipairs(
-            npc:GetDescendants()
-        ) do
-
-            if obj:IsA("ProximityPrompt") then
-                dbg(
-                    "JOB",
-                    "Prompt found:",
-                    obj:GetFullName()
-                )
-            end
-        end
-
+    if not prompt then
+        dbg("JOB", "DialogPrompt not found")
         return false
     end
 
-    dbg(
-        "JOB",
-        "Using prompt:",
-        prompt:GetFullName()
-    )
+    dbg("JOB", "Interacting with Barista Manager")
 
-    -- =====================================================
-    -- INTERACT
-    -- =====================================================
+    AutofarmBarista.CurrentStep = "Interacting with Manager..."
 
-    AutofarmBarista.CurrentStep =
-        "Interacting with Manager..."
-
-    dbg(
-        "JOB",
-        "Interacting with Barista Manager"
-    )
-
+    -- Make interaction instant.
     pcall(function()
         prompt.RequiresLineOfSight = false
         prompt.MaxActivationDistance = 50
         prompt.HoldDuration = 0
     end)
 
+    -- CDID/BCA-style interaction.
     local interacted = false
 
     if type(fireproximityprompt) == "function" then
-
-        local ok, err =
-            pcall(
-                fireproximityprompt,
-                prompt
-            )
+        local ok = pcall(function()
+            fireproximityprompt(prompt)
+        end)
 
         interacted = ok
-
-        if not ok then
-            dbg(
-                "JOB",
-                "fireproximityprompt failed:",
-                err
-            )
-        end
-
     else
-
-        dbg(
-            "JOB",
-            "fireproximityprompt unavailable"
-        )
-
         pcall(function()
             prompt:InputHoldBegin()
 
-            task.wait(
-                math.max(
-                    prompt.HoldDuration,
-                    0
-                ) + 0.1
-            )
+            task.wait(math.max(prompt.HoldDuration, 0) + 0.1)
 
             prompt:InputHoldEnd()
-
-            interacted = true
         end)
+
+        interacted = true
     end
 
     if not interacted then
-        dbg(
-            "JOB",
-            "NPC interaction failed"
-        )
-
+        dbg("JOB", "NPC interaction failed")
         return false
     end
-
-    dbg(
-        "JOB",
-        "NPC interaction fired"
-    )
 
     task.wait(0.8)
 
@@ -911,35 +608,20 @@ local function getBaristaJob(ws, jobRemote)
     -- SKIP NPC DIALOG
     -- =====================================================
 
-    AutofarmBarista.CurrentStep =
-        "Skipping Manager dialog..."
+    AutofarmBarista.CurrentStep = "Skipping Manager dialog..."
 
-    dbg(
-        "JOB",
-        "Advancing NPC dialog"
-    )
+    dbg("JOB", "Advancing NPC dialog")
 
     for i = 1, 10 do
-
         if not AutofarmBarista.Running then
             return false
         end
 
-        VIM:SendKeyEvent(
-            true,
-            Enum.KeyCode.Return,
-            false,
-            game
-        )
+        VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
 
         task.wait(0.05)
 
-        VIM:SendKeyEvent(
-            false,
-            Enum.KeyCode.Return,
-            false,
-            game
-        )
+        VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
 
         task.wait(0.25)
     end
@@ -947,81 +629,60 @@ local function getBaristaJob(ws, jobRemote)
     task.wait(0.8)
 
     -- =====================================================
-    -- CHECK JOB
+    -- CHECK WHETHER BARISTA JOB WAS ASSIGNED
     -- =====================================================
 
     local gotJob = false
     local jobConnection
 
-    if jobRemote
-        and jobRemote:IsA("RemoteEvent") then
-
+    if jobRemote and jobRemote:IsA("RemoteEvent") then
         jobConnection =
-            jobRemote.OnClientEvent:Connect(
-                function(action, jobName)
+            jobRemote.OnClientEvent:Connect(function(action, jobName)
+                dbg("JOB_EVENT", tostring(action), tostring(jobName))
 
-                    dbg(
-                        "JOB_EVENT",
-                        tostring(action),
-                        tostring(jobName)
-                    )
+                if action == "SetJob"
+                    and tostring(jobName) == "Barista" then
 
-                    if action == "SetJob"
-                        and tostring(jobName)
-                            == "Barista" then
-
-                        gotJob = true
-                    end
+                    gotJob = true
                 end
-            )
+            end)
     end
 
-    local startTime =
-        os.clock()
+    local startTime = os.clock()
 
     while
         AutofarmBarista.Running
         and os.clock() - startTime < 10
     do
-
-        -- Job GUI.
-        local jobGui =
-            PlayerGui:FindFirstChild(
-                "Job"
-            )
+        -- Check Job GUI.
+        local jobGui = PlayerGui:FindFirstChild("Job")
 
         local baristaGui =
             jobGui
-            and jobGui:FindFirstChild(
-                "Barista"
-            )
+            and jobGui:FindFirstChild("Barista")
 
         if baristaGui then
             gotJob = true
             break
         end
 
-        -- Character Job value.
-        local character =
-            LocalPlayer.Character
+        -- Some games expose the active job elsewhere.
+        local character = LocalPlayer.Character
 
         if character then
-
-            local jobValue =
-                character:FindFirstChild(
-                    "Job"
-                )
+            local jobValue = character:FindFirstChild("Job")
 
             if jobValue
-                and jobValue:IsA(
-                    "StringValue"
-                )
-                and jobValue.Value
-                    == "Barista" then
+                and jobValue:IsA("StringValue")
+                and jobValue.Value == "Barista" then
 
                 gotJob = true
                 break
             end
+        end
+
+        if gotJob then
+            break
         end
 
         task.wait(0.2)
@@ -1033,26 +694,20 @@ local function getBaristaJob(ws, jobRemote)
     end
 
     if gotJob then
+        AutofarmBarista.CurrentStep = "Barista Job Acquired"
 
-        AutofarmBarista.CurrentStep =
-            "Barista Job Acquired"
-
-        dbg(
-            "JOB",
-            "Barista job acquired successfully"
-        )
+        dbg("JOB", "Barista job acquired successfully")
 
         task.wait(1)
 
         return true
     end
 
-    dbg(
-        "JOB",
-        "Job confirmation not detected"
-    )
+    -- The interaction can succeed even when this client
+    -- does not expose SetJob/Job GUI immediately.
+    dbg("JOB", "Job confirmation not detected")
 
-    -- Keep existing permissive behavior.
+    -- Give the server another short window.
     task.wait(1)
 
     return true
@@ -1063,132 +718,24 @@ end
 -- =========================================================
 
 local STATION_POSITIONS = {
-
-    BeanHopper =
-        Vector3.new(
-            8415.3,
-            23.5,
-            53.8085098
-        ),
-
-    Brewer =
-        Vector3.new(
-            8416.7,
-            23.5,
-            53.8085098
-        ),
-
-    Steamer =
-        Vector3.new(
-            8419,
-            23.5,
-            53.8085098
-        ),
-
-    Milk =
-        Vector3.new(
-            8426.7,
-            23.5,
-            53.8085098
-        ),
-
-    IceMaker =
-        Vector3.new(
-            8431,
-            23.5,
-            53.8085098
-        ),
-
-    CreamDispenser =
-        Vector3.new(
-            8433.7,
-            23.5,
-            53.8085098
-        ),
-
-    Carbonator =
-        Vector3.new(
-            8436.2,
-            23.5,
-            53.8085098
-        ),
-
-    BobaPot =
-        Vector3.new(
-            8436.4,
-            23.5,
-            53.8085098
-        ),
-
-    WaterTap =
-        Vector3.new(
-            8436.50586,
-            23.5,
-            18.9660721
-        ),
-
-    TeaBox =
-        Vector3.new(
-            8438.5,
-            23.5,
-            53.8085098
-        ),
-
-    LemonBoard =
-        Vector3.new(
-            8441,
-            23.5,
-            53.8085098
-        ),
-
-    MatchaJar =
-        Vector3.new(
-            8441.2,
-            23.5,
-            53.8085098
-        ),
-
-    ChocolateJar =
-        Vector3.new(
-            8443.2,
-            23.5,
-            53.8085098
-        ),
-
-    CreamJar =
-        Vector3.new(
-            8443.6,
-            23.5,
-            53.8085098
-        ),
-
-    FlavourBottle =
-        Vector3.new(
-            8449,
-            23.5,
-            53.8085098
-        ),
-
-    CupRack =
-        Vector3.new(
-            8413.8,
-            23.5,
-            53.8085098
-        ),
-
-    Trash =
-        Vector3.new(
-            8409.1,
-            23.5,
-            53.8085098
-        ),
-
-    BrewHoldArea =
-        Vector3.new(
-            8415.4,
-            23.5,
-            53.8085098
-        ),
+    BeanHopper     = Vector3.new(8415.3,     23.5, 53.8085098),
+    Brewer         = Vector3.new(8416.7,     23.5, 53.8085098),
+    Steamer        = Vector3.new(8419,       23.5, 53.8085098),
+    Milk           = Vector3.new(8426.7,     23.5, 53.8085098),
+    IceMaker       = Vector3.new(8431,       23.5, 53.8085098),
+    CreamDispenser = Vector3.new(8433.7,     23.5, 53.8085098),
+    Carbonator     = Vector3.new(8436.2,     23.5, 53.8085098),
+    BobaPot        = Vector3.new(8436.4,     23.5, 53.8085098),
+    WaterTap       = Vector3.new(8436.50586, 23.5, 18.9660721),
+    TeaBox         = Vector3.new(8438.5,     23.5, 53.8085098),
+    LemonBoard     = Vector3.new(8441,       23.5, 53.8085098),
+    MatchaJar      = Vector3.new(8441.2,     23.5, 53.8085098),
+    ChocolateJar   = Vector3.new(8443.2,     23.5, 53.8085098),
+    CreamJar       = Vector3.new(8443.6,     23.5, 53.8085098),
+    FlavourBottle  = Vector3.new(8449,       23.5, 53.8085098),
+    CupRack        = Vector3.new(8413.8,     23.5, 53.8085098),
+    Trash          = Vector3.new(8409.1,     23.5, 53.8085098),
+    BrewHoldArea   = Vector3.new(8415.4,     23.5, 53.8085098),
 }
 
 -- =========================================================
@@ -1196,7 +743,6 @@ local STATION_POSITIONS = {
 -- =========================================================
 
 local function attachListener()
-
     if baristaConn then
         baristaConn:Disconnect()
         baristaConn = nil
@@ -1210,75 +756,50 @@ local function attachListener()
     end
 
     baristaConn =
-        BaristaRemote.OnClientEvent:Connect(
-            function(
-                action,
-                data,
-                extra
+        BaristaRemote.OnClientEvent:Connect(function(action, data, extra)
+            dbg(
+                "EVENT",
+                tostring(action),
+                type(data) == "table" and "<table>" or tostring(data),
+                tostring(extra)
             )
 
-                dbg(
-                    "EVENT",
-                    tostring(action),
-                    type(data) == "table"
-                        and "<table>"
-                        or tostring(data),
-                    tostring(extra)
-                )
+            if action == "CupState"
+                and type(data) == "table" then
 
-                if action == "CupState"
-                    and type(data) == "table" then
+                lastCupState = data
 
-                    lastCupState = data
-
-                    AutofarmBarista.CurrentStep =
-                        tostring(
-                            data.nextStep
-                            or data.nextStation
-                            or "?"
-                        )
-
-                elseif action == "OrderTaken"
-                    and not lastOrderData then
-
-                    lastOrderData = {
-                        menuId = data,
-                        flavour = extra
-                    }
-
-                elseif action == "OrderDone" then
-
-                    Stats.Orders += 1
-
-                elseif action == "JobProgress"
-                    and type(data) == "table" then
-
-                    Stats.Salary =
-                        tonumber(data.salary)
-                        or Stats.Salary
-
-                    Stats.XP =
-                        tonumber(data.xp)
-                        or Stats.XP
-
-                elseif action == "LevelUpBanner" then
-
-                    notify(
-                        "Level Up!",
-                        tostring(data)
-                            .. " XP",
-                        3,
-                        "sparkles"
+                AutofarmBarista.CurrentStep =
+                    tostring(
+                        data.nextStep
+                        or data.nextStation
+                        or "?"
                     )
 
-                elseif action == "HasClaimable" then
+            elseif action == "OrderTaken"
+                and not lastOrderData then
 
-                    BaristaRemote:FireServer(
-                        "Claim"
-                    )
-                end
+                lastOrderData = {
+                    menuId = data,
+                    flavour = extra
+                }
+
+            elseif action == "OrderDone" then
+                Stats.Orders += 1
+
+            elseif action == "JobProgress"
+                and type(data) == "table" then
+
+                Stats.Salary = tonumber(data.salary) or Stats.Salary
+                Stats.XP = tonumber(data.xp) or Stats.XP
+
+            elseif action == "LevelUpBanner" then
+                notify("Level Up!", tostring(data) .. " XP", 3, "sparkles")
+
+            elseif action == "HasClaimable" then
+                BaristaRemote:FireServer("Claim")
             end
-        )
+        end)
 end
 
 -- =========================================================
@@ -1286,115 +807,68 @@ end
 -- =========================================================
 
 local function autoBrewMinigame()
-
-    local jobGui =
-        PlayerGui:FindFirstChild(
-            "Job"
-        )
+    local jobGui = PlayerGui:FindFirstChild("Job")
 
     local brewGui =
         jobGui
-        and jobGui:FindFirstChild(
-            "BrewMinigame"
-        )
+        and jobGui:FindFirstChild("BrewMinigame")
 
-    if not brewGui
-        or not brewGui.Visible then
-
+    if not brewGui or not brewGui.Visible then
         return false
     end
 
-    local track =
-        brewGui:FindFirstChild(
-            "Track"
-        )
+    local track = brewGui:FindFirstChild("Track")
 
     local zone =
         track
-        and track:FindFirstChild(
-            "Zone"
-        )
+        and track:FindFirstChild("Zone")
 
     local needle =
         track
-        and track:FindFirstChild(
-            "Needle"
-        )
+        and track:FindFirstChild("Needle")
 
-    local result =
-        brewGui:FindFirstChild(
-            "ResultLabel"
-        )
+    local result = brewGui:FindFirstChild("ResultLabel")
 
-    if not (
-        zone
-        and needle
-        and result
-    ) then
-
-        dbg(
-            "BREW",
-            "minigame elements missing"
-        )
-
+    if not (zone and needle and result) then
+        dbg("BREW", "minigame elements missing")
         return false
     end
 
     local waited = 0
 
-    while
-        zone.AbsoluteSize.X == 0
-        and waited < 30
-    do
-
+    while zone.AbsoluteSize.X == 0 and waited < 30 do
         task.wait(0.05)
         waited += 1
     end
 
-    dbg(
-        "BREW",
-        "minigame start"
-    )
+    dbg("BREW", "minigame start")
 
     local holding = false
 
     local conn =
-        RunService.Heartbeat:Connect(
-            function()
+        RunService.Heartbeat:Connect(function()
+            if not brewGui.Visible
+                or not AutofarmBarista.Running then
 
-                if not brewGui.Visible
-                    or not AutofarmBarista.Running then
-
-                    return
-                end
-
-                local needleMid =
-                    needle.AbsolutePosition.X
-                    + needle.AbsoluteSize.X
-                    / 2
-
-                local zoneLeft =
-                    zone.AbsolutePosition.X
-
-                local inside =
-                    needleMid > zoneLeft
-                    and needleMid <
-                        zoneLeft
-                        + zone.AbsoluteSize.X
-
-                if inside ~= holding then
-
-                    holding = inside
-
-                    VIM:SendKeyEvent(
-                        inside,
-                        Enum.KeyCode.Space,
-                        false,
-                        game
-                    )
-                end
+                return
             end
-        )
+
+            local needleMid =
+                needle.AbsolutePosition.X
+                + needle.AbsoluteSize.X / 2
+
+            local zoneLeft = zone.AbsolutePosition.X
+
+            local inside =
+                needleMid > zoneLeft
+                and needleMid < zoneLeft + zone.AbsoluteSize.X
+
+            if inside ~= holding then
+                holding = inside
+
+                VIM:SendKeyEvent(inside, Enum.KeyCode.Space, false, game)
+            end
+        end)
 
     local ticks = 0
 
@@ -1404,39 +878,21 @@ local function autoBrewMinigame()
         and AutofarmBarista.Running
         and brewGui.Visible
     do
-
         task.wait(0.1)
-
         ticks += 1
     end
 
     conn:Disconnect()
 
     if holding then
-
-        VIM:SendKeyEvent(
-            false,
-            Enum.KeyCode.Space,
-            false,
-            game
-        )
+        VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
     end
 
-    local success =
-        result.Text == "100%"
+    local success = result.Text == "100%"
 
-    dbg(
-        "BREW",
-        "result",
-        result.Text,
-        "success",
-        success
-    )
+    dbg("BREW", "result", result.Text, "success", success)
 
-    BaristaRemote:FireServer(
-        "BrewResult",
-        success and 1 or 0
-    )
+    BaristaRemote:FireServer("BrewResult", success and 1 or 0)
 
     task.wait(0.3)
 
@@ -1448,25 +904,19 @@ end
 -- =========================================================
 
 local function waitForCupState(timeout)
-
     local ticks = 0
-
-    local limit =
-        (timeout or 5) * 10
+    local limit = (timeout or 5) * 10
 
     while
         not lastCupState
         and ticks < limit
         and AutofarmBarista.Running
     do
-
         task.wait(0.1)
-
         ticks += 1
     end
 
-    local state =
-        lastCupState
+    local state = lastCupState
 
     lastCupState = nil
 
@@ -1477,29 +927,15 @@ end
 -- USE STATION
 -- =========================================================
 
-local function useStation(
-    ws,
-    stationName
-)
-
-    local stationPos =
-        STATION_POSITIONS[
-            stationName
-        ]
+local function useStation(ws, stationName)
+    local stationPos = STATION_POSITIONS[stationName]
 
     if stationPos then
-
-        teleportTo(
-            stationPos
-        )
-
+        teleportTo(stationPos)
     else
-
         local obj =
             ws.Stations
-            and ws.Stations:FindFirstChild(
-                stationName
-            )
+            and ws.Stations:FindFirstChild(stationName)
 
         if obj then
             tweenTo(obj)
@@ -1510,27 +946,16 @@ local function useStation(
 
     local obj =
         ws.Stations
-        and ws.Stations:FindFirstChild(
-            stationName
-        )
+        and ws.Stations:FindFirstChild(stationName)
 
     local prompt =
         obj
-        and obj:FindFirstChildWhichIsA(
-            "ProximityPrompt",
-            true
-        )
+        and obj:FindFirstChildWhichIsA("ProximityPrompt", true)
 
     if prompt then
-
         firePrompt(prompt)
-
     else
-
-        BaristaRemote:FireServer(
-            "Station",
-            stationName
-        )
+        BaristaRemote:FireServer("Station", stationName)
     end
 
     task.wait(0.3)
@@ -1541,85 +966,48 @@ end
 -- =========================================================
 
 local function runStationLoop(ws)
-
     for step = 1, 30 do
-
         if not AutofarmBarista.Running then
             break
         end
 
-        local state =
-            waitForCupState(8)
+        local state = waitForCupState(8)
 
         if not state then
-
-            dbg(
-                "LOOP",
-                "CupState timeout at step",
-                step
-            )
-
+            dbg("LOOP", "CupState timeout at step", step)
             break
         end
 
         if state.ruined then
+            AutofarmBarista.CurrentStep = "Cup ruined, discarding..."
 
-            AutofarmBarista.CurrentStep =
-                "Cup ruined, discarding..."
-
-            notify(
-                "Barista",
-                "Cup ruined, discarding...",
-                2
-            )
+            notify("Barista", "Cup ruined, discarding...", 2)
 
             return "ruined"
         end
 
         if state.doneCount
             and state.stepCount
-            and state.doneCount
-                >= state.stepCount then
+            and state.doneCount >= state.stepCount then
 
-            AutofarmBarista.CurrentStep =
-                "Ready to serve!"
+            AutofarmBarista.CurrentStep = "Ready to serve!"
 
             return "done"
         end
 
-        local stationName =
-            state.nextStation
+        local stationName = state.nextStation
 
         if not stationName then
-
-            dbg(
-                "LOOP",
-                "no nextStation at step",
-                step
-            )
-
+            dbg("LOOP", "no nextStation at step", step)
             break
         end
 
         AutofarmBarista.CurrentStep =
-            "Step: "
-            .. tostring(
-                state.nextStep
-                or stationName
-            )
+            "Step: " .. tostring(state.nextStep or stationName)
 
-        dbg(
-            "LOOP",
-            "step",
-            step,
-            "->",
-            stationName
-        )
+        dbg("LOOP", "step", step, "->", stationName)
 
-        useStation(
-            ws,
-            stationName
-        )
+        useStation(ws, stationName)
 
         task.wait(0.2)
 
@@ -1633,44 +1021,28 @@ end
 -- TAKE CUSTOMER ORDER
 -- =========================================================
 
-local function takeOrderFromCustomer(
-    customer,
-    orderIndex
-)
-
-    local hrp =
-        customer:FindFirstChild(
-            "HumanoidRootPart"
-        )
+local function takeOrderFromCustomer(customer, orderIndex)
+    local hrp = customer:FindFirstChild("HumanoidRootPart")
 
     if not hrp then
         return nil
     end
 
-    AutofarmBarista.CurrentStep =
-        "Taking order #"
-        .. orderIndex
+    AutofarmBarista.CurrentStep = "Taking order #" .. orderIndex
 
     tweenTo(hrp)
 
+    -- Reset BEFORE requesting the order.
     lastOrderData = nil
 
-    BaristaRemote:FireServer(
-        "TakeOrder",
-        orderIndex
-    )
+    BaristaRemote:FireServer("TakeOrder", orderIndex)
 
     task.wait(0.5)
 
-    local servePrompt =
-        hrp:FindFirstChild(
-            "BaristaServePrompt"
-        )
+    local servePrompt = hrp:FindFirstChild("BaristaServePrompt")
 
     if servePrompt then
-        firePrompt(
-            servePrompt
-        )
+        firePrompt(servePrompt)
     end
 
     local ticks = 0
@@ -1680,18 +1052,14 @@ local function takeOrderFromCustomer(
         and ticks < 150
         and AutofarmBarista.Running
     do
-
         task.wait(0.1)
-
         ticks += 1
     end
 
     dbg(
         "ORDER",
         "data",
-        lastOrderData
-            and lastOrderData.menuId
-            or "nil"
+        lastOrderData and lastOrderData.menuId or "nil"
     )
 
     return lastOrderData
@@ -1702,38 +1070,25 @@ end
 -- =========================================================
 
 local function grabCup(ws)
-
-    teleportTo(
-        STATION_POSITIONS.CupRack
-    )
+    teleportTo(STATION_POSITIONS.CupRack)
 
     task.wait(0.4)
 
+    -- Drop stale state.
     lastCupState = nil
 
     local rack =
         ws.Stations
-        and ws.Stations:FindFirstChild(
-            "CupRack"
-        )
+        and ws.Stations:FindFirstChild("CupRack")
 
     local prompt =
         rack
-        and rack:FindFirstChildWhichIsA(
-            "ProximityPrompt",
-            true
-        )
+        and rack:FindFirstChildWhichIsA("ProximityPrompt", true)
 
     if prompt then
-
         firePrompt(prompt)
-
     else
-
-        BaristaRemote:FireServer(
-            "Station",
-            "CupRack"
-        )
+        BaristaRemote:FireServer("Station", "CupRack")
     end
 
     task.wait(0.5)
@@ -1744,36 +1099,22 @@ end
 -- =========================================================
 
 local function discardCup(ws)
-
-    teleportTo(
-        STATION_POSITIONS.Trash
-    )
+    teleportTo(STATION_POSITIONS.Trash)
 
     task.wait(0.3)
 
     local obj =
         ws.Stations
-        and ws.Stations:FindFirstChild(
-            "Trash"
-        )
+        and ws.Stations:FindFirstChild("Trash")
 
     local prompt =
         obj
-        and obj:FindFirstChildWhichIsA(
-            "ProximityPrompt",
-            true
-        )
+        and obj:FindFirstChildWhichIsA("ProximityPrompt", true)
 
     if prompt then
-
         firePrompt(prompt)
-
     else
-
-        BaristaRemote:FireServer(
-            "Station",
-            "Trash"
-        )
+        BaristaRemote:FireServer("Station", "Trash")
     end
 
     task.wait(0.5)
@@ -1783,30 +1124,13 @@ end
 -- MAKE DRINK
 -- =========================================================
 
-local function makeDrink(
-    orderData,
-    ws
-)
+local function makeDrink(orderData, ws)
+    local menuId = orderData.menuId or "?"
+    local flavour = orderData.flavour or "?"
 
-    local menuId =
-        orderData.menuId
-        or "?"
+    dbg("DRINK", "preparing", menuId, "flavour", flavour)
 
-    local flavour =
-        orderData.flavour
-        or "?"
-
-    dbg(
-        "DRINK",
-        "preparing",
-        menuId,
-        "flavour",
-        flavour
-    )
-
-    AutofarmBarista.CurrentStep =
-        "Taking cup for "
-        .. tostring(menuId)
+    AutofarmBarista.CurrentStep = "Taking cup for " .. tostring(menuId)
 
     notify(
         "Barista",
@@ -1819,36 +1143,24 @@ local function makeDrink(
         "coffee"
     )
 
-    BaristaRemote:FireServer(
-        "Pick",
-        "Menu",
-        menuId
-    )
+    BaristaRemote:FireServer("Pick", "Menu", menuId)
 
     task.wait(0.5)
 
     grabCup(ws)
 
-    local result =
-        runStationLoop(ws)
+    local result = runStationLoop(ws)
 
-    if result == "ruined"
-        and AutofarmBarista.Running then
-
+    if result == "ruined" and AutofarmBarista.Running then
         discardCup(ws)
 
-        BaristaRemote:FireServer(
-            "Pick",
-            "Menu",
-            menuId
-        )
+        BaristaRemote:FireServer("Pick", "Menu", menuId)
 
         task.wait(0.5)
 
         grabCup(ws)
 
-        result =
-            runStationLoop(ws)
+        result = runStationLoop(ws)
     end
 
     return result
@@ -1858,52 +1170,28 @@ end
 -- SERVE CUSTOMER
 -- =========================================================
 
-local function serveCustomer(
-    customer
-)
-
-    local hrp =
-        customer:FindFirstChild(
-            "HumanoidRootPart"
-        )
+local function serveCustomer(customer)
+    local hrp = customer:FindFirstChild("HumanoidRootPart")
 
     if not hrp then
         return
     end
 
-    AutofarmBarista.CurrentStep =
-        "Serving drink..."
+    AutofarmBarista.CurrentStep = "Serving drink..."
 
     tweenTo(hrp)
 
-    local servePrompt =
-        hrp:FindFirstChild(
-            "BaristaServePrompt"
-        )
+    local servePrompt = hrp:FindFirstChild("BaristaServePrompt")
 
     if servePrompt then
-
-        firePrompt(
-            servePrompt
-        )
-
+        firePrompt(servePrompt)
     else
-
-        BaristaRemote:FireServer(
-            "Serve",
-            customer.Name
-        )
+        BaristaRemote:FireServer("Serve", customer.Name)
     end
 
     task.wait(0.5)
 
-    notify(
-        "Barista",
-        "Order done! "
-            .. fmtStats(),
-        3,
-        "coffee"
-    )
+    notify("Barista", "Order done! " .. fmtStats(), 3, "coffee")
 end
 
 -- =========================================================
@@ -1911,34 +1199,19 @@ end
 -- =========================================================
 
 local function startJob()
-
-    dbg(
-        "JOB",
-        "start"
-    )
+    dbg("JOB", "start")
 
     local container =
-        ReplicatedStorage:WaitForChild(
-            "NetworkContainer",
-            30
-        )
+        ReplicatedStorage:WaitForChild("NetworkContainer", 30)
 
     local remotes =
         container
-        and container:WaitForChild(
-            "RemoteEvents",
-            30
-        )
+        and container:WaitForChild("RemoteEvents", 30)
 
     if not remotes then
+        dbg("JOB", "RemoteEvents not found")
 
-        dbg(
-            "JOB",
-            "RemoteEvents not found"
-        )
-
-        AutofarmBarista.Running =
-            false
+        AutofarmBarista.Running = false
 
         return
     end
@@ -1947,43 +1220,14 @@ local function startJob()
     -- GET REMOTES
     -- =====================================================
 
-    JobRemote =
-        remotes:WaitForChild(
-            "Job",
-            30
-        )
-
-    NpcDialogRemote =
-        remotes:WaitForChild(
-            "NpcDialog",
-            60
-        )
-
-    BaristaRemote =
-        remotes:WaitForChild(
-            "Barista",
-            60
-        )
-
-    dbg(
-        "REMOTE",
-        "Job:",
-        JobRemote ~= nil,
-        "NpcDialog:",
-        NpcDialogRemote ~= nil,
-        "Barista:",
-        BaristaRemote ~= nil
-    )
+    JobRemote = remotes:WaitForChild("Job", 30)
+    NpcDialogRemote = remotes:WaitForChild("NpcDialog", 60)
+    BaristaRemote = remotes:WaitForChild("Barista", 60)
 
     if not BaristaRemote then
+        dbg("JOB", "Barista remote not found")
 
-        dbg(
-            "JOB",
-            "Barista remote not found"
-        )
-
-        AutofarmBarista.Running =
-            false
+        AutofarmBarista.Running = false
 
         return
     end
@@ -1992,31 +1236,24 @@ local function startJob()
     -- WORKSPACE
     -- =====================================================
 
-    local ws =
-        getWorkspaceRefs()
+    local ws = getWorkspaceRefs()
 
     -- =====================================================
     -- GET BARISTA JOB
     -- =====================================================
 
-    local jobStarted =
-        getBaristaJob(
-            ws,
-            JobRemote
-        )
+    local jobStarted = getBaristaJob(ws, JobRemote)
 
     if not jobStarted then
+        dbg("JOB", "Failed to acquire Barista job")
 
-        dbg(
-            "JOB",
-            "Failed to acquire Barista job"
-        )
-
-        AutofarmBarista.Running =
-            false
+        AutofarmBarista.Running = false
 
         return
     end
+
+    -- Refresh refs: streaming may have loaded more of the map after the pivot.
+    ws = getWorkspaceRefs()
 
     -- =====================================================
     -- LISTENER
@@ -2030,75 +1267,45 @@ local function startJob()
     -- PHONE / NORMAL BARISTA SETUP
     -- =====================================================
 
-    AutofarmBarista.CurrentStep =
-        "Barista job active..."
+    AutofarmBarista.CurrentStep = "Barista job active..."
 
     task.wait(2)
 
     if ws.Telephone then
+        AutofarmBarista.CurrentStep = "Opening Barista phone..."
 
-        AutofarmBarista.CurrentStep =
-            "Opening Barista phone..."
-
-        tweenTo(
-            ws.Telephone
-        )
+        tweenTo(ws.Telephone)
 
         task.wait(0.5)
 
         local phonePrompt =
-            ws.Telephone:FindFirstChild(
-                "BaristaPhonePrompt"
-            )
-            or ws.Telephone:FindFirstChildWhichIsA(
-                "ProximityPrompt",
-                true
-            )
+            ws.Telephone:FindFirstChild("BaristaPhonePrompt")
+            or ws.Telephone:FindFirstChildWhichIsA("ProximityPrompt", true)
 
         if phonePrompt then
-            firePrompt(
-                phonePrompt
-            )
+            firePrompt(phonePrompt)
         end
 
         task.wait(1)
 
-        safeFiresignal(
-            BaristaRemote.OnClientEvent,
-            "Tutorial"
-        )
+        safeFiresignal(BaristaRemote.OnClientEvent, "Tutorial")
 
         task.wait(0.3)
 
         for _ = 1, 26 do
-
             if not AutofarmBarista.Running then
                 break
             end
 
-            VirtualUser:ClickButton2(
-                Vector2.new(0, 0)
-            )
+            VirtualUser:ClickButton2(Vector2.new(0, 0))
 
             task.wait(0.5)
         end
-
     else
-
-        dbg(
-            "JOB",
-            "Telephone missing"
-        )
+        dbg("JOB", "Telephone missing")
     end
 
     task.wait(2)
-
-    -- =====================================================
-    -- REFRESH WORKSPACE REFERENCES
-    -- =====================================================
-
-    ws =
-        getWorkspaceRefs()
 
     -- =====================================================
     -- CUSTOMER LOOP
@@ -2107,9 +1314,7 @@ local function startJob()
     local orderIndex = 1
 
     while AutofarmBarista.Running do
-
-        AutofarmBarista.CurrentStep =
-            "Waiting for customer..."
+        AutofarmBarista.CurrentStep = "Waiting for customer..."
 
         local target
         local elapsed = 0
@@ -2119,54 +1324,26 @@ local function startJob()
             and elapsed < 30
             and AutofarmBarista.Running
         do
-
             if ws.BaristaCustomers then
+                for _, customer in ipairs(ws.BaristaCustomers:GetChildren()) do
+                    local hrp = customer:FindFirstChild("HumanoidRootPart")
 
-                for _, customer
-                    in ipairs(
-                        ws.BaristaCustomers:GetChildren()
-                    )
-                do
-
-                    local hrp =
-                        customer:FindFirstChild(
-                            "HumanoidRootPart"
-                        )
-
-                    if hrp
-                        and hrp:FindFirstChild(
-                            "BaristaServePrompt"
-                        ) then
-
-                        target =
-                            customer
+                    if hrp and hrp:FindFirstChild("BaristaServePrompt") then
+                        target = customer
 
                         break
                     end
                 end
-            else
-
-                -- Customer container may have loaded late.
-                ws.BaristaCustomers =
-                    workspace:FindFirstChild(
-                        "BaristaCustomers"
-                    )
             end
 
             if not target then
-
                 task.wait(1)
-
                 elapsed += 1
             end
         end
 
         if not target then
-
-            dbg(
-                "JOB",
-                "no customer after 30s"
-            )
+            dbg("JOB", "no customer after 30s")
 
             task.wait(2)
 
@@ -2177,19 +1354,10 @@ local function startJob()
         -- TAKE ORDER
         -- =================================================
 
-        local orderData =
-            takeOrderFromCustomer(
-                target,
-                orderIndex
-            )
+        local orderData = takeOrderFromCustomer(target, orderIndex)
 
         if not orderData then
-
-            dbg(
-                "JOB",
-                "no order data for #"
-                    .. orderIndex
-            )
+            dbg("JOB", "no order data for #" .. orderIndex)
 
             orderIndex += 1
 
@@ -2204,27 +1372,16 @@ local function startJob()
         -- MAKE DRINK
         -- =================================================
 
-        local result =
-            makeDrink(
-                orderData,
-                ws
-            )
+        local result = makeDrink(orderData, ws)
 
-        dbg(
-            "JOB",
-            "make result",
-            result
-        )
+        dbg("JOB", "make result", result)
 
         -- =================================================
         -- SERVE
         -- =================================================
 
         if result == "done" then
-
-            serveCustomer(
-                target
-            )
+            serveCustomer(target)
         end
 
         orderIndex += 1
@@ -2237,19 +1394,13 @@ local function startJob()
     -- =====================================================
 
     if baristaConn then
-
         baristaConn:Disconnect()
-
         baristaConn = nil
     end
 
-    AutofarmBarista.CurrentStep =
-        "Idle"
+    AutofarmBarista.CurrentStep = "Idle"
 
-    dbg(
-        "JOB",
-        "stopped"
-    )
+    dbg("JOB", "stopped")
 end
 
 -- =========================================================
@@ -2257,30 +1408,20 @@ end
 -- =========================================================
 
 local function stopFarm()
-
-    AutofarmBarista.Running =
-        false
+    AutofarmBarista.Running = false
 
     if AutofarmBarista.Thread then
+        pcall(task.cancel, AutofarmBarista.Thread)
 
-        pcall(
-            task.cancel,
-            AutofarmBarista.Thread
-        )
-
-        AutofarmBarista.Thread =
-            nil
+        AutofarmBarista.Thread = nil
     end
 
     if baristaConn then
-
         baristaConn:Disconnect()
-
         baristaConn = nil
     end
 
-    AutofarmBarista.CurrentStep =
-        "Idle"
+    AutofarmBarista.CurrentStep = "Idle"
 end
 
 -- =========================================================
@@ -2289,25 +1430,13 @@ end
 
 local savedAutoLoad
 
-if hasFS
-    and isfile(AUTOLOAD) then
+if hasFS and isfile(AUTOLOAD) then
+    local ok, name = pcall(readfile, AUTOLOAD)
 
-    local ok, name =
-        pcall(
-            readfile,
-            AUTOLOAD
-        )
+    if ok and name and name ~= "" then
+        savedAutoLoad = name
 
-    if ok
-        and name
-        and name ~= "" then
-
-        savedAutoLoad =
-            name
-
-        ConfigManager.Load(
-            name
-        )
+        ConfigManager.Load(name)
     end
 end
 
@@ -2315,755 +1444,372 @@ end
 -- WINDOW
 -- =========================================================
 
-local Window =
-    WindUI:CreateWindow({
-
-        Title =
-            "DX-SR Hub",
-
-        Icon =
-            "coffee",
-
-        Author =
-            "Barista Autofarm v0.0.0.6",
-
-        Folder =
-            FOLDER,
-
-        Size =
-            UDim2.fromOffset(
-                580,
-                400
-            ),
-
-        Theme =
-            Flags.SelectedTheme,
-
-        Resizable =
-            true,
-
-        SideBarWidth =
-            200,
-
-        ScrollBarEnabled =
-            true,
-
-        HideSearchBar =
-            false,
-
-        ToggleKey =
-            Enum.KeyCode.V,
-    })
+local Window = WindUI:CreateWindow({
+    Title = "DX-SR Hub",
+    Icon = "coffee",
+    Author = "Barista Autofarm v0.0.0.6",
+    Folder = FOLDER,
+    Size = UDim2.fromOffset(580, 400),
+    Theme = Flags.SelectedTheme,
+    Resizable = true,
+    SideBarWidth = 200,
+    ScrollBarEnabled = true,
+    HideSearchBar = false,
+    ToggleKey = Enum.KeyCode.V,
+})
 
 -- =========================================================
 -- MAIN TAB
 -- =========================================================
 
-local mainTab =
-    Window:Tab({
-
-        Title = "Main",
-
-        Icon = "home"
-    })
-
-mainTab:Section({
-
-    Title =
-        "Autofarm Barista"
+local mainTab = Window:Tab({
+    Title = "Main",
+    Icon = "home"
 })
 
-local statusPara =
-    mainTab:Paragraph({
+mainTab:Section({
+    Title = "Autofarm Barista"
+})
 
-        Title =
-            "Status",
+local statusPara = mainTab:Paragraph({
+    Title = "Status",
+    Desc = "Idle"
+})
 
-        Desc =
-            "Idle"
-    })
+local stepPara = mainTab:Paragraph({
+    Title = "Current Step",
+    Desc = "Idle"
+})
 
-local stepPara =
-    mainTab:Paragraph({
-
-        Title =
-            "Current Step",
-
-        Desc =
-            "Idle"
-    })
-
-local statsPara =
-    mainTab:Paragraph({
-
-        Title =
-            "Session Stats",
-
-        Desc =
-            fmtStats()
-    })
+local statsPara = mainTab:Paragraph({
+    Title = "Session Stats",
+    Desc = fmtStats()
+})
 
 local farmToggle
 
-farmToggle =
-    mainTab:Toggle({
+farmToggle = mainTab:Toggle({
+    Title = "Barista Autofarm",
+    Desc = "Auto complete barista orders",
+    Value = false,
+    Callback = function(state)
+        Flags.AutofarmBarista = state
 
-        Title =
-            "Barista Autofarm",
+        if state then
+            if AutofarmBarista.Running then
+                return
+            end
 
-        Desc =
-            "Auto complete barista orders",
+            AutofarmBarista.Running = true
 
-        Value =
-            false,
+            notify("Barista Autofarm", "Started", 3, "coffee")
 
-        Callback =
-            function(state)
+            AutofarmBarista.Thread = task.spawn(function()
+                local ok, err = pcall(startJob)
 
-                Flags.AutofarmBarista =
-                    state
+                if not ok then
+                    dbg("ERROR", err)
 
-                if state then
+                    warn("[Barista] Error: " .. tostring(err))
 
-                    if AutofarmBarista.Running then
-                        return
-                    end
-
-                    AutofarmBarista.Running =
-                        true
-
-                    notify(
-                        "Barista Autofarm",
-                        "Started",
-                        3,
-                        "coffee"
-                    )
-
-                    AutofarmBarista.Thread =
-                        task.spawn(
-                            function()
-
-                                local ok, err =
-                                    pcall(
-                                        startJob
-                                    )
-
-                                if not ok then
-
-                                    dbg(
-                                        "ERROR",
-                                        err
-                                    )
-
-                                    warn(
-                                        "[Barista] Error: "
-                                            .. tostring(err)
-                                    )
-
-                                    notify(
-                                        "Error",
-                                        tostring(err),
-                                        5
-                                    )
-
-                                    stopFarm()
-
-                                    if farmToggle then
-
-                                        pcall(
-                                            function()
-
-                                                farmToggle:Set(
-                                                    false
-                                                )
-                                            end
-                                        )
-                                    end
-                                end
-                            end
-                        )
-
-                else
+                    notify("Error", tostring(err), 5)
 
                     stopFarm()
 
-                    notify(
-                        "Barista Autofarm",
-                        "Stopped.",
-                        2
-                    )
+                    if farmToggle then
+                        pcall(function()
+                            farmToggle:Set(false)
+                        end)
+                    end
                 end
-            end
-    })
+            end)
+
+        else
+            stopFarm()
+
+            notify("Barista Autofarm", "Stopped.", 2)
+        end
+    end
+})
 
 mainTab:Toggle({
-
-    Title =
-        "Only Mobile",
-
-    Desc =
-        "Use mobile-only input method",
-
-    Value =
-        false,
-
-    Callback =
-        function(state)
-
-            Flags.OnlyMobile =
-                state
-        end
+    Title = "Only Mobile",
+    Desc = "Use mobile-only input method",
+    Value = false,
+    Callback = function(state)
+        Flags.OnlyMobile = state
+    end
 })
 
 -- =========================================================
 -- STATUS UPDATE
 -- =========================================================
 
-task.spawn(
-    function()
-
-        while task.wait(0.5) do
-
-            pcall(
-                function()
-
-                    statusPara:SetDesc(
-                        AutofarmBarista.Running
-                            and "Running"
-                            or "Idle"
-                    )
-
-                    stepPara:SetDesc(
-                        tostring(
-                            AutofarmBarista.CurrentStep
-                        )
-                    )
-
-                    statsPara:SetDesc(
-                        fmtStats()
-                    )
-                end
+task.spawn(function()
+    while task.wait(0.5) do
+        pcall(function()
+            statusPara:SetDesc(
+                AutofarmBarista.Running and "Running" or "Idle"
             )
-        end
+
+            stepPara:SetDesc(tostring(AutofarmBarista.CurrentStep))
+
+            statsPara:SetDesc(fmtStats())
+        end)
     end
-)
+end)
 
 -- =========================================================
 -- SETTINGS
 -- =========================================================
 
-local settingsTab =
-    Window:Tab({
-
-        Title =
-            "Settings",
-
-        Icon =
-            "settings"
-    })
+local settingsTab = Window:Tab({
+    Title = "Settings",
+    Icon = "settings"
+})
 
 settingsTab:Section({
-
-    Title =
-        "Configuration"
+    Title = "Configuration"
 })
 
 local configName = ""
 local selectedConfig = nil
 
 settingsTab:Input({
-
-    Title =
-        "Config Name",
-
-    Placeholder =
-        "Enter config name...",
-
-    Callback =
-        function(text)
-
-            configName =
-                text
-        end
+    Title = "Config Name",
+    Placeholder = "Enter config name...",
+    Callback = function(text)
+        configName = text
+    end
 })
 
 local configDropdown
 
 local function refreshConfigs()
-
     if configDropdown then
-
-        pcall(
-            function()
-
-                configDropdown:Refresh(
-                    ConfigManager.List()
-                )
-            end
-        )
+        pcall(function()
+            configDropdown:Refresh(ConfigManager.List())
+        end)
     end
 end
 
 settingsTab:Button({
-
-    Title =
-        "Save Config",
-
-    Desc =
-        "Save current settings to a new config",
-
-    Callback =
-        function()
-
-            if ConfigManager.Save(
-                configName
-            ) then
-
-                refreshConfigs()
-            end
+    Title = "Save Config",
+    Desc = "Save current settings to a new config",
+    Callback = function()
+        if ConfigManager.Save(configName) then
+            refreshConfigs()
         end
+    end
 })
 
 settingsTab:Section({
-
-    Title =
-        "Load / Delete Config"
+    Title = "Load / Delete Config"
 })
 
-configDropdown =
-    settingsTab:Dropdown({
-
-        Title =
-            "Select Config",
-
-        Values =
-            ConfigManager.List(),
-
-        Multi =
-            false,
-
-        Callback =
-            function(value)
-
-                selectedConfig =
-                    value
-            end
-    })
-
-settingsTab:Button({
-
-    Title =
-        "Load Config",
-
-    Callback =
-        function()
-
-            if ConfigManager.Load(
-                selectedConfig
-            ) then
-
-                pcall(
-                    function()
-
-                        WindUI:SetTheme(
-                            Flags.SelectedTheme
-                        )
-                    end
-                )
-            end
-        end
+configDropdown = settingsTab:Dropdown({
+    Title = "Select Config",
+    Values = ConfigManager.List(),
+    Multi = false,
+    Callback = function(value)
+        selectedConfig = value
+    end
 })
 
 settingsTab:Button({
-
-    Title =
-        "Rewrite Config",
-
-    Callback =
-        function()
-
-            ConfigManager.Save(
-                selectedConfig
-            )
+    Title = "Load Config",
+    Callback = function()
+        if ConfigManager.Load(selectedConfig) then
+            pcall(function()
+                WindUI:SetTheme(Flags.SelectedTheme)
+            end)
         end
+    end
 })
 
 settingsTab:Button({
+    Title = "Rewrite Config",
+    Callback = function()
+        ConfigManager.Save(selectedConfig)
+    end
+})
 
-    Title =
-        "Delete Config",
+settingsTab:Button({
+    Title = "Delete Config",
+    Callback = function()
+        if ConfigManager.Delete(selectedConfig) then
+            selectedConfig = nil
 
-    Callback =
-        function()
-
-            if ConfigManager.Delete(
-                selectedConfig
-            ) then
-
-                selectedConfig =
-                    nil
-
-                refreshConfigs()
-            end
+            refreshConfigs()
         end
+    end
 })
 
 settingsTab:Toggle({
-
-    Title =
-        "Set Auto Load",
-
-    Desc =
-        "Load the selected config on start",
-
-    Value =
-        savedAutoLoad ~= nil,
-
-    Callback =
-        function(state)
-
-            ConfigManager.SetAutoLoad(
-                selectedConfig,
-                state
-            )
-        end
+    Title = "Set Auto Load",
+    Desc = "Load the selected config on start",
+    Value = savedAutoLoad ~= nil,
+    Callback = function(state)
+        ConfigManager.SetAutoLoad(selectedConfig, state)
+    end
 })
 
 -- =========================================================
 -- THEME
 -- =========================================================
 
-local themeTab =
-    Window:Tab({
-
-        Title =
-            "Theme",
-
-        Icon =
-            "palette"
-    })
+local themeTab = Window:Tab({
+    Title = "Theme",
+    Icon = "palette"
+})
 
 themeTab:Section({
-
-    Title =
-        "Select Theme"
+    Title = "Select Theme"
 })
 
 local themeNames = {}
 
-local okThemes, themeTable =
-    pcall(
-        function()
+local okThemes, themeTable = pcall(function()
+    return WindUI:GetThemes()
+end)
 
-            return WindUI:GetThemes()
-        end
-    )
-
-if okThemes
-    and type(themeTable) == "table" then
-
+if okThemes and type(themeTable) == "table" then
     for name in pairs(themeTable) do
-
-        table.insert(
-            themeNames,
-            name
-        )
+        table.insert(themeNames, name)
     end
 
-    table.sort(
-        themeNames
-    )
+    table.sort(themeNames)
 end
 
 if #themeNames == 0 then
-
     themeNames = {
-
-        "Dark",
-        "Light",
-        "Rose",
-        "Indigo",
-        "Sky",
-        "Violet",
-        "Amber",
-        "Emerald",
-        "Midnight",
-        "Crimson"
+        "Dark", "Light", "Rose", "Indigo", "Sky",
+        "Violet", "Amber", "Emerald", "Midnight", "Crimson"
     }
 end
 
 themeTab:Dropdown({
+    Title = "Choose UI Theme",
+    Values = themeNames,
+    Value = Flags.SelectedTheme,
+    Callback = function(value)
+        Flags.SelectedTheme = value
 
-    Title =
-        "Choose UI Theme",
-
-    Values =
-        themeNames,
-
-    Value =
-        Flags.SelectedTheme,
-
-    Callback =
-        function(value)
-
-            Flags.SelectedTheme =
-                value
-
-            pcall(
-                function()
-
-                    WindUI:SetTheme(
-                        value
-                    )
-                end
-            )
-        end
+        pcall(function()
+            WindUI:SetTheme(value)
+        end)
+    end
 })
 
 -- =========================================================
 -- DEBUG TAB
 -- =========================================================
 
-local debugTab =
-    Window:Tab({
-
-        Title =
-            "Debug",
-
-        Icon =
-            "bug"
-    })
+local debugTab = Window:Tab({
+    Title = "Debug",
+    Icon = "bug"
+})
 
 debugTab:Section({
-
-    Title =
-        "Logging"
+    Title = "Logging"
 })
 
 debugTab:Toggle({
-
-    Title =
-        "Console Logging",
-
-    Desc =
-        "Print debug lines to the executor console",
-
-    Value =
-        Debug.Enabled,
-
-    Callback =
-        function(state)
-
-            Debug.Enabled =
-                state
-        end
+    Title = "Console Logging",
+    Desc = "Print debug lines to the executor console",
+    Value = Debug.Enabled,
+    Callback = function(state)
+        Debug.Enabled = state
+    end
 })
 
 debugTab:Button({
+    Title = "Copy Log",
+    Desc = "Copy the last " .. Debug.Max .. " lines to the clipboard",
+    Callback = function()
+        if type(setclipboard) == "function" then
+            setclipboard(table.concat(Debug.Buffer, "\n"))
 
-    Title =
-        "Copy Log",
-
-    Desc =
-        "Copy the last "
-            .. Debug.Max
-            .. " lines to the clipboard",
-
-    Callback =
-        function()
-
-            if type(setclipboard)
-                == "function" then
-
-                setclipboard(
-                    table.concat(
-                        Debug.Buffer,
-                        "\n"
-                    )
-                )
-
-                notify(
-                    "Debug",
-                    "Log copied ("
-                        .. #Debug.Buffer
-                        .. " lines)"
-                )
-
-            else
-
-                notify(
-                    "Debug",
-                    "setclipboard unsupported"
-                )
-            end
+            notify("Debug", "Log copied (" .. #Debug.Buffer .. " lines)")
+        else
+            notify("Debug", "setclipboard unsupported")
         end
+    end
 })
 
 debugTab:Button({
+    Title = "Clear Log",
+    Callback = function()
+        table.clear(Debug.Buffer)
 
-    Title =
-        "Clear Log",
-
-    Callback =
-        function()
-
-            table.clear(
-                Debug.Buffer
-            )
-
-            notify(
-                "Debug",
-                "Log cleared"
-            )
-        end
+        notify("Debug", "Log cleared")
+    end
 })
 
 debugTab:Button({
+    Title = "Dump State",
+    Desc = "Log running state, remotes and executor capabilities",
+    Callback = function()
+        dbg(
+            "STATE",
+            "running", AutofarmBarista.Running,
+            "step", AutofarmBarista.CurrentStep
+        )
 
-    Title =
-        "Dump State",
+        dbg(
+            "STATE",
+            "BaristaRemote", BaristaRemote ~= nil,
+            "NpcDialog", NpcDialogRemote ~= nil,
+            "Job", JobRemote ~= nil
+        )
 
-    Desc =
-        "Log running state, remotes and executor capabilities",
+        dbg(
+            "STATE",
+            "orders", Stats.Orders,
+            "salary", Stats.Salary,
+            "xp", Stats.XP
+        )
 
-    Callback =
-        function()
+        dbg(
+            "STATE",
+            "fireproximityprompt", type(fireproximityprompt) == "function",
+            "firesignal", type(firesignal) == "function",
+            "writefile", type(writefile) == "function",
+            "listfiles", type(listfiles) == "function",
+            "setclipboard", type(setclipboard) == "function"
+        )
 
-            dbg(
-                "STATE",
-                "running",
-                AutofarmBarista.Running,
-                "step",
-                AutofarmBarista.CurrentStep
-            )
+        local hrp = getHRP()
 
-            dbg(
-                "STATE",
-                "BaristaRemote",
-                BaristaRemote ~= nil,
-                "NpcDialog",
-                NpcDialogRemote ~= nil,
-                "Job",
-                JobRemote ~= nil
-            )
+        dbg(
+            "STATE",
+            "hrp", hrp and tostring(hrp.Position) or "nil",
+            "distToNpcCFrame",
+            hrp and (hrp.Position - NPC_CFRAME.Position).Magnitude or "nil"
+        )
 
-            dbg(
-                "STATE",
-                "orders",
-                Stats.Orders,
-                "salary",
-                Stats.Salary,
-                "xp",
-                Stats.XP
-            )
-
-            dbg(
-                "STATE",
-                "Manager CFrame",
-                tostring(
-                    BARISTA_MANAGER_CFRAME
-                )
-            )
-
-            dbg(
-                "STATE",
-                "fireproximityprompt",
-                type(
-                    fireproximityprompt
-                ) == "function",
-
-                "firesignal",
-                type(
-                    firesignal
-                ) == "function",
-
-                "writefile",
-                type(
-                    writefile
-                ) == "function",
-
-                "listfiles",
-                type(
-                    listfiles
-                ) == "function",
-
-                "setclipboard",
-                type(
-                    setclipboard
-                ) == "function"
-            )
-
-            notify(
-                "Debug",
-                "State dumped to log"
-            )
-        end
+        notify("Debug", "State dumped to log")
+    end
 })
 
 -- =========================================================
 -- INFORMATION
 -- =========================================================
 
-local infoTab =
-    Window:Tab({
-
-        Title =
-            "Information",
-
-        Icon =
-            "info"
-    })
+local infoTab = Window:Tab({
+    Title = "Information",
+    Icon = "info"
+})
 
 infoTab:Section({
-
-    Title =
-        "Script Hub"
+    Title = "Script Hub"
 })
 
-infoTab:Paragraph({
-
-    Title =
-        "Hub",
-
-    Desc =
-        "DX-SR Hub"
-})
-
-infoTab:Paragraph({
-
-    Title =
-        "Script",
-
-    Desc =
-        "Autofarm Barista"
-})
-
-infoTab:Paragraph({
-
-    Title =
-        "Version",
-
-    Desc =
-        "v0.0.0.6"
-})
-
-infoTab:Paragraph({
-
-    Title =
-        "Author",
-
-    Desc =
-        "DX-SR"
-})
-
-infoTab:Paragraph({
-
-    Title =
-        "UI",
-
-    Desc =
-        "WindUI"
-})
+infoTab:Paragraph({ Title = "Hub",     Desc = "DX-SR Hub" })
+infoTab:Paragraph({ Title = "Script",  Desc = "Autofarm Barista" })
+infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.6" })
+infoTab:Paragraph({ Title = "Author",  Desc = "DX-SR" })
+infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
 
 -- =========================================================
 -- LOADED
@@ -3076,7 +1822,4 @@ notify(
     "coffee"
 )
 
-dbg(
-    "BOOT",
-    "UI ready"
-)
+dbg("BOOT", "UI ready")
