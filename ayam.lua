@@ -1542,65 +1542,25 @@ local function adCorrectGrounding(seat, groundY)
     return seat.CFrame
 end
 
--- ─── King Akbar proximity-scan spawn pattern ─────────────────────────────────
--- Scans all workspace children for an unoccupied VehicleSeat within 60 studs.
--- Returns the seat's parent Model (or nil on timeout).
--- Strips FrontSection / RearSection only — all other geometry untouched.
-local function adScanForSpawnedSeat()
-    local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-    local deadline = os.clock() + 6
-    while os.clock() < deadline do
-        for _, model in ipairs(workspace:GetChildren()) do
-            if model:IsA("Model") then
-                local seat = model:FindFirstChildWhichIsA("VehicleSeat", true)
-                if seat and not seat.Occupant then
-                    local dist = (seat.Position - root.Position).Magnitude
-                    if dist < 60 then
-                        pcall(function()
-                            local front = model:FindFirstChild("FrontSection")
-                            local rear  = model:FindFirstChild("RearSection")
-                            if front then front:Destroy() end
-                            if rear  then rear:Destroy()  end
-                        end)
-                        return model
-                    end
-                end
-            end
+-- ─── Spawn + map-clean helpers ────────────────────────────────────────────────
+-- Unfreeze character: clear all physics constraints left on HRP
+local function adUnfreezeCharacter()
+    local char = LP.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _, v in ipairs(root:GetChildren()) do
+        if v:IsA("BodyVelocity") or v:IsA("BodyGyro")
+        or v:IsA("BodyPosition") or v:IsA("LinearVelocity")
+        or v:IsA("AngularVelocity") or v:IsA("Attachment") then
+            pcall(function() v:Destroy() end)
         end
-        task.wait(0.3)
     end
-    return nil
+    root.AssemblyLinearVelocity  = Vector3.zero
+    root.AssemblyAngularVelocity = Vector3.zero
 end
 
-local function adSpawnVehicle()
-    local sf = ReplicatedStorage:FindFirstChild("SpawnCarEvents")
-    if sf then
-        local r = sf:FindFirstChild("SpawnCar")
-        if r then r:FireServer(adVehicleInput) end
-    end
-    -- strip cosmetic sections once the model lands
-    task.spawn(function()
-        local model = adScanForSpawnedSeat()
-        if not model then return end
-        pcall(function()
-            local front = model:FindFirstChild("FrontSection")
-            local rear  = model:FindFirstChild("RearSection")
-            if front then front:Destroy() end
-            if rear  then rear:Destroy()  end
-        end)
-    end)
-end
-
-local function adDespawnVehicle()
-    local sf = ReplicatedStorage:FindFirstChild("SpawnCarEvents")
-    if sf then
-        local r = sf:FindFirstChild("DespawnCar")
-        if r then r:FireServer() end
-    end
-end
-
--- King Akbar proximity scan used everywhere a seat is needed
+-- King Akbar proximity scan: finds nearest unoccupied VehicleSeat within 60 studs
 local function adFindClosestSeat()
     local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
@@ -1620,10 +1580,177 @@ local function adFindClosestSeat()
     return best
 end
 
+-- Fire SpawnCar remote via King Akbar pattern + refresh garage first
+local function adSpawnVehicle()
+    -- King Akbar: init dealership data before spawn so server knows what car to give
+    pcall(function()
+        local de = ReplicatedStorage:FindFirstChild("DealershipEvents")
+        if de then
+            local init = de:FindFirstChild("InitializeCarData")
+            if init and init:IsA("RemoteFunction") then
+                init:InvokeServer()
+            end
+            local slot = de:FindFirstChild("GetInfoCarSlot")
+            if slot and slot:IsA("RemoteFunction") then
+                slot:InvokeServer()
+            end
+        end
+    end)
+
+    local sf = ReplicatedStorage:FindFirstChild("SpawnCarEvents")
+    if sf then
+        local r = sf:FindFirstChild("SpawnCar")
+        if r then r:FireServer(adVehicleInput) end
+    end
+
+    -- strip cosmetic sections only after model lands
+    task.spawn(function()
+        local deadline = os.clock() + 8
+        local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        while os.clock() < deadline do
+            for _, model in ipairs(workspace:GetChildren()) do
+                if model:IsA("Model") then
+                    local seat = model:FindFirstChildWhichIsA("VehicleSeat", true)
+                    if seat and not seat.Occupant then
+                        local dist = (seat.Position - root.Position).Magnitude
+                        if dist < 60 then
+                            pcall(function()
+                                local front = model:FindFirstChild("FrontSection")
+                                local rear  = model:FindFirstChild("RearSection")
+                                if front then front:Destroy() end
+                                if rear  then rear:Destroy()  end
+                            end)
+                            return
+                        end
+                    end
+                end
+            end
+            task.wait(0.3)
+        end
+    end)
+end
+
+local function adDespawnVehicle()
+    local sf = ReplicatedStorage:FindFirstChild("SpawnCarEvents")
+    if sf then
+        local r = sf:FindFirstChild("DespawnCar")
+        if r then r:FireServer() end
+    end
+end
+
+-- Delete map geometry EXCEPT character, vehicle, DragRace, and the farm floor.
+-- Called AFTER the vehicle is seated and the farm is running.
+local function adCleanMapOnly(vehicleModel)
+    local char        = LP.Character
+    local protectedDrag = nil
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj:IsA("Folder") or obj:IsA("Model") then
+            local d = obj:FindFirstChild("DragRace") or obj:FindFirstChild("DragRace", true)
+            if d then protectedDrag = obj break end
+        end
+    end
+    if workspace:FindFirstChild("DragRace") then
+        protectedDrag = workspace:FindFirstChild("DragRace")
+    end
+
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj == workspace.CurrentCamera then continue end
+        if obj == char then continue end
+        if obj == vehicleModel then continue end
+        if obj == adSavedFloor then continue end
+        if obj == protectedDrag then continue end
+        if obj:IsA("Terrain") then continue end
+        pcall(function() obj:Destroy() end)
+    end
+end
+
+local function adEnsureFloor(root)
+    if adSavedFloor and adSavedFloor.Parent then return adSavedFloor end
+    local origin = root and root.Position or Vector3.new(0, 8, 0)
+
+    -- re-use existing huge floor if already in workspace (from previous cycle)
+    local result = workspace:Raycast(origin, Vector3.new(0, -1000, 0))
+    if result and result.Instance then
+        local part = result.Instance
+        if part.Size.X >= AD_HUGE_PLATFORM or part.Name == "AD_FARM_FLOOR" then
+            adSavedFloor      = part
+            adSavedFloor.Name = "AD_FARM_FLOOR"
+            return adSavedFloor
+        end
+    end
+
+    local floor  = Instance.new("Part")
+    floor.Name          = "AD_FARM_FLOOR"
+    floor.Size          = Vector3.new(AD_HUGE_PLATFORM, 4, AD_HUGE_PLATFORM)
+    floor.CFrame        = CFrame.new(origin.X, origin.Y - 8, origin.Z)
+    floor.Anchored      = true
+    floor.CanCollide    = true
+    floor.CanTouch      = true
+    floor.Transparency  = 0
+    floor.Material      = Enum.Material.SmoothPlastic
+    floor.Color         = Color3.fromRGB(35, 35, 35)
+    floor.Parent        = workspace
+    adSavedFloor = floor
+    return adSavedFloor
+end
+
+local function adBuildWalls()
+    if not adSavedFloor then return end
+    local oldWalls = adSavedFloor:FindFirstChild("AD_WALLS")
+    if oldWalls then oldWalls:Destroy() end
+
+    local walls = Instance.new("Folder")
+    walls.Name  = "AD_WALLS"
+    walls.Parent = adSavedFloor
+    local cf = adSavedFloor.CFrame
+    local hX = adSavedFloor.Size.X / 2
+    local hZ = adSavedFloor.Size.Z / 2
+    local wH, wT = 140, 10
+    local specs = {
+        {cf * CFrame.new( hX, wH/2, 0),  Vector3.new(wT, wH, adSavedFloor.Size.Z)},
+        {cf * CFrame.new(-hX, wH/2, 0),  Vector3.new(wT, wH, adSavedFloor.Size.Z)},
+        {cf * CFrame.new(0, wH/2,  hZ),  Vector3.new(adSavedFloor.Size.X, wH, wT)},
+        {cf * CFrame.new(0, wH/2, -hZ),  Vector3.new(adSavedFloor.Size.X, wH, wT)},
+    }
+    for _, spec in ipairs(specs) do
+        local wall           = Instance.new("Part")
+        wall.Name            = "SafetyWall"
+        wall.Anchored        = true
+        wall.CanCollide      = true
+        wall.Transparency    = 1
+        wall.Size            = spec[2]
+        wall.CFrame          = spec[1]
+        wall.Parent          = walls
+    end
+end
+
 local function adGetCurrentSeat()
     if not adCurrentVehicle then return nil end
     if adCurrentVehicle:IsA("VehicleSeat") then return adCurrentVehicle end
     return adCurrentVehicle:FindFirstChildWhichIsA("VehicleSeat", true)
+end
+
+local function adSetBlackScreen(enabled)
+    local playerGui = LP:WaitForChild("PlayerGui")
+    if enabled then
+        if adBlackGui and adBlackGui.Parent then return end
+        adBlackGui                  = Instance.new("ScreenGui")
+        adBlackGui.Name             = "AD_BlackScreen"
+        adBlackGui.IgnoreGuiInset   = true
+        adBlackGui.ResetOnSpawn     = false
+        adBlackGui.DisplayOrder     = 999998
+        adBlackGui.Parent           = playerGui
+        local frame                 = Instance.new("Frame")
+        frame.Size                  = UDim2.fromScale(1, 1)
+        frame.BackgroundColor3      = Color3.new(0, 0, 0)
+        frame.BorderSizePixel       = 0
+        frame.ZIndex                = 999999
+        frame.Parent                = adBlackGui
+    elseif adBlackGui then
+        adBlackGui:Destroy()
+        adBlackGui = nil
+    end
 end
 
 local function adFindDragRace()
@@ -1712,121 +1839,10 @@ local function adRunDragPass()
     adDragPassActive = false
 end
 
-local function adEnsureFloor(root)
-    if adSavedFloor and adSavedFloor.Parent then return adSavedFloor end
-    local origin = root and root.Position or Vector3.new(0, 8, 0)
-    local floor  = Instance.new("Part")
-    floor.Name          = "AD_FARM_FLOOR"
-    floor.Size          = Vector3.new(AD_HUGE_PLATFORM, 4, AD_HUGE_PLATFORM)
-    floor.CFrame        = CFrame.new(origin.X, origin.Y - 8, origin.Z)
-    floor.Anchored      = true
-    floor.CanCollide    = true
-    floor.CanTouch      = true
-    floor.Transparency  = 0
-    floor.Material      = Enum.Material.SmoothPlastic
-    floor.Color         = Color3.fromRGB(35, 35, 35)
-    floor.Parent        = workspace
-    adSavedFloor = floor
-    return adSavedFloor
-end
-
-local function adCleanWorkspace()
-    local char = LP.Character
-    if not char then
-        char = LP.CharacterAdded:Wait()
-        task.wait(2)
-    end
-    local protectedDrag = adFindDragRace()
-    if protectedDrag then pcall(function() protectedDrag.Parent = workspace end) end
-
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then root = char:WaitForChild("HumanoidRootPart"); task.wait(2) end
-
-    local searching = true
-    while searching do
-        local result = workspace:Raycast(root.Position, Vector3.new(0, -1000, 0))
-        if result and result.Instance then
-            local part = result.Instance
-            if part.Size.X >= AD_HUGE_PLATFORM or part.Name == "AD_FARM_FLOOR" then
-                adSavedFloor      = part
-                adSavedFloor.Name = "AD_FARM_FLOOR"
-                adSavedFloor.Parent = workspace
-                searching = false
-            else
-                part:Destroy()
-                task.wait(0.02)
-            end
-        else
-            searching = false
-        end
-    end
-    adEnsureFloor(root)
-
-    for _, obj in pairs(workspace:GetChildren()) do
-        if obj ~= workspace.CurrentCamera and obj ~= char
-        and obj ~= adSavedFloor and obj ~= protectedDrag
-        and not obj:IsA("Terrain") then
-            obj:Destroy()
-        end
-    end
-
-    if adSavedFloor then
-        local oldWalls = adSavedFloor:FindFirstChild("AD_WALLS")
-        if oldWalls then oldWalls:Destroy() end
-
-        local walls    = Instance.new("Folder")
-        walls.Name     = "AD_WALLS"
-        walls.Parent   = adSavedFloor
-        local cf       = adSavedFloor.CFrame
-        local hX       = adSavedFloor.Size.X / 2
-        local hZ       = adSavedFloor.Size.Z / 2
-        local wH       = 140
-        local wT       = 10
-        local specs = {
-            {cf * CFrame.new( hX, wH/2, 0),  Vector3.new(wT, wH, adSavedFloor.Size.Z)},
-            {cf * CFrame.new(-hX, wH/2, 0),  Vector3.new(wT, wH, adSavedFloor.Size.Z)},
-            {cf * CFrame.new(0, wH/2,  hZ),  Vector3.new(adSavedFloor.Size.X, wH, wT)},
-            {cf * CFrame.new(0, wH/2, -hZ),  Vector3.new(adSavedFloor.Size.X, wH, wT)},
-        }
-        for _, spec in ipairs(specs) do
-            local wall           = Instance.new("Part")
-            wall.Name            = "SafetyWall"
-            wall.Anchored        = true
-            wall.CanCollide      = true
-            wall.Transparency    = 1
-            wall.Size            = spec[2]
-            wall.CFrame          = spec[1]
-            wall.Parent          = walls
-        end
-    end
-end
-
-local function adSetBlackScreen(enabled)
-    local playerGui = LP:WaitForChild("PlayerGui")
-    if enabled then
-        if adBlackGui and adBlackGui.Parent then return end
-        adBlackGui                  = Instance.new("ScreenGui")
-        adBlackGui.Name             = "AD_BlackScreen"
-        adBlackGui.IgnoreGuiInset   = true
-        adBlackGui.ResetOnSpawn     = false
-        adBlackGui.DisplayOrder     = 999998
-        adBlackGui.Parent           = playerGui
-        local frame                 = Instance.new("Frame")
-        frame.Size                  = UDim2.fromScale(1, 1)
-        frame.BackgroundColor3      = Color3.new(0, 0, 0)
-        frame.BorderSizePixel       = 0
-        frame.ZIndex                = 999999
-        frame.Parent                = adBlackGui
-    elseif adBlackGui then
-        adBlackGui:Destroy()
-        adBlackGui = nil
-    end
-end
-
 local function adRespawnVehicle(hum, statusText)
     if adIsRespawning then return end
-    adIsRespawning = true
-    adActive       = false
+    adIsRespawning  = true
+    adActive        = false
     adUnseatedSince = nil
     if adLblStatus then adLblStatus:Set("Status: " .. (statusText or "Threshold reached, respawning...")) end
     adStopVehicle()
@@ -1834,31 +1850,55 @@ local function adRespawnVehicle(hum, statusText)
     task.wait(0.5)
     adCleanupPhysics()
     adDespawnVehicle()
-    task.wait(2)
-    adSpawnVehicle()
-    task.wait(4)   -- covers spawn + section strip
+    task.wait(1.5)
 
-    -- King Akbar proximity scan
-    local seat = adFindClosestSeat()
+    -- unfreeze character before spawning
+    adUnfreezeCharacter()
+
+    adSpawnVehicle()
+
+    -- poll for seat (King Akbar scan, up to 10s)
+    local seat    = nil
+    local deadline = os.clock() + 10
+    local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    while os.clock() < deadline and not seat do
+        task.wait(0.4)
+        root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            for _, model in ipairs(workspace:GetChildren()) do
+                if model:IsA("Model") then
+                    local s = model:FindFirstChildWhichIsA("VehicleSeat", true)
+                    if s and not s.Occupant then
+                        local dist = (s.Position - root.Position).Magnitude
+                        if dist < 60 then seat = s; break end
+                    end
+                end
+            end
+        end
+    end
+
     if not seat then
         if adLblStatus then adLblStatus:Set("Status: No seat found!") end
         adIsRespawning = false
         return
     end
-    local char = LP.Character or LP.CharacterAdded:Wait()
-    local root = char:WaitForChild("HumanoidRootPart")
-    root.CFrame = seat.CFrame * CFrame.new(0, 2, 0)
-    task.wait(1)
+
+    local char2 = LP.Character or LP.CharacterAdded:Wait()
+    local root2 = char2:WaitForChild("HumanoidRootPart")
+    adUnfreezeCharacter()
+    root2.CFrame = seat.CFrame * CFrame.new(0, 2, 0)
+    task.wait(0.5)
     seat:Sit(hum)
     task.wait(1)
+
     adCurrentVehicle = adGetVehicleRoot(seat)
     adSeatOffset     = adCalcSeatOffset(adCurrentVehicle, seat)
     adStartMoney     = PlayerData.RPValue.Value
     adStartTime      = os.time()
     adUnseatedSince  = nil
     adSetupPhysics(seat)
-    adActive       = true
-    adIsRespawning = false
+    adActive         = true
+    adIsRespawning   = false
     _G.AutoDriveActive = true
     if adLblStatus then adLblStatus:Set("Status: Farming!") end
 end
@@ -1885,36 +1925,50 @@ local function adGetVehicleList()
     return {{id = "Yamahax-MioSporty", name = "Yamahax - Mio Sporty (2006)"}}
 end
 
+-- ─── Main start function: spawn → sit → clean map → build floor ──────────────
 local function adStartFarming()
     if adActive then return end
     local char = LP.Character or LP.CharacterAdded:Wait()
     local hum  = char:WaitForChild("Humanoid")
     local root = char:WaitForChild("HumanoidRootPart")
 
-    if adLblStatus then adLblStatus:Set("Status: Cleaning workspace...") end
-    adCleanWorkspace()
+    -- unfreeze before anything
+    adUnfreezeCharacter()
+
+    if adLblStatus then adLblStatus:Set("Status: Refreshing garage...") end
+    pcall(function()
+        local de = ReplicatedStorage:FindFirstChild("DealershipEvents")
+        if de then
+            local init = de:FindFirstChild("InitializeCarData")
+            if init and init:IsA("RemoteFunction") then init:InvokeServer() end
+            local slot = de:FindFirstChild("GetInfoCarSlot")
+            if slot and slot:IsA("RemoteFunction") then slot:InvokeServer() end
+        end
+    end)
+    task.wait(0.5)
 
     if adLblStatus then adLblStatus:Set("Status: Spawning vehicle...") end
     adSpawnVehicle()
-    task.wait(4)   -- covers spawn network round-trip + section strip
 
+    -- poll for seat up to 10s (King Akbar scan)
     if adLblStatus then adLblStatus:Set("Status: Finding seat...") end
     local seat    = nil
-    local attempts = 0
-    repeat
-        task.wait(0.5)
-        attempts = attempts + 1
-        -- King Akbar proximity scan
-        for _, model in ipairs(workspace:GetChildren()) do
-            if model:IsA("Model") then
-                local s = model:FindFirstChildWhichIsA("VehicleSeat", true)
-                if s and not s.Occupant then
-                    local dist = (s.Position - root.Position).Magnitude
-                    if dist < 60 then seat = s; break end
+    local deadline = os.clock() + 10
+    while os.clock() < deadline and not seat do
+        task.wait(0.4)
+        root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            for _, model in ipairs(workspace:GetChildren()) do
+                if model:IsA("Model") then
+                    local s = model:FindFirstChildWhichIsA("VehicleSeat", true)
+                    if s and not s.Occupant then
+                        local dist = (s.Position - root.Position).Magnitude
+                        if dist < 60 then seat = s; break end
+                    end
                 end
             end
         end
-    until seat or attempts > 20
+    end
 
     if not seat then
         if adLblStatus then adLblStatus:Set("Status: No seat found!") end
@@ -1922,6 +1976,8 @@ local function adStartFarming()
     end
 
     if adLblStatus then adLblStatus:Set("Status: Sitting...") end
+    adUnfreezeCharacter()
+    root = LP.Character:FindFirstChild("HumanoidRootPart")
     root.CFrame = seat.CFrame * CFrame.new(0, 2, 0)
     task.wait(0.5)
     seat:Sit(hum)
@@ -1932,8 +1988,18 @@ local function adStartFarming()
         return false
     end
 
-    adCurrentVehicle   = adGetVehicleRoot(seat)
-    adSeatOffset       = adCalcSeatOffset(adCurrentVehicle, seat)
+    adCurrentVehicle = adGetVehicleRoot(seat)
+    adSeatOffset     = adCalcSeatOffset(adCurrentVehicle, seat)
+
+    -- Now seated. Build floor first, THEN delete map keeping vehicle + floor.
+    if adLblStatus then adLblStatus:Set("Status: Building platform...") end
+    adEnsureFloor(root)
+    adBuildWalls()
+
+    if adLblStatus then adLblStatus:Set("Status: Cleaning map...") end
+    task.wait(0.3)
+    adCleanMapOnly(adCurrentVehicle)
+
     adStartMoney       = PlayerData.RPValue.Value
     adStartTime        = os.time()
     adUnseatedSince    = nil
@@ -2028,7 +2094,7 @@ LP.CharacterAdded:Connect(function()
     adStartFarming()
 end)
 
--- ─── Heartbeat: air-recovery with King Akbar scan ────────────────────────────
+-- ─── Heartbeat ────────────────────────────────────────────────────────────────
 RunService.Heartbeat:Connect(function()
     if not adActive or not adForce or not adCurrentVehicle then return end
 
@@ -2036,7 +2102,9 @@ RunService.Heartbeat:Connect(function()
     if not seat then return end
 
     if not adSavedFloor or not adSavedFloor.Parent then
-        adEnsureFloor(seat)
+        local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        adEnsureFloor(root)
+        adBuildWalls()
     end
 
     if adDragRunning then
@@ -2059,17 +2127,36 @@ RunService.Heartbeat:Connect(function()
         adDespawnVehicle()
         for retry = 1, 5 do
             task.wait(1)
+            adUnfreezeCharacter()
             adSpawnVehicle()
-            task.wait(4)   -- King Akbar timing
-            -- King Akbar proximity scan for recovery
-            local newSeat = adFindClosestSeat()
+
+            local newSeat = nil
+            local dl2 = os.clock() + 8
+            local root2 = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+            while os.clock() < dl2 and not newSeat do
+                task.wait(0.4)
+                root2 = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                if root2 then
+                    for _, model in ipairs(workspace:GetChildren()) do
+                        if model:IsA("Model") then
+                            local s = model:FindFirstChildWhichIsA("VehicleSeat", true)
+                            if s and not s.Occupant then
+                                local dist = (s.Position - root2.Position).Magnitude
+                                if dist < 60 then newSeat = s; break end
+                            end
+                        end
+                    end
+                end
+            end
+
             if newSeat then
                 local char = LP.Character
                 if char then
                     local hum2 = char:FindFirstChildOfClass("Humanoid")
-                    local root = char:FindFirstChild("HumanoidRootPart")
-                    if hum2 and root then
-                        root.CFrame      = newSeat.CFrame * CFrame.new(0, 2, 0)
+                    local root3 = char:FindFirstChild("HumanoidRootPart")
+                    if hum2 and root3 then
+                        adUnfreezeCharacter()
+                        root3.CFrame     = newSeat.CFrame * CFrame.new(0, 2, 0)
                         task.wait(0.5)
                         newSeat:Sit(hum2)
                         task.wait(1)
@@ -2151,15 +2238,14 @@ local Window = Rayfield:CreateWindow({
 })
 
 local HomeTab = Window:CreateTab("Home", 4483362458)
-
 HomeTab:CreateSection("Update Log")
 
 HomeTab:CreateButton({
-    Name = "Version 1.3",
+    Name = "Version 1.4",
     Callback = function()
         Rayfield:Notify({
             Title    = "Projectsion",
-            Content  = "+ Auto Drive spawn uses King Akbar proximity scan\n+ FrontSection/RearSection stripped on spawn",
+            Content  = "+ spawn → sit → clean map (correct order)\n+ garage refresh before spawn\n+ character unfreeze on every spawn",
             Duration = 5
         })
     end
@@ -2170,11 +2256,9 @@ HomeTab:CreateButton({
     Callback = function() RejoinServer() end
 })
 
--- ─── Autofarm tab ─────────────────────────────────────────────────────────────
 local AutofarmTab = Window:CreateTab("Autofarm", 4483362458)
 
 AutofarmTab:CreateSection("Courier")
-
 AutofarmTab:CreateToggle({
     Name         = "Autofarm Courier",
     CurrentValue = false,
@@ -2187,7 +2271,6 @@ AutofarmTab:CreateToggle({
         end
     end
 })
-
 AutofarmTab:CreateSlider({
     Name         = "Courier Speed",
     Range        = {10, 550},
@@ -2199,7 +2282,6 @@ AutofarmTab:CreateSlider({
 })
 
 AutofarmTab:CreateSection("Barista")
-
 AutofarmTab:CreateToggle({
     Name         = "Autofarm Barista",
     CurrentValue = false,
@@ -2214,7 +2296,6 @@ AutofarmTab:CreateToggle({
         end
     end
 })
-
 AutofarmTab:CreateSlider({
     Name         = "Barista Speed",
     Range        = {10, 1500},
@@ -2226,7 +2307,6 @@ AutofarmTab:CreateSlider({
 })
 
 AutofarmTab:CreateSection("Police Department")
-
 AutofarmTab:CreateToggle({
     Name         = "Autofarm Police",
     CurrentValue = false,
@@ -2235,7 +2315,7 @@ AutofarmTab:CreateToggle({
         _G.AutoPoliceEnabled = state
         updateBlackScreen()
         if state then
-            Rayfield:Notify({Title = "Projectsion", Content = "Auto Police Department Enabled.",  Duration = 3})
+            Rayfield:Notify({Title = "Projectsion", Content = "Auto Police Department Enabled.", Duration = 3})
             task.spawn(function()
                 while _G.AutoPoliceEnabled do
                     if LP.Team and LP.Team.Name ~= "Police" then RequestPoliceJob() end
@@ -2247,7 +2327,6 @@ AutofarmTab:CreateToggle({
         end
     end
 })
-
 AutofarmTab:CreateSlider({
     Name         = "Min PostTeleport Wait (s)",
     Range        = {0, 10},
@@ -2257,7 +2336,6 @@ AutofarmTab:CreateSlider({
     Flag         = "PoliceMinWait",
     Callback     = function(value) AutoPoliceConfig.PostTeleportWait.min = value end
 })
-
 AutofarmTab:CreateSlider({
     Name         = "Max PostTeleport Wait (s)",
     Range        = {0, 10},
@@ -2267,7 +2345,6 @@ AutofarmTab:CreateSlider({
     Flag         = "PoliceMaxWait",
     Callback     = function(value) AutoPoliceConfig.PostTeleportWait.max = value end
 })
-
 AutofarmTab:CreateSlider({
     Name         = "Police Teleport Speed Max",
     Range        = {100, 500},
@@ -2278,9 +2355,7 @@ AutofarmTab:CreateSlider({
     Callback     = function(value) AutoPoliceConfig.TeleportSpeed.max = value end
 })
 
--- ─── Stats tab ────────────────────────────────────────────────────────────────
 local StatsTab = Window:CreateTab("Stats", "trending-up")
-
 StatsTab:CreateSection("Session Stats")
 lblTotalEarned  = StatsTab:CreateLabel("Total Earned: RP. 0")
 lblCurrentMoney = StatsTab:CreateLabel("Current Money: " .. formatRP(PlayerData.RPValue.Value))
@@ -2290,19 +2365,14 @@ lblTotalPerHour = StatsTab:CreateLabel("Total /hr: RP. 0/hr")
 StatsTab:CreateSection("Job Income")
 lblCourierEarned   = StatsTab:CreateLabel("Courier: RP. 0")
 lblCourierPerHour  = StatsTab:CreateLabel("Courier /hr: RP. 0/hr")
-
 lblBaristaEarned   = StatsTab:CreateLabel("Barista: RP. 0")
 lblBaristaPerHour  = StatsTab:CreateLabel("Barista /hr: RP. 0/hr")
-
 lblPoliceEarned    = StatsTab:CreateLabel("Police Department: RP. 0")
 lblPolicePerHour   = StatsTab:CreateLabel("Police Department /hr: RP. 0/hr")
-
 lblAutoDriveEarned  = StatsTab:CreateLabel("Auto Drive: RP. 0")
 lblAutoDrivePerHour = StatsTab:CreateLabel("Auto Drive /hr: RP. 0/hr")
 
--- ─── Auto Drive tab ───────────────────────────────────────────────────────────
 local AutoDriveTab = Window:CreateTab("Auto Drive", 4483362458)
-
 AutoDriveTab:CreateSection("Config")
 
 local adVehicleList   = adGetVehicleList()
@@ -2326,6 +2396,43 @@ AutoDriveTab:CreateDropdown({
     end
 })
 
+AutoDriveTab:CreateButton({
+    Name     = "Refresh Garage",
+    Callback = function()
+        task.spawn(function()
+            local out = {}
+            pcall(function()
+                local de = ReplicatedStorage:FindFirstChild("DealershipEvents")
+                if de then
+                    local init = de:FindFirstChild("InitializeCarData")
+                    if init and init:IsA("RemoteFunction") then
+                        local ok, cfg = pcall(function() return init:InvokeServer() end)
+                        if ok and type(cfg) == "table" then
+                            for _, v in pairs(cfg) do
+                                if type(v) == "table" and v.Name then
+                                    out[#out+1] = {id = v.Name, name = v.DisplayName or v.Name}
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            if #out > 0 then
+                table.sort(out, function(a,b) return a.name < b.name end)
+                adVehicleNames = {}
+                adVehicleById  = {}
+                for _, v in ipairs(out) do
+                    table.insert(adVehicleNames, v.name)
+                    adVehicleById[v.name] = v.id
+                end
+                Rayfield:Notify({Title = "Projectsion", Content = "Garage refreshed: " .. #out .. " vehicles", Duration = 3})
+            else
+                Rayfield:Notify({Title = "Projectsion", Content = "No vehicles found", Duration = 3})
+            end
+        end)
+    end
+})
+
 AutoDriveTab:CreateSlider({
     Name         = "Drive Speed",
     Range        = {AD_MIN_SPEED, AD_MAX_SPEED},
@@ -2335,7 +2442,6 @@ AutoDriveTab:CreateSlider({
     Flag         = "ADSpeed",
     Callback     = function(value) adSpeed = value end
 })
-
 AutoDriveTab:CreateSlider({
     Name         = "Money Target (per cycle)",
     Range        = {AD_MIN_THRESHOLD, AD_MAX_THRESHOLD},
@@ -2345,21 +2451,18 @@ AutoDriveTab:CreateSlider({
     Flag         = "ADThreshold",
     Callback     = function(value) adThreshold = value end
 })
-
 AutoDriveTab:CreateToggle({
     Name         = "Auto Drag Bridge",
     CurrentValue = true,
     Flag         = "ADDragBridge",
     Callback     = function(state) adDragEnabled = state end
 })
-
 AutoDriveTab:CreateToggle({
     Name         = "Black Screen",
     CurrentValue = false,
     Flag         = "ADBlackScreen",
     Callback     = function(state) adSetBlackScreen(state) end
 })
-
 AutoDriveTab:CreateToggle({
     Name         = "Enable Auto Drive",
     CurrentValue = false,
@@ -2386,11 +2489,8 @@ adLblEarned    = AutoDriveTab:CreateLabel("Earned This Cycle: RP. 0")
 adLblElapsed   = AutoDriveTab:CreateLabel("Elapsed: 00:00:00")
 adLblDragRaces = AutoDriveTab:CreateLabel("Drag Races: 0")
 
--- ─── Webhook tab ──────────────────────────────────────────────────────────────
 local WebhookTab = Window:CreateTab("Webhook", 4483362458)
-
 WebhookTab:CreateSection("Webhook Configuration")
-
 WebhookTab:CreateInput({
     Name                     = "Discord Webhook URL",
     PlaceholderText          = "https://discord.com/api/webhooks/...",
@@ -2398,7 +2498,6 @@ WebhookTab:CreateInput({
     Flag                     = "WebhookURL",
     Callback                 = function(text) _G.WebhookURL = text end
 })
-
 WebhookTab:CreateToggle({
     Name         = "Enable Webhook Logs",
     CurrentValue = false,
@@ -2406,7 +2505,6 @@ WebhookTab:CreateToggle({
     Callback     = function(state) _G.AutoWebhook = state end
 })
 
--- ─── Stats ticker ─────────────────────────────────────────────────────────────
 task.spawn(function()
     while true do
         task.wait(1)
@@ -2420,9 +2518,9 @@ task.spawn(function()
             local money   = PlayerData.RPValue.Value
             local earned  = math.max(0, money - adStartMoney)
             local elapsed = os.time() - adStartTime
-            if adLblCurrent   then adLblCurrent:Set("Current Money: "       .. formatRP(money))       end
-            if adLblEarned    then adLblEarned:Set("Earned This Cycle: "    .. formatRP(earned))       end
-            if adLblElapsed   then adLblElapsed:Set("Elapsed: "             .. formatTime(elapsed))    end
+            if adLblCurrent   then adLblCurrent:Set("Current Money: "    .. formatRP(money))    end
+            if adLblEarned    then adLblEarned:Set("Earned This Cycle: " .. formatRP(earned))   end
+            if adLblElapsed   then adLblElapsed:Set("Elapsed: "          .. formatTime(elapsed)) end
         end
     end
 end)
