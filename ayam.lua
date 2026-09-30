@@ -1,11 +1,10 @@
--- DX-SR Hub | Barista Autofarm v0.0.0.10 | WindUI
+-- DX-SR Hub | Barista Autofarm v0.0.0.11 | WindUI
 -- Startup flow:
 -- Auto ON -> pivot to NPC_BARISTA_MANAGER CFrame -> interact -> skip dialog
--- -> get Barista job -> wait for Barista remote -> answer phone (exactly 2x)
--- -> autofarm
--- Extras: every shown ProximityPrompt is fired ONCE per show cycle,
--- phone prompts are hard-capped at 2 fires per session,
--- dialogs are skipped until the dialog GUI is gone.
+-- -> get Barista job -> wait for Barista remote -> autofarm
+-- Phone: answered ONLY while the Barista panel says the phone is ringing
+-- (max 2 attempts per ring, dialog skipped until closed).
+-- Every other shown ProximityPrompt is fired ONCE per show cycle.
 
 local Players                = game:GetService("Players")
 local ReplicatedStorage      = game:GetService("ReplicatedStorage")
@@ -285,6 +284,10 @@ local lastCupState
 local lastOrderData
 local baristaConn
 
+-- true while the phone routine owns the character; movement code waits.
+local phoneBusy = false
+local phoneThread
+
 -- =========================================================
 -- SIGNAL HELPER
 -- =========================================================
@@ -371,7 +374,18 @@ end
 -- MOVEMENT
 -- =========================================================
 
+-- Blocks while the phone routine is moving the character.
+local function waitPhone()
+    local startTime = os.clock()
+
+    while phoneBusy and os.clock() - startTime < 30 do
+        task.wait(0.1)
+    end
+end
+
 local function tweenTo(target, duration)
+    waitPhone()
+
     local hrp = getHRP()
 
     if not hrp or not target then
@@ -475,14 +489,9 @@ local function promptWorldPos(prompt)
 end
 
 -- =========================================================
--- PHONE PROMPT GUARD
+-- PHONE PROMPT IDENTIFICATION
 -- =========================================================
 
--- The phone prompt hides while its dialog is open and shows again afterwards.
--- A show/hide watcher reads that as a new prompt and fires it forever.
--- Phone prompts are therefore excluded from the watcher and hard-capped here.
-local PHONE_MAX_FIRES = 2
-local phoneFires = 0
 local telephoneRef
 
 local function isPhonePrompt(prompt)
@@ -517,7 +526,7 @@ end
 
 -- One fire per prompt inside FIRE_WINDOW seconds, no matter who asks
 -- (manual step code or the auto watcher). Duplicates return true without
--- firing again. Phone prompts additionally stop after PHONE_MAX_FIRES.
+-- firing again.
 local FIRE_WINDOW = 1.2
 local lastFire = setmetatable({}, { __mode = "k" })
 
@@ -536,17 +545,6 @@ local function firePrompt(prompt)
     if lastFire[prompt] and now - lastFire[prompt] < FIRE_WINDOW then
         dbg("PROMPT", "skip duplicate", prompt:GetFullName())
         return true
-    end
-
-    if isPhonePrompt(prompt) then
-        if phoneFires >= PHONE_MAX_FIRES then
-            dbg("PHONE", "cap reached, not firing", phoneFires, "/", PHONE_MAX_FIRES)
-            return true
-        end
-
-        phoneFires += 1
-
-        dbg("PHONE", "fire", phoneFires, "/", PHONE_MAX_FIRES)
     end
 
     lastFire[prompt] = now
@@ -657,6 +655,244 @@ local function waitDialogDone(maxSeconds)
     do
         task.wait(0.3)
     end
+end
+
+-- =========================================================
+-- PHONE: UI DETECTION + ANSWER
+-- =========================================================
+
+-- The Barista panel (top-left / side) shows a line such as
+-- "The phone is ringing! Pick up the cafe phone first (E)".
+-- Any visible TextLabel/TextButton containing one of these (case-insensitive)
+-- counts as "phone ringing". Use Debug > Dump Barista UI to see the real text.
+local PHONE_TEXT_PATTERNS = {
+    "phone is ringing",
+    "pick up the cafe phone",
+    "answer the phone",
+}
+
+local PHONE_ATTEMPTS = 2
+
+local function isGuiShown(obj)
+    local current = obj
+
+    while current and current ~= PlayerGui do
+        if current:IsA("GuiObject") and not current.Visible then
+            return false
+        end
+
+        if current:IsA("ScreenGui") and not current.Enabled then
+            return false
+        end
+
+        current = current.Parent
+    end
+
+    return current == PlayerGui
+end
+
+local function labelMatchesPhone(label)
+    local text = label.Text
+
+    if type(text) ~= "string" or text == "" then
+        return false
+    end
+
+    text = text:lower()
+
+    for _, pattern in ipairs(PHONE_TEXT_PATTERNS) do
+        if text:find(pattern, 1, true) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local phoneLabelCache
+local lastPhoneScan = 0
+
+-- *GetDescendants on PlayerGui is O(n); the cached label makes the ringing
+-- check O(1) while the text is on screen, full scans are throttled to 0.4s*
+local function phoneRinging()
+    local cached = phoneLabelCache
+
+    if cached
+        and cached.Parent
+        and labelMatchesPhone(cached)
+        and isGuiShown(cached) then
+
+        return true
+    end
+
+    phoneLabelCache = nil
+
+    if os.clock() - lastPhoneScan < 0.4 then
+        return false
+    end
+
+    lastPhoneScan = os.clock()
+
+    for _, inst in ipairs(PlayerGui:GetDescendants()) do
+        if (inst:IsA("TextLabel") or inst:IsA("TextButton"))
+            and labelMatchesPhone(inst)
+            and isGuiShown(inst) then
+
+            phoneLabelCache = inst
+
+            dbg("PHONE", "ringing text:", inst:GetFullName(), inst.Text)
+
+            return true
+        end
+    end
+
+    return false
+end
+
+local function getTelephone()
+    if telephoneRef and telephoneRef.Parent then
+        return telephoneRef
+    end
+
+    local newJob = workspace:FindFirstChild("NEW_JOB")
+
+    local cafe =
+        newJob
+        and newJob:FindFirstChild("Cafe")
+
+    local kanji =
+        cafe
+        and cafe:FindFirstChild("Cafe_Kanji_Jawa")
+
+    local tel =
+        kanji
+        and kanji:FindFirstChild("Telphone")
+
+    telephoneRef =
+        tel
+        and tel:FindFirstChild("Telephone")
+
+    return telephoneRef
+end
+
+local function findPhonePrompt(tel)
+    if tel then
+        return
+            tel:FindFirstChild("BaristaPhonePrompt", true)
+            or tel:FindFirstChildWhichIsA("ProximityPrompt", true)
+    end
+
+    for _, inst in ipairs(workspace:GetDescendants()) do
+        if inst:IsA("ProximityPrompt") and isPhonePrompt(inst) then
+            return inst
+        end
+    end
+
+    return nil
+end
+
+-- One "ring" = up to PHONE_ATTEMPTS interacts. The second attempt only runs
+-- if the ringing text is STILL on screen after the first dialog finished.
+local function answerPhone()
+    if phoneBusy then
+        return
+    end
+
+    phoneBusy = true
+
+    local previousStep = AutofarmBarista.CurrentStep
+
+    AutofarmBarista.CurrentStep = "Answering Barista phone..."
+
+    local ok, err = pcall(function()
+        for attempt = 1, PHONE_ATTEMPTS do
+            if not AutofarmBarista.Running then
+                break
+            end
+
+            dbg("PHONE", "attempt", attempt, "/", PHONE_ATTEMPTS)
+
+            local tel = getTelephone()
+            local pos = instPos(tel)
+
+            if pos then
+                teleportTo(pos + Vector3.new(0, 3, 0))
+            end
+
+            task.wait(0.8)
+
+            local prompt = findPhonePrompt(tel)
+
+            dbg("PHONE", "prompt", prompt and prompt:GetFullName() or "nil")
+
+            if prompt then
+                firePrompt(prompt)
+            end
+
+            triggerDialogSkip(3)
+
+            waitDialogDone(SKIP_HARD_CAP)
+
+            -- wait for the ringing text to go away
+            local waitStart = os.clock()
+
+            while
+                AutofarmBarista.Running
+                and phoneRinging()
+                and os.clock() - waitStart < 5
+            do
+                task.wait(0.3)
+            end
+
+            if not phoneRinging() then
+                dbg("PHONE", "answered")
+                break
+            end
+
+            -- longer than FIRE_WINDOW so the second fire is not swallowed
+            task.wait(1.5)
+        end
+    end)
+
+    if not ok then
+        dbg("PHONE", "error", err)
+    end
+
+    AutofarmBarista.CurrentStep = previousStep
+
+    phoneBusy = false
+end
+
+local function stopPhoneWatcher()
+    if phoneThread then
+        pcall(task.cancel, phoneThread)
+        phoneThread = nil
+    end
+
+    phoneBusy = false
+end
+
+local function startPhoneWatcher()
+    stopPhoneWatcher()
+
+    phoneThread = task.spawn(function()
+        local cooldownUntil = 0
+
+        while AutofarmBarista.Running and AutofarmBarista.JobActive do
+            if not phoneBusy
+                and os.clock() >= cooldownUntil
+                and phoneRinging() then
+
+                dbg("PHONE", "ringing detected")
+
+                answerPhone()
+
+                cooldownUntil = os.clock() + 3
+            end
+
+            task.wait(0.5)
+        end
+    end)
 end
 
 -- =========================================================
@@ -1022,6 +1258,26 @@ local function goToStation(ws, stationName)
     return obj
 end
 
+-- Teleports to the station; if the phone routine grabbed the character in the
+-- meantime, waits for it and teleports again. Returns the station instance.
+local function gotoStationSafe(ws, stationName, settle)
+    local obj
+
+    for _ = 1, 5 do
+        waitPhone()
+
+        obj = goToStation(ws, stationName)
+
+        task.wait(settle or 0.4)
+
+        if not phoneBusy then
+            break
+        end
+    end
+
+    return obj
+end
+
 -- =========================================================
 -- BARISTA REMOTE LISTENER
 -- =========================================================
@@ -1212,9 +1468,7 @@ end
 -- =========================================================
 
 local function useStation(ws, stationName)
-    local obj = goToStation(ws, stationName)
-
-    task.wait(0.4)
+    local obj = gotoStationSafe(ws, stationName, 0.4)
 
     local prompt =
         obj
@@ -1338,9 +1592,7 @@ end
 -- =========================================================
 
 local function grabCup(ws)
-    local rack = goToStation(ws, "CupRack")
-
-    task.wait(0.4)
+    local rack = gotoStationSafe(ws, "CupRack", 0.4)
 
     -- Drop stale state.
     lastCupState = nil
@@ -1363,9 +1615,7 @@ end
 -- =========================================================
 
 local function discardCup(ws)
-    local obj = goToStation(ws, "Trash")
-
-    task.wait(0.3)
+    local obj = gotoStationSafe(ws, "Trash", 0.3)
 
     local prompt =
         obj
@@ -1483,6 +1733,8 @@ local function stopWatchers()
         dialogConn = nil
     end
 
+    stopPhoneWatcher()
+
     skipping = false
     skipMinUntil = 0
 end
@@ -1496,7 +1748,7 @@ local function startWatchers()
             return
         end
 
-        -- Phone is handled by the dedicated 2x routine, never by the watcher.
+        -- Phone is handled by the UI-driven routine, never by this watcher.
         if isPhonePrompt(prompt) then
             return
         end
@@ -1543,8 +1795,9 @@ local function startJob()
 
     AutofarmBarista.JobActive = false
 
-    phoneFires = 0
     telephoneRef = nil
+    phoneLabelCache = nil
+    phoneBusy = false
 
     -- -----------------------------------------------------
     -- REMOTE CONTAINER (short waits only)
@@ -1631,70 +1884,45 @@ local function startJob()
     attachListener()
 
     AutofarmBarista.JobActive = true
+
     startWatchers()
+    startPhoneWatcher()
 
     task.wait(1)
 
     -- -----------------------------------------------------
-    -- PHONE (exactly PHONE_MAX_FIRES interacts, dialog finished in between)
+    -- PHONE (UI driven): give the first ring up to 8s to show up,
+    -- the phone watcher answers it, then continue.
     -- -----------------------------------------------------
 
     AutofarmBarista.CurrentStep = "Barista job active..."
 
-    task.wait(2)
+    local ringStart = os.clock()
 
-    if ws.Telephone then
-        AutofarmBarista.CurrentStep = "Answering Barista phone..."
-
-        local phonePos = instPos(ws.Telephone)
-
-        if phonePos then
-            teleportTo(phonePos + Vector3.new(0, 3, 0))
-        end
-
-        task.wait(0.8)
-
-        local phonePrompt =
-            ws.Telephone:FindFirstChild("BaristaPhonePrompt", true)
-            or ws.Telephone:FindFirstChildWhichIsA("ProximityPrompt", true)
-
-        dbg("PHONE", "prompt", phonePrompt and phonePrompt:GetFullName() or "nil")
-
-        if phonePrompt then
-            for attempt = 1, PHONE_MAX_FIRES do
-                if not AutofarmBarista.Running then
-                    break
-                end
-
-                dbg("PHONE", "attempt", attempt, "/", PHONE_MAX_FIRES)
-
-                firePrompt(phonePrompt)
-
-                triggerDialogSkip(3)
-
-                waitDialogDone(SKIP_HARD_CAP)
-
-                -- longer than FIRE_WINDOW so the second fire is never
-                -- swallowed as a duplicate
-                task.wait(1.5)
-            end
-        end
-
-        safeFiresignal(BaristaRemote.OnClientEvent, "Tutorial")
-
+    while
+        AutofarmBarista.Running
+        and not phoneRinging()
+        and os.clock() - ringStart < 8
+    do
         task.wait(0.3)
+    end
 
-        for _ = 1, 26 do
-            if not AutofarmBarista.Running then
-                break
-            end
+    task.wait(1)
 
-            VirtualUser:ClickButton2(Vector2.new(0, 0))
+    waitPhone()
 
-            task.wait(0.5)
+    safeFiresignal(BaristaRemote.OnClientEvent, "Tutorial")
+
+    task.wait(0.3)
+
+    for _ = 1, 26 do
+        if not AutofarmBarista.Running then
+            break
         end
-    else
-        dbg("PHONE", "Telephone missing (not streamed or wrong path)")
+
+        VirtualUser:ClickButton2(Vector2.new(0, 0))
+
+        task.wait(0.5)
     end
 
     task.wait(2)
@@ -1706,6 +1934,8 @@ local function startJob()
     local orderIndex = 1
 
     while AutofarmBarista.Running do
+        waitPhone()
+
         AutofarmBarista.CurrentStep = "Waiting for customer..."
 
         local target
@@ -1833,7 +2063,7 @@ end
 local Window = WindUI:CreateWindow({
     Title = "DX-SR Hub",
     Icon = "coffee",
-    Author = "Barista Autofarm v0.0.0.10",
+    Author = "Barista Autofarm v0.0.0.11",
     Folder = FOLDER,
     Size = UDim2.fromOffset(580, 400),
     Theme = Flags.SelectedTheme,
@@ -2142,7 +2372,8 @@ debugTab:Button({
             "jobActive", AutofarmBarista.JobActive,
             "step", AutofarmBarista.CurrentStep,
             "skipping", skipping,
-            "phoneFires", phoneFires .. "/" .. PHONE_MAX_FIRES
+            "phoneBusy", phoneBusy,
+            "phoneRinging", phoneRinging()
         )
 
         dbg(
@@ -2182,6 +2413,36 @@ debugTab:Button({
         dbg("STATE", "dialogOpen", open, "gui", guiName)
 
         notify("Debug", "State dumped to log")
+    end
+})
+
+debugTab:Button({
+    Title = "Dump Barista UI",
+    Desc = "Log every visible text in PlayerGui (press while the phone rings)",
+    Callback = function()
+        local count = 0
+
+        for _, inst in ipairs(PlayerGui:GetDescendants()) do
+            if (inst:IsA("TextLabel") or inst:IsA("TextButton"))
+                and inst.Text ~= ""
+                and isGuiShown(inst) then
+
+                count += 1
+
+                if count <= 150 then
+                    dbg(
+                        "UI",
+                        inst:GetFullName(),
+                        "|",
+                        inst.Text:sub(1, 90)
+                    )
+                end
+            end
+        end
+
+        dbg("UI", "total visible texts", count, "phoneRinging", phoneRinging())
+
+        notify("Debug", count .. " UI texts logged")
     end
 })
 
@@ -2293,7 +2554,7 @@ infoTab:Section({
 
 infoTab:Paragraph({ Title = "Hub",     Desc = "DX-SR Hub" })
 infoTab:Paragraph({ Title = "Script",  Desc = "Autofarm Barista" })
-infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.10" })
+infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.11" })
 infoTab:Paragraph({ Title = "Author",  Desc = "DX-SR" })
 infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
 
@@ -2303,7 +2564,7 @@ infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
 
 notify(
     "DX-SR Hub",
-    "Barista Autofarm v0.0.0.10 loaded! Press V to toggle UI.",
+    "Barista Autofarm v0.0.0.11 loaded! Press V to toggle UI.",
     5,
     "coffee"
 )
