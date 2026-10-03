@@ -1,2572 +1,1529 @@
--- DX-SR Hub | Barista Autofarm v0.0.0.11 | WindUI
--- Startup flow:
--- Auto ON -> pivot to NPC_BARISTA_MANAGER CFrame -> interact -> skip dialog
--- -> get Barista job -> wait for Barista remote -> autofarm
--- Phone: answered ONLY while the Barista panel says the phone is ringing
--- (max 2 attempts per ring, dialog skipped until closed).
--- Every other shown ProximityPrompt is fired ONCE per show cycle.
-
-local Players                = game:GetService("Players")
-local ReplicatedStorage      = game:GetService("ReplicatedStorage")
-local RunService             = game:GetService("RunService")
-local HttpService            = game:GetService("HttpService")
-local TweenService           = game:GetService("TweenService")
-local VirtualUser            = game:GetService("VirtualUser")
-local VIM                    = game:GetService("VirtualInputManager")
-local ProximityPromptService = game:GetService("ProximityPromptService")
-
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
-local T0          = os.clock()
-
--- =========================================================
--- DEBUG
--- =========================================================
-
-local Debug = {
-    Enabled = true,
-    Buffer = {},
-    Max = 500
-}
-
-local function dbg(tag, ...)
-    local parts = table.pack(...)
-
-    for i = 1, parts.n do
-        parts[i] = tostring(parts[i])
-    end
-
-    local line = string.format(
-        "[%7.2f][%s] %s",
-        os.clock() - T0,
-        tag,
-        table.concat(parts, " ", 1, parts.n)
-    )
-
-    table.insert(Debug.Buffer, line)
-
-    if #Debug.Buffer > Debug.Max then
-        table.remove(Debug.Buffer, 1)
-    end
-
-    if Debug.Enabled then
-        print(line)
-    end
-end
-
--- =========================================================
--- WINDUI
--- =========================================================
-
-local okUI, WindUI = pcall(function()
-    return loadstring(
-        game:HttpGet(
-            "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"
-        )
-    )()
-end)
-
-if not okUI or type(WindUI) ~= "table" then
-    warn("[Barista] WindUI failed to load: " .. tostring(WindUI))
-    return
-end
-
-dbg("BOOT", "WindUI loaded")
-
-local function notify(title, content, duration, icon)
-    pcall(function()
-        WindUI:Notify({
-            Title = title,
-            Content = content,
-            Duration = duration or 3,
-            Icon = icon
-        })
-    end)
-end
-
--- =========================================================
--- CONFIG
--- =========================================================
-
-local FOLDER   = "DXSR_Barista"
-local EXT      = ".json"
-local AUTOLOAD = FOLDER .. "/autoload.txt"
-
-local hasFS =
-    type(writefile) == "function"
-    and type(readfile) == "function"
-    and type(isfile) == "function"
-    and type(makefolder) == "function"
-    and type(isfolder) == "function"
-
-if hasFS and not isfolder(FOLDER) then
-    pcall(makefolder, FOLDER)
-end
-
-local Flags = {
-    AutofarmBarista = false,
-    OnlyMobile = false,
-    SelectedTheme = "Dark"
-}
-
-local ConfigManager = {}
-
-function ConfigManager.List()
-    local names = {}
-
-    if hasFS and type(listfiles) == "function" then
-        local ok, files = pcall(listfiles, FOLDER)
-
-        if ok then
-            for _, path in ipairs(files) do
-                local name = path:match("([^/\\]+)%.json$")
-
-                if name then
-                    table.insert(names, name)
-                end
-            end
-        end
-    end
-
-    table.sort(names)
-
-    return names
-end
-
-function ConfigManager.Save(name)
-    if not hasFS then
-        notify("Config", "Executor has no file API.")
-        return false
-    end
-
-    if not name or name == "" then
-        notify("Config", "Enter or select a config name first!")
-        return false
-    end
-
-    local ok, err = pcall(
-        writefile,
-        FOLDER .. "/" .. name .. EXT,
-        HttpService:JSONEncode(Flags)
-    )
-
-    if not ok then
-        dbg("CONFIG", "save failed:", err)
-        notify("Config", "Save failed: " .. tostring(err))
-        return false
-    end
-
-    dbg("CONFIG", "saved", name)
-    notify("Config", "'" .. name .. "' saved!")
-
-    return true
-end
-
-function ConfigManager.Load(name)
-    if not hasFS then
-        return false
-    end
-
-    if not name or name == "" then
-        notify("Config", "Select a config first!")
-        return false
-    end
-
-    local path = FOLDER .. "/" .. name .. EXT
-
-    if not isfile(path) then
-        notify("Config", "'" .. name .. "' not found!")
-        return false
-    end
-
-    local ok, decoded = pcall(function()
-        return HttpService:JSONDecode(readfile(path))
-    end)
-
-    if not ok or type(decoded) ~= "table" then
-        dbg("CONFIG", "load failed:", decoded)
-        notify("Config", "Failed to load: " .. name)
-        return false
-    end
-
-    for k, v in pairs(decoded) do
-        Flags[k] = v
-    end
-
-    dbg("CONFIG", "loaded", name)
-    notify("Config", "'" .. name .. "' loaded!")
-
-    return true
-end
-
-function ConfigManager.Delete(name)
-    if not hasFS or not name or name == "" then
-        notify("Config", "Select a config first!")
-        return false
-    end
-
-    local path = FOLDER .. "/" .. name .. EXT
-
-    if isfile(path) and type(delfile) == "function" then
-        pcall(delfile, path)
-
-        dbg("CONFIG", "deleted", name)
-        notify("Config", "'" .. name .. "' deleted!")
-
-        return true
-    end
-
-    return false
-end
-
-function ConfigManager.SetAutoLoad(name, state)
-    if not hasFS then
-        return
-    end
-
-    if state and name and name ~= "" then
-        pcall(writefile, AUTOLOAD, name)
-        notify("Config", "Auto load set to '" .. name .. "'")
-    else
-        if isfile(AUTOLOAD) and type(delfile) == "function" then
-            pcall(delfile, AUTOLOAD)
-        end
-
-        notify("Config", "Auto load disabled")
-    end
-end
-
--- =========================================================
--- STATS
--- =========================================================
-
-local Stats = {
-    Orders = 0,
-    Salary = 0,
-    XP = 0
-}
-
-local function fmtSalary(n)
-    local s = tostring(math.floor(tonumber(n) or 0))
-
-    local out = s:reverse()
-        :gsub("(%d%d%d)", "%1.")
-        :reverse()
-
-    out = out:gsub("^%.", "")
-
-    return "Rp " .. out
-end
-
-local function fmtStats()
-    return "Orders: "
-        .. Stats.Orders
-        .. " | Salary: "
-        .. fmtSalary(Stats.Salary)
-end
-
--- =========================================================
--- AUTOFARM STATE
--- =========================================================
-
-local AutofarmBarista = {
-    Running = false,
-    JobActive = false,
-    Thread = nil,
-    CurrentStep = "Idle"
-}
-
-local BaristaRemote
-local NpcDialogRemote
-local JobRemote
-
-local lastCupState
-local lastOrderData
-local baristaConn
-
--- true while the phone routine owns the character; movement code waits.
-local phoneBusy = false
-local phoneThread
-
--- =========================================================
--- SIGNAL HELPER
--- =========================================================
-
-local function safeFiresignal(signal, ...)
-    if type(firesignal) ~= "function" then
-        dbg("SIGNAL", "firesignal unsupported")
-        return
-    end
-
-    local ok, err = pcall(firesignal, signal, ...)
-
-    if not ok then
-        dbg("SIGNAL", "firesignal failed:", err)
-    end
-end
-
--- =========================================================
--- WORKSPACE REFERENCES
--- =========================================================
-
--- waitCustomers = false before the job (BaristaCustomers does not exist yet,
--- waiting on it would block the whole startup for 30s).
-local function getWorkspaceRefs(waitCustomers)
-    local ws = {
-        Barista = workspace:FindFirstChild("Barista"),
-        NEW_JOB = workspace:FindFirstChild("NEW_JOB")
-    }
-
-    if waitCustomers then
-        ws.BaristaCustomers = workspace:WaitForChild("BaristaCustomers", 30)
-    else
-        ws.BaristaCustomers = workspace:FindFirstChild("BaristaCustomers")
-    end
-
-    ws.Stations =
-        ws.Barista
-        and ws.Barista:FindFirstChild("Stations")
-
-    ws.NpcManager =
-        ws.Barista
-        and ws.Barista:FindFirstChild("NPC_BARISTA_MANAGER")
-
-    local cafe =
-        ws.NEW_JOB
-        and ws.NEW_JOB:FindFirstChild("Cafe")
-
-    local kanji =
-        cafe
-        and cafe:FindFirstChild("Cafe_Kanji_Jawa")
-
-    local tel =
-        kanji
-        and kanji:FindFirstChild("Telphone")
-
-    ws.Telephone =
-        tel
-        and tel:FindFirstChild("Telephone")
-
-    dbg(
-        "WS",
-        "Barista", ws.Barista ~= nil,
-        "Customers", ws.BaristaCustomers ~= nil,
-        "Stations", ws.Stations ~= nil,
-        "Manager", ws.NpcManager ~= nil,
-        "Phone", ws.Telephone ~= nil
-    )
-
-    return ws
-end
-
--- =========================================================
--- CHARACTER
--- =========================================================
-
-local function getHRP()
-    local char = LocalPlayer.Character
-
-    return char
-        and char:FindFirstChild("HumanoidRootPart")
-end
-
--- =========================================================
--- MOVEMENT
--- =========================================================
-
--- Blocks while the phone routine is moving the character.
-local function waitPhone()
-    local startTime = os.clock()
-
-    while phoneBusy and os.clock() - startTime < 30 do
-        task.wait(0.1)
-    end
-end
-
-local function tweenTo(target, duration)
-    waitPhone()
-
-    local hrp = getHRP()
-
-    if not hrp or not target then
-        return
-    end
-
-    local pos
-
-    if typeof(target) == "Vector3" then
-        pos = target
-
-    elseif target:IsA("BasePart") then
-        pos = target.Position
-
-    else
-        local part =
-            target:FindFirstChildWhichIsA("BasePart", true)
-
-        pos =
-            part
-            and part.Position
-    end
-
-    if not pos then
-        dbg("TWEEN", "no position for target")
-        return
-    end
-
-    local tween = TweenService:Create(
-        hrp,
-        TweenInfo.new(
-            duration or 0.8,
-            Enum.EasingStyle.Quad,
-            Enum.EasingDirection.Out
-        ),
-        {
-            CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-        }
-    )
-
-    tween:Play()
-    tween.Completed:Wait()
-
-    task.wait(0.3)
-end
-
-local function teleportTo(pos)
-    local hrp = getHRP()
-
-    if not hrp then
-        return
-    end
-
-    hrp.AssemblyLinearVelocity = Vector3.zero
-    hrp.AssemblyAngularVelocity = Vector3.zero
-
-    hrp.CFrame = CFrame.new(pos)
-end
-
--- =========================================================
--- INSTANCE POSITION HELPERS
--- =========================================================
-
--- *GetPivot works on a Model without a PrimaryPart; parts not streamed in return nil*
-local function instPos(inst)
-    if not inst then
-        return nil
-    end
-
-    if inst:IsA("BasePart") then
-        return inst.Position
-    end
-
-    if inst:IsA("Model") then
-        local ok, cf = pcall(inst.GetPivot, inst)
-
-        if ok then
-            return cf.Position
-        end
-    end
-
-    local part = inst:FindFirstChildWhichIsA("BasePart", true)
-
-    return part and part.Position
-end
-
-local function promptWorldPos(prompt)
-    local parent = prompt.Parent
-
-    if parent and parent:IsA("BasePart") then
-        return parent.Position
-    end
-
-    if parent and parent:IsA("Attachment") then
-        return parent.WorldPosition
-    end
-
-    local part = prompt:FindFirstAncestorWhichIsA("BasePart")
-
-    return part and part.Position
-end
-
--- =========================================================
--- PHONE PROMPT IDENTIFICATION
--- =========================================================
-
-local telephoneRef
-
-local function isPhonePrompt(prompt)
-    if not prompt then
-        return false
-    end
-
-    if telephoneRef and prompt:IsDescendantOf(telephoneRef) then
-        return true
-    end
-
-    if prompt.Name:lower():find("phone", 1, true) then
-        return true
-    end
-
-    local ancestor = prompt.Parent
-
-    while ancestor and ancestor ~= workspace do
-        if ancestor.Name:lower():find("phone", 1, true) then
-            return true
-        end
-
-        ancestor = ancestor.Parent
-    end
-
-    return false
-end
-
--- =========================================================
--- PROMPT (single fire guard)
--- =========================================================
-
--- One fire per prompt inside FIRE_WINDOW seconds, no matter who asks
--- (manual step code or the auto watcher). Duplicates return true without
--- firing again.
-local FIRE_WINDOW = 1.2
-local lastFire = setmetatable({}, { __mode = "k" })
-
-local function firePrompt(prompt)
-    if not prompt then
-        return false
-    end
-
-    if type(fireproximityprompt) ~= "function" then
-        dbg("PROMPT", "fireproximityprompt unsupported")
-        return false
-    end
-
-    local now = os.clock()
-
-    if lastFire[prompt] and now - lastFire[prompt] < FIRE_WINDOW then
-        dbg("PROMPT", "skip duplicate", prompt:GetFullName())
-        return true
-    end
-
-    lastFire[prompt] = now
-
-    pcall(function()
-        prompt.HoldDuration = 0
-        prompt.RequiresLineOfSight = false
-        prompt.MaxActivationDistance = 50
-    end)
-
-    local ok, err = pcall(fireproximityprompt, prompt)
-
-    if not ok then
-        dbg("PROMPT", "fire failed:", err)
-        return false
-    end
-
-    dbg("PROMPT", "fired", prompt:GetFullName())
-
-    task.wait(0.3)
-
-    return true
-end
-
--- =========================================================
--- DIALOG DETECTION + SKIP
--- =========================================================
-
--- Any enabled ScreenGui in PlayerGui whose name contains one of these
--- (case-insensitive) counts as an open dialog. Use Debug > Dump Dialog GUIs
--- to find the real name if a dialog is not detected.
-local DIALOG_PATTERNS = { "dialog", "dialogue", "conversation" }
-
-local function isDialogOpen()
-    for _, gui in ipairs(PlayerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") and gui.Enabled then
-            local n = gui.Name:lower()
-
-            for _, pattern in ipairs(DIALOG_PATTERNS) do
-                if n:find(pattern, 1, true) then
-                    return true, gui.Name
-                end
-            end
-        end
-    end
-
-    return false, nil
-end
-
-local function pressReturn()
-    VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-    task.wait(0.05)
-    VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-end
-
-local SKIP_HARD_CAP = 20
-local skipping = false
-local skipMinUntil = 0
-
--- Presses Return until the dialog GUI is gone (and at least `minSeconds`
--- have passed since the latest trigger). Hard cap protects against a
--- permanently-enabled GUI matching the pattern.
-local function triggerDialogSkip(minSeconds)
-    skipMinUntil = math.max(skipMinUntil, os.clock() + (minSeconds or 2))
-
-    if skipping then
-        return
-    end
-
-    skipping = true
-
-    task.spawn(function()
-        local startTime = os.clock()
-
-        dbg("DIALOG", "skip start")
-
-        while
-            AutofarmBarista.Running
-            and os.clock() - startTime < SKIP_HARD_CAP
-        do
-            local open = isDialogOpen()
-
-            if not open and os.clock() >= skipMinUntil then
-                break
-            end
-
-            pressReturn()
-
-            task.wait(0.2)
-        end
-
-        dbg("DIALOG", "skip end", string.format("%.1fs", os.clock() - startTime))
-
-        skipping = false
-    end)
-end
-
--- Blocks until the skip loop is finished and no dialog GUI is open.
-local function waitDialogDone(maxSeconds)
-    local startTime = os.clock()
-
-    task.wait(0.5)
-
-    while
-        AutofarmBarista.Running
-        and (skipping or isDialogOpen())
-        and os.clock() - startTime < (maxSeconds or SKIP_HARD_CAP)
-    do
-        task.wait(0.3)
-    end
-end
-
--- =========================================================
--- PHONE: UI DETECTION + ANSWER
--- =========================================================
-
--- The Barista panel (top-left / side) shows a line such as
--- "The phone is ringing! Pick up the cafe phone first (E)".
--- Any visible TextLabel/TextButton containing one of these (case-insensitive)
--- counts as "phone ringing". Use Debug > Dump Barista UI to see the real text.
-local PHONE_TEXT_PATTERNS = {
-    "phone is ringing",
-    "pick up the cafe phone",
-    "answer the phone",
-}
-
-local PHONE_ATTEMPTS = 2
-
-local function isGuiShown(obj)
-    local current = obj
-
-    while current and current ~= PlayerGui do
-        if current:IsA("GuiObject") and not current.Visible then
-            return false
-        end
-
-        if current:IsA("ScreenGui") and not current.Enabled then
-            return false
-        end
-
-        current = current.Parent
-    end
-
-    return current == PlayerGui
-end
-
-local function labelMatchesPhone(label)
-    local text = label.Text
-
-    if type(text) ~= "string" or text == "" then
-        return false
-    end
-
-    text = text:lower()
-
-    for _, pattern in ipairs(PHONE_TEXT_PATTERNS) do
-        if text:find(pattern, 1, true) then
-            return true
-        end
-    end
-
-    return false
-end
-
-local phoneLabelCache
-local lastPhoneScan = 0
-
--- *GetDescendants on PlayerGui is O(n); the cached label makes the ringing
--- check O(1) while the text is on screen, full scans are throttled to 0.4s*
-local function phoneRinging()
-    local cached = phoneLabelCache
-
-    if cached
-        and cached.Parent
-        and labelMatchesPhone(cached)
-        and isGuiShown(cached) then
-
-        return true
-    end
-
-    phoneLabelCache = nil
-
-    if os.clock() - lastPhoneScan < 0.4 then
-        return false
-    end
-
-    lastPhoneScan = os.clock()
-
-    for _, inst in ipairs(PlayerGui:GetDescendants()) do
-        if (inst:IsA("TextLabel") or inst:IsA("TextButton"))
-            and labelMatchesPhone(inst)
-            and isGuiShown(inst) then
-
-            phoneLabelCache = inst
-
-            dbg("PHONE", "ringing text:", inst:GetFullName(), inst.Text)
-
-            return true
-        end
-    end
-
-    return false
-end
-
-local function getTelephone()
-    if telephoneRef and telephoneRef.Parent then
-        return telephoneRef
-    end
-
-    local newJob = workspace:FindFirstChild("NEW_JOB")
-
-    local cafe =
-        newJob
-        and newJob:FindFirstChild("Cafe")
-
-    local kanji =
-        cafe
-        and cafe:FindFirstChild("Cafe_Kanji_Jawa")
-
-    local tel =
-        kanji
-        and kanji:FindFirstChild("Telphone")
-
-    telephoneRef =
-        tel
-        and tel:FindFirstChild("Telephone")
-
-    return telephoneRef
-end
-
-local function findPhonePrompt(tel)
-    if tel then
-        return
-            tel:FindFirstChild("BaristaPhonePrompt", true)
-            or tel:FindFirstChildWhichIsA("ProximityPrompt", true)
-    end
-
-    for _, inst in ipairs(workspace:GetDescendants()) do
-        if inst:IsA("ProximityPrompt") and isPhonePrompt(inst) then
-            return inst
-        end
-    end
-
-    return nil
-end
-
--- One "ring" = up to PHONE_ATTEMPTS interacts. The second attempt only runs
--- if the ringing text is STILL on screen after the first dialog finished.
-local function answerPhone()
-    if phoneBusy then
-        return
-    end
-
-    phoneBusy = true
-
-    local previousStep = AutofarmBarista.CurrentStep
-
-    AutofarmBarista.CurrentStep = "Answering Barista phone..."
-
-    local ok, err = pcall(function()
-        for attempt = 1, PHONE_ATTEMPTS do
-            if not AutofarmBarista.Running then
-                break
-            end
-
-            dbg("PHONE", "attempt", attempt, "/", PHONE_ATTEMPTS)
-
-            local tel = getTelephone()
-            local pos = instPos(tel)
-
-            if pos then
-                teleportTo(pos + Vector3.new(0, 3, 0))
-            end
-
-            task.wait(0.8)
-
-            local prompt = findPhonePrompt(tel)
-
-            dbg("PHONE", "prompt", prompt and prompt:GetFullName() or "nil")
-
-            if prompt then
-                firePrompt(prompt)
-            end
-
-            triggerDialogSkip(3)
-
-            waitDialogDone(SKIP_HARD_CAP)
-
-            -- wait for the ringing text to go away
-            local waitStart = os.clock()
-
-            while
-                AutofarmBarista.Running
-                and phoneRinging()
-                and os.clock() - waitStart < 5
-            do
-                task.wait(0.3)
-            end
-
-            if not phoneRinging() then
-                dbg("PHONE", "answered")
-                break
-            end
-
-            -- longer than FIRE_WINDOW so the second fire is not swallowed
-            task.wait(1.5)
-        end
-    end)
-
-    if not ok then
-        dbg("PHONE", "error", err)
-    end
-
-    AutofarmBarista.CurrentStep = previousStep
-
-    phoneBusy = false
-end
-
-local function stopPhoneWatcher()
-    if phoneThread then
-        pcall(task.cancel, phoneThread)
-        phoneThread = nil
-    end
-
-    phoneBusy = false
-end
-
-local function startPhoneWatcher()
-    stopPhoneWatcher()
-
-    phoneThread = task.spawn(function()
-        local cooldownUntil = 0
-
-        while AutofarmBarista.Running and AutofarmBarista.JobActive do
-            if not phoneBusy
-                and os.clock() >= cooldownUntil
-                and phoneRinging() then
-
-                dbg("PHONE", "ringing detected")
-
-                answerPhone()
-
-                cooldownUntil = os.clock() + 3
-            end
-
-            task.wait(0.5)
-        end
-    end)
-end
-
--- =========================================================
--- BARISTA NPC JOB ACQUISITION
--- =========================================================
-
--- CFrame of NPC_BARISTA_MANAGER. The character is pivoted here FIRST,
--- everything else (NPC lookup, prompt, dialog) happens afterwards.
-local NPC_CFRAME = CFrame.new(
-    -13.505, 23.252, 8451.661,
-    0.891, -0.000, -0.454,
-    0.000, 1.000, -0.000,
-    0.454, 0.000, 0.891
-)
-
-local NPC_PROMPT_RADIUS = 30
-
-local function pivotToNpc()
-    local char = LocalPlayer.Character
-    local hrp = getHRP()
-
-    if not char or not hrp then
-        dbg("JOB", "character/HRP missing")
-        return false
-    end
-
-    hrp.AssemblyLinearVelocity = Vector3.zero
-    hrp.AssemblyAngularVelocity = Vector3.zero
-
-    -- *PivotTo moves the whole character model, safer than setting hrp.CFrame*
-    char:PivotTo(NPC_CFRAME * CFrame.new(0, 3, 0))
-
-    dbg("JOB", "pivoted to NPC_CFRAME", tostring(NPC_CFRAME.Position))
-
-    return true
-end
-
--- Looks for the manager's DialogPrompt. Tries the named NPC first, then falls
--- back to the closest ProximityPrompt around NPC_CFRAME. Retries for up to
--- `timeout` seconds so StreamingEnabled can stream the NPC in after the pivot.
-local function findManagerPrompt(timeout)
-    local deadline = os.clock() + timeout
-
-    repeat
-        local barista = workspace:FindFirstChild("Barista")
-
-        local npc =
-            barista and barista:FindFirstChild("NPC_BARISTA_MANAGER")
-            or workspace:FindFirstChild("NPC_BARISTA_MANAGER", true)
-
-        if npc then
-            local prompt =
-                npc:FindFirstChild("DialogPrompt", true)
-                or npc:FindFirstChildWhichIsA("ProximityPrompt", true)
-
-            if prompt then
-                dbg("JOB", "prompt via NPC model:", prompt:GetFullName())
-                return prompt, npc
-            end
-        end
-
-        local bestPrompt
-        local bestDist = NPC_PROMPT_RADIUS
-
-        for _, inst in ipairs(workspace:GetDescendants()) do
-            if inst:IsA("ProximityPrompt") then
-                local pos = promptWorldPos(inst)
-
-                if pos then
-                    local dist = (pos - NPC_CFRAME.Position).Magnitude
-
-                    if dist < bestDist then
-                        bestDist = dist
-                        bestPrompt = inst
-                    end
-                end
-            end
-        end
-
-        if bestPrompt then
-            dbg(
-                "JOB",
-                "prompt via CFrame radius:",
-                bestPrompt:GetFullName(),
-                "dist",
-                bestDist
-            )
-
-            return bestPrompt, nil
-        end
-
-        task.wait(0.5)
-    until os.clock() >= deadline or not AutofarmBarista.Running
-
-    return nil, nil
-end
-
-local function getBaristaJob(ws, jobRemote)
-    -- -----------------------------------------------------
-    -- 1. TELEPORT TO NPC CFRAME
-    -- -----------------------------------------------------
-
-    AutofarmBarista.CurrentStep = "Going to Barista Manager..."
-
-    dbg("JOB", "step 1: teleport to NPC CFrame")
-
-    if not pivotToNpc() then
-        return false
-    end
-
-    task.wait(1)
-
-    if not AutofarmBarista.Running then
-        return false
-    end
-
-    -- -----------------------------------------------------
-    -- 2. FIND PROMPT (NPC streams in after the pivot)
-    -- -----------------------------------------------------
-
-    dbg("JOB", "step 2: locate DialogPrompt")
-
-    local prompt, npc = findManagerPrompt(10)
-
-    if not prompt then
-        dbg("JOB", "DialogPrompt not found near NPC CFrame")
-        return false
-    end
-
-    if ws and npc then
-        ws.NpcManager = npc
-    end
-
-    local hrp = getHRP()
-    local pPos = promptWorldPos(prompt)
-
-    dbg(
-        "JOB",
-        "distance to prompt:",
-        (hrp and pPos) and (hrp.Position - pPos).Magnitude or "nil"
-    )
-
-    -- -----------------------------------------------------
-    -- 3. INTERACT (once)
-    -- -----------------------------------------------------
-
-    AutofarmBarista.CurrentStep = "Interacting with Manager..."
-
-    dbg("JOB", "step 3: interact")
-
-    pcall(function()
-        prompt.RequiresLineOfSight = false
-        prompt.MaxActivationDistance = 50
-        prompt.HoldDuration = 0
-    end)
-
-    local interacted = false
-
-    if type(fireproximityprompt) == "function" then
-        lastFire[prompt] = os.clock()
-
-        local ok, err = pcall(fireproximityprompt, prompt)
-
-        interacted = ok
-
-        if not ok then
-            dbg("JOB", "fireproximityprompt failed:", err)
-        end
-    else
-        pcall(function()
-            prompt:InputHoldBegin()
-
-            task.wait(math.max(prompt.HoldDuration, 0) + 0.1)
-
-            prompt:InputHoldEnd()
-        end)
-
-        interacted = true
-    end
-
-    if not interacted then
-        dbg("JOB", "NPC interaction failed")
-        return false
-    end
-
-    task.wait(0.8)
-
-    -- -----------------------------------------------------
-    -- 4. SKIP NPC DIALOG (until the dialog GUI closes)
-    -- -----------------------------------------------------
-
-    AutofarmBarista.CurrentStep = "Skipping Manager dialog..."
-
-    dbg("JOB", "step 4: skip dialog")
-
-    local presses = 0
-
-    while AutofarmBarista.Running do
-        presses += 1
-
-        pressReturn()
-
-        task.wait(0.25)
-
-        if presses >= 10 and not isDialogOpen() then
-            break
-        end
-
-        if presses >= 80 then
-            dbg("JOB", "dialog skip hit press cap")
-            break
-        end
-    end
-
-    if not AutofarmBarista.Running then
-        return false
-    end
-
-    task.wait(0.8)
-
-    -- -----------------------------------------------------
-    -- 5. CONFIRM BARISTA JOB
-    -- -----------------------------------------------------
-
-    dbg("JOB", "step 5: confirm job")
-
-    local gotJob = false
-    local jobConnection
-
-    if jobRemote and jobRemote:IsA("RemoteEvent") then
-        jobConnection =
-            jobRemote.OnClientEvent:Connect(function(action, jobName)
-                dbg("JOB_EVENT", tostring(action), tostring(jobName))
-
-                if action == "SetJob"
-                    and tostring(jobName) == "Barista" then
-
-                    gotJob = true
-                end
+-- JawaDeobfucate Instance _ 28852 | Executor Project Nigger lol v.1.
+-- Syntax is Luau JIT (uses `continue`).
+repeat
+    task.wait()
+until game:IsLoaded()
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local CollectionService = game:GetService("CollectionService")
+local Lighting = game:GetService("Lighting")
+local localplayer = Players.LocalPlayer
+local value
+local function fn(arg1)
+    if getconnections then
+        for k, v in getconnections(arg1.Idled) do
+            pcall(function()
+                v:Disable()
             end)
-    end
-
-    local startTime = os.clock()
-
-    while
-        AutofarmBarista.Running
-        and not gotJob
-        and os.clock() - startTime < 10
-    do
-        local jobGui = PlayerGui:FindFirstChild("Job")
-
-        local baristaGui =
-            jobGui
-            and jobGui:FindFirstChild("Barista")
-
-        if baristaGui then
-            gotJob = true
-            break
+            pcall(function()
+                v:Disconnect()
+            end)
         end
-
-        local character = LocalPlayer.Character
-
-        if character then
-            local jobValue = character:FindFirstChild("Job")
-
-            if jobValue
-                and jobValue:IsA("StringValue")
-                and jobValue.Value == "Barista" then
-
-                gotJob = true
-                break
+    end
+    pcall(function()
+        value:Disconnect()
+    end)
+    value = arg1.Idled:Connect(function()
+        local virtualinputmanager = Instance.new("VirtualInputManager")
+        virtualinputmanager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+        virtualinputmanager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        virtualinputmanager:Destroy()
+    end)
+end
+local function fn2()
+    if value then
+        value:Disconnect()
+        value = nil
+    end
+end
+fn(localplayer)
+local trafficfolder = Workspace:WaitForChild("TrafficFolder", 15)
+local remotes = ReplicatedStorage:WaitForChild("Remotes", 10)
+local updatespeedbridge = ReplicatedStorage:FindFirstChild("UpdateSpeedBridge")
+local spawncarevent = remotes:FindFirstChild("SpawnCarEvent")
+local num = 70000
+pcall(function()
+    local module = require(ReplicatedStorage:WaitForChild("Controllers", 10):WaitForChild("PoliceBustedController", 10):WaitForChild("PoliceConfig", 10))
+    if module and tonumber(module.MaxCashPerRun) then
+        num = tonumber(module.MaxCashPerRun)
+    end
+end)
+local list = {}
+local function fn3(arg1)
+    if not arg1 or list[arg1] then
+        return
+    end
+    list[arg1] = true
+    pcall(function()
+        for i, v in ipairs(arg1:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.CanCollide = false
+                v.CanTouch = false
+                v.CastShadow = false
+                continue
+            end
+            if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke") or v:IsA("Fire") or v:IsA("Sparkles") then
+                v.Enabled = false
+            else
+                if not v:IsA("Light") then
+                    continue
+                end
+                v.Enabled = false
             end
         end
-
-        -- The Barista remote / workspace folder only exist once the job is
-        -- active, so their appearance also confirms the job.
-        if workspace:FindFirstChild("BaristaCustomers") then
-            gotJob = true
-            break
-        end
-
-        task.wait(0.2)
-    end
-
-    if jobConnection then
-        jobConnection:Disconnect()
-        jobConnection = nil
-    end
-
-    if gotJob then
-        AutofarmBarista.CurrentStep = "Barista Job Acquired"
-
-        dbg("JOB", "Barista job acquired successfully")
-
-        task.wait(1)
-
-        return true
-    end
-
-    -- The interaction can succeed even when this client
-    -- does not expose SetJob/Job GUI immediately.
-    dbg("JOB", "Job confirmation not detected, continuing anyway")
-
-    task.wait(1)
-
-    return true
+    end)
 end
-
--- =========================================================
--- STATION POSITIONS
--- =========================================================
-
--- Fallback only. X and Z were swapped in the original table (the map lives
--- around Z ~ 8450), so they are swapped back right after the definition.
-local STATION_POSITIONS = {
-    BeanHopper     = Vector3.new(8415.3,     23.5, 53.8085098),
-    Brewer         = Vector3.new(8416.7,     23.5, 53.8085098),
-    Steamer        = Vector3.new(8419,       23.5, 53.8085098),
-    Milk           = Vector3.new(8426.7,     23.5, 53.8085098),
-    IceMaker       = Vector3.new(8431,       23.5, 53.8085098),
-    CreamDispenser = Vector3.new(8433.7,     23.5, 53.8085098),
-    Carbonator     = Vector3.new(8436.2,     23.5, 53.8085098),
-    BobaPot        = Vector3.new(8436.4,     23.5, 53.8085098),
-    WaterTap       = Vector3.new(8436.50586, 23.5, 18.9660721),
-    TeaBox         = Vector3.new(8438.5,     23.5, 53.8085098),
-    LemonBoard     = Vector3.new(8441,       23.5, 53.8085098),
-    MatchaJar      = Vector3.new(8441.2,     23.5, 53.8085098),
-    ChocolateJar   = Vector3.new(8443.2,     23.5, 53.8085098),
-    CreamJar       = Vector3.new(8443.6,     23.5, 53.8085098),
-    FlavourBottle  = Vector3.new(8449,       23.5, 53.8085098),
-    CupRack        = Vector3.new(8413.8,     23.5, 53.8085098),
-    Trash          = Vector3.new(8409.1,     23.5, 53.8085098),
-    BrewHoldArea   = Vector3.new(8415.4,     23.5, 53.8085098),
+local function fn4(arg1)
+    list[arg1] = nil
+end
+if trafficfolder then
+    trafficfolder.ChildAdded:Connect(function(arg1)
+        task.defer(function()
+            fn3(arg1)
+        end)
+    end)
+    trafficfolder.ChildRemoved:Connect(fn4)
+    for i, v in ipairs(trafficfolder:GetChildren()) do
+        fn3(v)
+    end
+end
+local list2 = {}
+local function fn5(arg1)
+    if arg1 and arg1:IsA("Model") then
+        if CollectionService:HasTag(arg1, "PoliceAI") or arg1:GetAttribute("IsPoliceAI") or arg1.Name:lower():find("police") then
+            list2[arg1] = true
+            fn3(arg1)
+        end
+    end
+end
+CollectionService:GetInstanceAddedSignal("PoliceAI"):Connect(fn5)
+CollectionService:GetInstanceRemovedSignal("PoliceAI"):Connect(function(arg1)
+    list2[arg1] = nil
+    fn4(arg1)
+end)
+Workspace.ChildAdded:Connect(function(arg1)
+    task.defer(function()
+        fn5(arg1)
+        if arg1.Name == "PoliceHelicopters" then
+            arg1.ChildAdded:Connect(function(arg1_2)
+                task.defer(function()
+                    fn3(arg1_2)
+                end)
+            end)
+            for i2, v2 in ipairs(arg1:GetChildren()) do
+                fn3(v2)
+            end
+        end
+    end)
+end)
+Workspace.ChildRemoved:Connect(function(arg1)
+    list2[arg1] = nil
+    fn4(arg1)
+end)
+for i2, v2 in ipairs(CollectionService:GetTagged("PoliceAI")) do
+    fn5(v2)
+end
+for i3, v3 in ipairs(Workspace:GetChildren()) do
+    fn5(v3)
+end
+local policehelicopters = Workspace:FindFirstChild("PoliceHelicopters")
+if policehelicopters then
+    policehelicopters.ChildAdded:Connect(function(arg1)
+        task.defer(function()
+            fn3(arg1)
+        end)
+    end)
+    for i4, v4 in ipairs(policehelicopters:GetChildren()) do
+        fn3(v4)
+    end
+end
+local function fn6()
+    pcall(function()
+        localplayer:SetAttribute("MobilePerfMode", false)
+        localplayer:SetAttribute("LowGraphicsMode", true)
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 9000000000
+        for i5, v5 in ipairs(Lighting:GetChildren()) do
+            if not (v5:IsA("DepthOfFieldEffect") or v5:IsA("SunRaysEffect") or v5:IsA("BloomEffect")) then
+                continue
+            end
+            v5.Enabled = false
+        end
+        if settings and settings().Rendering then
+            settings().Rendering.QualityLevel = 1
+        end
+        local UserGameSettings = UserSettings():GetService("UserGameSettings")
+        if UserGameSettings then
+            UserGameSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
+        end
+    end)
+end
+local inputheartbeat
+pcall(function()
+    local remotes2 = ReplicatedStorage:FindFirstChild("AC6Shared") and ReplicatedStorage.AC6Shared:FindFirstChild("Remotes")
+    inputheartbeat = remotes2 and remotes2:FindFirstChild("InputHeartbeat")
+end)
+local inputheartbeat2
+pcall(function()
+    local module = require(ReplicatedStorage.Packages.Remotes)
+    inputheartbeat2 = module and module.InputHeartbeat
+end)
+local module
+pcall(function()
+    module = require(ReplicatedStorage.Controllers.InputHeartbeatController)
+end)
+local function fn7()
+    pcall(function()
+        if inputheartbeat then
+            inputheartbeat:FireServer()
+        end
+        if inputheartbeat2 then
+            inputheartbeat2:FireServer()
+        end
+        if module then
+            module.pending = true
+        end
+    end)
+end
+pcall(function()
+    localplayer.Idled:Connect(fn7)
+end)
+task.spawn(function()
+    while true do
+        task.wait(3.5)
+        fn7()
+    end
+end)
+local chunk = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+local window = chunk:CreateWindow({
+    Title = "Ghost Driver",
+    Icon = "car",
+    Author = "DX-SR HUB",
+    Folder = "GhostDriver",
+    Size = UDim2.fromOffset(580, 460),
+    MinSize = Vector2.new(560, 350),
+    MaxSize = Vector2.new(850, 560),
+    ToggleKey = Enum.KeyCode.V,
+    Transparent = true,
+    Theme = "Dark",
+    Resizable = true,
+    SideBarWidth = 200,
+    BackgroundImageTransparency = 0.42,
+    HideSearchBar = false,
+    ScrollBarEnabled = false,
+})
+window:Tag({Title = "v0.0.0.5", Icon = "github", Color = Color3.fromHex("#30ff6a"), Radius = 13})
+window:Tag({Title = "DX-SR", Icon = "code", Color = Color3.fromHex("#1E3A8A"), Radius = 13})
+local function fn8(arg1, arg2, arg3)
+    if not arg1 then
+        return
+    end
+    pcall(function()
+        if arg1.SetDesc then
+            arg1:SetDesc(arg2)
+            if arg3 and arg1.SetTitle then
+                arg1:SetTitle(arg3)
+            end
+        elseif arg1.Set then
+            local config = {Desc = arg2}
+            if arg3 then
+                config.Title = arg3
+            end
+            arg1:Set(config)
+        end
+    end)
+end
+local function fn9(arg1)
+    if not arg1 or arg1 ~= arg1 then
+        return "0"
+    end
+    local reverse = tostring(math.floor(arg1)):reverse():gsub("(%d%d%d)", "%1,"):reverse()
+    if reverse:sub(1, 1) == "," then
+        reverse = reverse:sub(2)
+    end
+    return reverse
+end
+local config = {
+    AutoFarm = false,
+    Speed = 110,
+    SelectedCar = "Weinchen V20",
+    SelectedMode = "Normal",
+    PoliceStars = 3,
+    ZeroLag = true,
+    TotalOvertakes = 0,
+    StartCash = 0,
+    LaneWidth = 13.5,
+    LookAheadDist = 220,
+    WeaveLerpSpeed = 8.5,
 }
-
-for name, v in pairs(STATION_POSITIONS) do
-    STATION_POSITIONS[name] = Vector3.new(v.Z, v.Y, v.X)
-end
-
--- Real instance position first, swapped table as fallback.
-local function goToStation(ws, stationName)
-    local obj =
-        ws.Stations
-        and ws.Stations:FindFirstChild(stationName)
-
-    local pos = instPos(obj) or STATION_POSITIONS[stationName]
-
-    if not pos then
-        dbg("STATION", "no position for", stationName)
-        return obj
+pcall(function()
+    local leaderstats = localplayer:WaitForChild("leaderstats", 5)
+    if leaderstats and leaderstats:FindFirstChild("Cash") then
+        config.StartCash = leaderstats.Cash.Value
     end
-
-    teleportTo(pos + Vector3.new(0, 3, 0))
-
-    dbg(
-        "STATION",
-        stationName,
-        "->",
-        tostring(pos),
-        obj and "instance" or "fallback"
-    )
-
-    return obj
-end
-
--- Teleports to the station; if the phone routine grabbed the character in the
--- meantime, waits for it and teleports again. Returns the station instance.
-local function gotoStationSafe(ws, stationName, settle)
-    local obj
-
-    for _ = 1, 5 do
-        waitPhone()
-
-        obj = goToStation(ws, stationName)
-
-        task.wait(settle or 0.4)
-
-        if not phoneBusy then
-            break
-        end
-    end
-
-    return obj
-end
-
--- =========================================================
--- BARISTA REMOTE LISTENER
--- =========================================================
-
-local function attachListener()
-    if baristaConn then
-        baristaConn:Disconnect()
-        baristaConn = nil
-    end
-
-    lastCupState = nil
-    lastOrderData = nil
-
-    if not BaristaRemote then
-        return
-    end
-
-    baristaConn =
-        BaristaRemote.OnClientEvent:Connect(function(action, data, extra)
-            dbg(
-                "EVENT",
-                tostring(action),
-                type(data) == "table" and "<table>" or tostring(data),
-                tostring(extra)
-            )
-
-            if action == "CupState"
-                and type(data) == "table" then
-
-                lastCupState = data
-
-                AutofarmBarista.CurrentStep =
-                    tostring(
-                        data.nextStep
-                        or data.nextStation
-                        or "?"
-                    )
-
-            elseif action == "OrderTaken"
-                and not lastOrderData then
-
-                lastOrderData = {
-                    menuId = data,
-                    flavour = extra
-                }
-
-            elseif action == "OrderDone" then
-                Stats.Orders += 1
-
-            elseif action == "JobProgress"
-                and type(data) == "table" then
-
-                Stats.Salary = tonumber(data.salary) or Stats.Salary
-                Stats.XP = tonumber(data.xp) or Stats.XP
-
-            elseif action == "LevelUpBanner" then
-                notify("Level Up!", tostring(data) .. " XP", 3, "sparkles")
-
-            elseif action == "HasClaimable" then
-                BaristaRemote:FireServer("Claim")
-            end
+end)
+pcall(function()
+    local swerveuibridge = ReplicatedStorage:FindFirstChild("SwerveUIBridge")
+    if swerveuibridge then
+        swerveuibridge.Event:Connect(function()
+            config.TotalOvertakes = config.TotalOvertakes + 1
         end)
+    end
+end)
+local function fn10()
+    local character = localplayer.Character
+    if not character then
+        return nil, nil
+    end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or not humanoid.SeatPart or not humanoid.SeatPart:IsA("VehicleSeat") then
+        return nil, nil
+    end
+    local seatpart = humanoid.SeatPart
+    local model = seatpart:FindFirstAncestorOfClass("Model")
+    if model and model.Name == "Body" then
+        model = model.Parent
+    end
+    return model, seatpart
 end
-
--- =========================================================
--- BREW MINIGAME
--- =========================================================
-
-local function autoBrewMinigame()
-    local jobGui = PlayerGui:FindFirstChild("Job")
-
-    local brewGui =
-        jobGui
-        and jobGui:FindFirstChild("BrewMinigame")
-
-    if not brewGui or not brewGui.Visible then
-        return false
-    end
-
-    local track = brewGui:FindFirstChild("Track")
-
-    local zone =
-        track
-        and track:FindFirstChild("Zone")
-
-    local needle =
-        track
-        and track:FindFirstChild("Needle")
-
-    local result = brewGui:FindFirstChild("ResultLabel")
-
-    if not (zone and needle and result) then
-        dbg("BREW", "minigame elements missing")
-        return false
-    end
-
-    local waited = 0
-
-    while zone.AbsoluteSize.X == 0 and waited < 30 do
-        task.wait(0.05)
-        waited += 1
-    end
-
-    dbg("BREW", "minigame start")
-
-    local holding = false
-
-    local conn =
-        RunService.Heartbeat:Connect(function()
-            if not brewGui.Visible
-                or not AutofarmBarista.Running then
-
-                return
+local function fn11()
+    local list3 = {}
+    local flag = false
+    pcall(function()
+        local requestgaragedata = remotes:FindFirstChild("RequestGarageData")
+        if requestgaragedata and requestgaragedata:IsA("RemoteFunction") then
+            local invokeserver = requestgaragedata:InvokeServer()
+            if type(invokeserver) == "table" then
+                for k, v5 in pairs(invokeserver) do
+                    table.insert(list3, tostring(k))
+                end
+                if #list3 > 0 then
+                    flag = true
+                end
             end
-
-            local needleMid =
-                needle.AbsolutePosition.X
-                + needle.AbsoluteSize.X / 2
-
-            local zoneLeft = zone.AbsolutePosition.X
-
-            local inside =
-                needleMid > zoneLeft
-                and needleMid < zoneLeft + zone.AbsoluteSize.X
-
-            if inside ~= holding then
-                holding = inside
-
-                VIM:SendKeyEvent(inside, Enum.KeyCode.Space, false, game)
-            end
-        end)
-
-    local ticks = 0
-
-    while
-        result.Text ~= "100%"
-        and ticks < 300
-        and AutofarmBarista.Running
-        and brewGui.Visible
-    do
-        task.wait(0.1)
-        ticks += 1
-    end
-
-    conn:Disconnect()
-
-    if holding then
-        VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-    end
-
-    local success = result.Text == "100%"
-
-    dbg("BREW", "result", result.Text, "success", success)
-
-    BaristaRemote:FireServer("BrewResult", success and 1 or 0)
-
-    task.wait(0.3)
-
-    return success
-end
-
--- =========================================================
--- CUP STATE
--- =========================================================
-
-local function waitForCupState(timeout)
-    local ticks = 0
-    local limit = (timeout or 5) * 10
-
-    while
-        not lastCupState
-        and ticks < limit
-        and AutofarmBarista.Running
-    do
-        task.wait(0.1)
-        ticks += 1
-    end
-
-    local state = lastCupState
-
-    lastCupState = nil
-
-    return state
-end
-
--- =========================================================
--- USE STATION
--- =========================================================
-
-local function useStation(ws, stationName)
-    local obj = gotoStationSafe(ws, stationName, 0.4)
-
-    local prompt =
-        obj
-        and obj:FindFirstChildWhichIsA("ProximityPrompt", true)
-
-    if prompt then
-        firePrompt(prompt)
-    else
-        BaristaRemote:FireServer("Station", stationName)
-    end
-
-    task.wait(0.3)
-end
-
--- =========================================================
--- STATION LOOP
--- =========================================================
-
-local function runStationLoop(ws)
-    for step = 1, 30 do
-        if not AutofarmBarista.Running then
-            break
         end
-
-        local state = waitForCupState(8)
-
-        if not state then
-            dbg("LOOP", "CupState timeout at step", step)
-            break
-        end
-
-        if state.ruined then
-            AutofarmBarista.CurrentStep = "Cup ruined, discarding..."
-
-            notify("Barista", "Cup ruined, discarding...", 2)
-
-            return "ruined"
-        end
-
-        if state.doneCount
-            and state.stepCount
-            and state.doneCount >= state.stepCount then
-
-            AutofarmBarista.CurrentStep = "Ready to serve!"
-
-            return "done"
-        end
-
-        local stationName = state.nextStation
-
-        if not stationName then
-            dbg("LOOP", "no nextStation at step", step)
-            break
-        end
-
-        AutofarmBarista.CurrentStep =
-            "Step: " .. tostring(state.nextStep or stationName)
-
-        dbg("LOOP", "step", step, "->", stationName)
-
-        useStation(ws, stationName)
-
-        task.wait(0.2)
-
-        autoBrewMinigame()
-    end
-
-    return "timeout"
-end
-
--- =========================================================
--- TAKE CUSTOMER ORDER
--- =========================================================
-
-local function takeOrderFromCustomer(customer, orderIndex)
-    local hrp = customer:FindFirstChild("HumanoidRootPart")
-
-    if not hrp then
-        return nil
-    end
-
-    AutofarmBarista.CurrentStep = "Taking order #" .. orderIndex
-
-    tweenTo(hrp)
-
-    -- Reset BEFORE requesting the order.
-    lastOrderData = nil
-
-    BaristaRemote:FireServer("TakeOrder", orderIndex)
-
-    task.wait(0.5)
-
-    local servePrompt = hrp:FindFirstChild("BaristaServePrompt")
-
-    if servePrompt then
-        firePrompt(servePrompt)
-    end
-
-    local ticks = 0
-
-    while
-        not lastOrderData
-        and ticks < 150
-        and AutofarmBarista.Running
-    do
-        task.wait(0.1)
-        ticks += 1
-    end
-
-    dbg(
-        "ORDER",
-        "data",
-        lastOrderData and lastOrderData.menuId or "nil"
-    )
-
-    return lastOrderData
-end
-
--- =========================================================
--- GRAB CUP
--- =========================================================
-
-local function grabCup(ws)
-    local rack = gotoStationSafe(ws, "CupRack", 0.4)
-
-    -- Drop stale state.
-    lastCupState = nil
-
-    local prompt =
-        rack
-        and rack:FindFirstChildWhichIsA("ProximityPrompt", true)
-
-    if prompt then
-        firePrompt(prompt)
-    else
-        BaristaRemote:FireServer("Station", "CupRack")
-    end
-
-    task.wait(0.5)
-end
-
--- =========================================================
--- DISCARD CUP
--- =========================================================
-
-local function discardCup(ws)
-    local obj = gotoStationSafe(ws, "Trash", 0.3)
-
-    local prompt =
-        obj
-        and obj:FindFirstChildWhichIsA("ProximityPrompt", true)
-
-    if prompt then
-        firePrompt(prompt)
-    else
-        BaristaRemote:FireServer("Station", "Trash")
-    end
-
-    task.wait(0.5)
-end
-
--- =========================================================
--- MAKE DRINK
--- =========================================================
-
-local function makeDrink(orderData, ws)
-    local menuId = orderData.menuId or "?"
-    local flavour = orderData.flavour or "?"
-
-    dbg("DRINK", "preparing", menuId, "flavour", flavour)
-
-    AutofarmBarista.CurrentStep = "Taking cup for " .. tostring(menuId)
-
-    notify(
-        "Barista",
-        "Preparing "
-            .. tostring(menuId)
-            .. " (Flavour: "
-            .. tostring(flavour)
-            .. ")",
-        3,
-        "coffee"
-    )
-
-    BaristaRemote:FireServer("Pick", "Menu", menuId)
-
-    task.wait(0.5)
-
-    grabCup(ws)
-
-    local result = runStationLoop(ws)
-
-    if result == "ruined" and AutofarmBarista.Running then
-        discardCup(ws)
-
-        BaristaRemote:FireServer("Pick", "Menu", menuId)
-
-        task.wait(0.5)
-
-        grabCup(ws)
-
-        result = runStationLoop(ws)
-    end
-
-    return result
-end
-
--- =========================================================
--- SERVE CUSTOMER
--- =========================================================
-
-local function serveCustomer(customer)
-    local hrp = customer:FindFirstChild("HumanoidRootPart")
-
-    if not hrp then
-        return
-    end
-
-    AutofarmBarista.CurrentStep = "Serving drink..."
-
-    tweenTo(hrp)
-
-    local servePrompt = hrp:FindFirstChild("BaristaServePrompt")
-
-    if servePrompt then
-        firePrompt(servePrompt)
-    else
-        BaristaRemote:FireServer("Serve", customer.Name)
-    end
-
-    task.wait(0.5)
-
-    notify("Barista", "Order done! " .. fmtStats(), 3, "coffee")
-end
-
--- =========================================================
--- AUTO PROMPT WATCHER
--- =========================================================
-
-local promptShownConn
-local promptHiddenConn
-local dialogConn
-
--- true while a prompt is on screen and was already fired for this show cycle.
--- Cleared on PromptHidden, so the prompt fires again only after it leaves
--- range / disappears and shows up again.
-local firedShown = setmetatable({}, { __mode = "k" })
-
-local function stopWatchers()
-    if promptShownConn then
-        promptShownConn:Disconnect()
-        promptShownConn = nil
-    end
-
-    if promptHiddenConn then
-        promptHiddenConn:Disconnect()
-        promptHiddenConn = nil
-    end
-
-    if dialogConn then
-        dialogConn:Disconnect()
-        dialogConn = nil
-    end
-
-    stopPhoneWatcher()
-
-    skipping = false
-    skipMinUntil = 0
-end
-
-local function startWatchers()
-    stopWatchers()
-
-    -- *PromptShown fires only for prompts in range of the local player*
-    promptShownConn = ProximityPromptService.PromptShown:Connect(function(prompt)
-        if not AutofarmBarista.Running then
-            return
-        end
-
-        -- Phone is handled by the UI-driven routine, never by this watcher.
-        if isPhonePrompt(prompt) then
-            return
-        end
-
-        -- Never re-open the manager dialog once the job is active.
-        if AutofarmBarista.JobActive
-            and prompt:FindFirstAncestor("NPC_BARISTA_MANAGER") then
-
-            return
-        end
-
-        if firedShown[prompt] then
-            return
-        end
-
-        firedShown[prompt] = true
-
-        task.spawn(function()
-            firePrompt(prompt)
-
-            triggerDialogSkip(2)
-        end)
     end)
-
-    promptHiddenConn = ProximityPromptService.PromptHidden:Connect(function(prompt)
-        firedShown[prompt] = nil
-    end)
-
-    if NpcDialogRemote and NpcDialogRemote:IsA("RemoteEvent") then
-        dialogConn = NpcDialogRemote.OnClientEvent:Connect(function(...)
-            dbg("DIALOG", "NpcDialog event", ...)
-
-            triggerDialogSkip(3)
-        end)
+    if not flag and #list3 == 0 then
+        list3 = {"Weinchen V20", "Wulfbrecht RZ7", "Kitsuni LX", "Sorg Varkis", "StarterCar"}
+    else
+        table.sort(list3)
     end
+    return list3, flag
 end
-
--- =========================================================
--- MAIN JOB
--- =========================================================
-
-local function startJob()
-    dbg("JOB", "start")
-
-    AutofarmBarista.JobActive = false
-
-    telephoneRef = nil
-    phoneLabelCache = nil
-    phoneBusy = false
-
-    -- -----------------------------------------------------
-    -- REMOTE CONTAINER (short waits only)
-    -- -----------------------------------------------------
-
-    local container =
-        ReplicatedStorage:WaitForChild("NetworkContainer", 15)
-
-    local remotes =
-        container
-        and container:WaitForChild("RemoteEvents", 15)
-
-    if not remotes then
-        dbg("JOB", "RemoteEvents not found")
-
-        AutofarmBarista.Running = false
-
-        return
-    end
-
-    -- Job / NpcDialog are optional here. The Barista remote is NOT awaited
-    -- yet: it only appears after the job is acquired.
-    JobRemote = remotes:FindFirstChild("Job")
-    NpcDialogRemote = remotes:FindFirstChild("NpcDialog")
-
-    dbg(
-        "JOB",
-        "remotes",
-        "Job", JobRemote ~= nil,
-        "NpcDialog", NpcDialogRemote ~= nil,
-        "Barista", remotes:FindFirstChild("Barista") ~= nil
-    )
-
-    -- -----------------------------------------------------
-    -- 1..5: TELEPORT -> INTERACT -> SKIP DIALOG -> GET JOB
-    -- -----------------------------------------------------
-
-    local ws = getWorkspaceRefs(false)
-
-    local jobStarted = getBaristaJob(ws, JobRemote)
-
-    if not jobStarted then
-        dbg("JOB", "Failed to acquire Barista job")
-
-        notify("Barista", "Failed to get Barista job. Check Debug log.", 5)
-
-        AutofarmBarista.Running = false
-
-        return
-    end
-
-    if not AutofarmBarista.Running then
-        return
-    end
-
-    -- -----------------------------------------------------
-    -- 6: NOW wait for the Barista remote and workspace
-    -- -----------------------------------------------------
-
-    AutofarmBarista.CurrentStep = "Waiting for Barista remote..."
-
-    dbg("JOB", "step 6: waiting for Barista remote")
-
-    BaristaRemote = remotes:WaitForChild("Barista", 60)
-
-    if not BaristaRemote then
-        dbg("JOB", "Barista remote not found")
-
-        AutofarmBarista.Running = false
-
-        return
-    end
-
-    dbg("JOB", "Barista remote ready")
-
-    ws = getWorkspaceRefs(true)
-
-    telephoneRef = ws.Telephone
-
-    -- -----------------------------------------------------
-    -- LISTENER + WATCHERS
-    -- -----------------------------------------------------
-
-    attachListener()
-
-    AutofarmBarista.JobActive = true
-
-    startWatchers()
-    startPhoneWatcher()
-
-    task.wait(1)
-
-    -- -----------------------------------------------------
-    -- PHONE (UI driven): give the first ring up to 8s to show up,
-    -- the phone watcher answers it, then continue.
-    -- -----------------------------------------------------
-
-    AutofarmBarista.CurrentStep = "Barista job active..."
-
-    local ringStart = os.clock()
-
-    while
-        AutofarmBarista.Running
-        and not phoneRinging()
-        and os.clock() - ringStart < 8
-    do
-        task.wait(0.3)
-    end
-
-    task.wait(1)
-
-    waitPhone()
-
-    safeFiresignal(BaristaRemote.OnClientEvent, "Tutorial")
-
-    task.wait(0.3)
-
-    for _ = 1, 26 do
-        if not AutofarmBarista.Running then
-            break
-        end
-
-        VirtualUser:ClickButton2(Vector2.new(0, 0))
-
-        task.wait(0.5)
-    end
-
-    task.wait(2)
-
-    -- -----------------------------------------------------
-    -- CUSTOMER LOOP
-    -- -----------------------------------------------------
-
-    local orderIndex = 1
-
-    while AutofarmBarista.Running do
-        waitPhone()
-
-        AutofarmBarista.CurrentStep = "Waiting for customer..."
-
-        local target
-        local elapsed = 0
-
-        while
-            not target
-            and elapsed < 30
-            and AutofarmBarista.Running
-        do
-            if ws.BaristaCustomers then
-                for _, customer in ipairs(ws.BaristaCustomers:GetChildren()) do
-                    local hrp = customer:FindFirstChild("HumanoidRootPart")
-
-                    if hrp and hrp:FindFirstChild("BaristaServePrompt") then
-                        target = customer
-
+local function fn12()
+    local waypoints
+    local getmapcachefunc = ReplicatedStorage:FindFirstChild("GetMapCacheFunc", true)
+    if getmapcachefunc and getmapcachefunc:IsA("RemoteFunction") then
+        local invokeserver = getmapcachefunc:InvokeServer()
+        if invokeserver and type(invokeserver) == "table" then
+            if invokeserver.Lane2 and invokeserver.Lane2.Waypoints then
+                waypoints = invokeserver.Lane2.Waypoints
+            else
+                for k, v5 in pairs(invokeserver) do
+                    if v5.Waypoints and #v5.Waypoints > 50 then
+                        waypoints = v5.Waypoints
                         break
                     end
                 end
             end
-
-            if not target then
-                task.wait(1)
-                elapsed += 1
+        end
+    end
+    if not waypoints and getgc then
+        local huge = math.huge
+        for i5, v6 in ipairs(getgc(true)) do
+            if not (type(v6) == "table" and type(rawget(v6, "Waypoints")) == "table" and rawget(v6, "TotalLength")) then
+                continue
+            end
+            local num2 = math.abs(v6.TotalLength - 95465)
+            if not (num2 < huge) then
+                continue
+            end
+            huge = num2
+            waypoints = v6.Waypoints
+        end
+    end
+    if not waypoints then
+        return nil
+    end
+    local cond = #waypoints == 412 and 411 or #waypoints
+    local list3 = {}
+    for i6 = 1, cond do
+        local entry = waypoints[i6]
+        local entry2 = waypoints[i6 % cond + 1]
+        local magnitude = (entry2 - entry).Magnitude
+        table.insert(list3, entry)
+        if not (magnitude > 350) then
+            continue
+        end
+        local num3 = math.floor(magnitude / 220)
+        for i7 = 1, num3 do
+            table.insert(list3, entry:Lerp(entry2, i7 / (num3 + 1)))
+        end
+    end
+    return list3
+end
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+local lastValue
+local lastValue2
+local function fn13(arg1, arg2)
+    local character = localplayer.Character
+    if arg2 ~= lastValue or character ~= lastValue2 then
+        lastValue = arg2
+        lastValue2 = character
+        raycastParams.FilterDescendantsInstances = {arg2, character}
+    end
+    local raycast = Workspace:Raycast(arg1 + Vector3.new(0, 15, 0), Vector3.new(0, -35, 0), raycastParams)
+    if raycast and not raycast.Instance.Name:lower():find("fence") and not raycast.Instance.Name:lower():find("wall") and not raycast.Instance.Name:lower():find("shield") then
+        return raycast.Position.Y + 1.15
+    end
+    return arg1.Y
+end
+local function fn14(arg1, arg2, arg3)
+    local result = arg3 - arg2
+    local dot = result:Dot(result)
+    if dot < 0.0001 then
+        return arg2, 0
+    end
+    local num2 = math.clamp((arg1 - arg2):Dot(result) / dot, 0, 1)
+    return arg2 + result * num2, num2
+end
+local function fn15(arg1, arg2)
+    local position = arg2.Position
+    if position.Y < 80 and (position.X < -3800 or position.Z < -850) then
+        return true
+    end
+    local list3 = {
+        position,
+        Vector3.new(-3541.03, 138, -150),
+        Vector3.new(-3541.03, 120, -500),
+        Vector3.new(-3541.03, 90, -1000),
+        Vector3.new(-3541.03, 63.5, -1490),
+        Vector3.new(-3499.6, 63.3, -1580),
+    }
+    local num2 = 135
+    for i5 = 1, #list3 - 1 do
+        local entry = list3[i5]
+        local entry2 = list3[i5 + 1]
+        local magnitude = (entry2 - entry).Magnitude
+        local result = magnitude / num2
+        local clock = os.clock()
+        local unit = (entry2 - entry).Unit
+        while os.clock() - clock < result do
+            if not config.AutoFarm then
+                return false
+            end
+            local num3 = math.clamp((os.clock() - clock) / result, 0, 1)
+            local lerp = entry:Lerp(entry2, num3)
+            local result2 = fn13(lerp, arg1)
+            local vector3 = Vector3.new(lerp.X, result2, lerp.Z)
+            local lookat = CFrame.lookAt(vector3, vector3 + unit)
+            arg1:PivotTo(lookat)
+            arg2.AssemblyLinearVelocity = unit * num2
+            task.wait(0.02)
+        end
+    end
+    task.wait(0.2)
+    return true
+end
+local list3 = {
+    Vector3.new(-3498, 63.3, 1600),
+    Vector3.new(-3520, 63.3, 1500),
+    Vector3.new(-3541, 63.3, 1350),
+    Vector3.new(-3541, 70, 1150),
+    Vector3.new(-3541, 95, 900),
+    Vector3.new(-3541, 120, 650),
+    Vector3.new(-3541, 137.5, 400),
+    Vector3.new(-3541, 138, 100),
+    Vector3.new(-3541, 138, -150),
+}
+local function fn16(arg1, arg2)
+    local num2 = 135
+    for i5 = 1, #list3 - 1 do
+        local entry = list3[i5]
+        local entry2 = list3[i5 + 1]
+        local magnitude = (entry2 - entry).Magnitude
+        local result = magnitude / num2
+        local clock = os.clock()
+        local unit = (entry2 - entry).Unit
+        while os.clock() - clock < result do
+            if not config.AutoFarm then
+                return false
+            end
+            local num3 = math.clamp((os.clock() - clock) / result, 0, 1)
+            local lerp = entry:Lerp(entry2, num3)
+            local result2 = fn13(lerp, arg1)
+            local vector3 = Vector3.new(lerp.X, result2, lerp.Z)
+            local lookat = CFrame.lookAt(vector3, vector3 + unit)
+            arg1:PivotTo(lookat)
+            arg2.AssemblyLinearVelocity = unit * num2
+            task.wait(0.02)
+        end
+    end
+    return true
+end
+local function fn17()
+    local ingamehud = localplayer.PlayerGui:FindFirstChild("InGameHUD")
+    local comboui = ingamehud and ingamehud:FindFirstChild("ComboUI")
+    local streak = comboui and comboui:FindFirstChild("Streak")
+    if not streak or not streak.Visible then
+        return false
+    end
+    local message = streak:FindFirstChild("Message")
+    if message and (message.Text:find("0X") or message.Text:find("LOST") or message.Text:find("CRASHED")) then
+        return false
+    end
+    return true
+end
+local function fn18(arg1, arg2)
+    local cond = tonumber(localplayer:GetAttribute("Wanted")) or 0
+    if cond > 0 then
+        return true
+    end
+    local policepad = Workspace:FindFirstChild("PoliceSystem") and Workspace.PoliceSystem:FindFirstChild("PolicePad")
+    local position = policepad and policepad.Position or Vector3.new(-3639.55, 137.83, -188.56)
+    local list4 = {arg2.Position, Vector3.new(-3639.55, 138, -188.56)}
+    local num2 = 80
+    for i5 = 1, #list4 - 1 do
+        local entry = list4[i5]
+        local entry2 = list4[i5 + 1]
+        local magnitude = (entry2 - entry).Magnitude
+        if magnitude < 5 then
+            continue
+        end
+        local result = magnitude / num2
+        local clock = os.clock()
+        local unit = (entry2 - entry).Unit
+        while os.clock() - clock < result do
+            if not config.AutoFarm then
+                return false
+            end
+            local num3 = math.clamp((os.clock() - clock) / result, 0, 1)
+            local lerp = entry:Lerp(entry2, num3)
+            local result2 = fn13(lerp, arg1)
+            local vector3 = Vector3.new(lerp.X, result2, lerp.Z)
+            arg1:PivotTo(CFrame.lookAt(vector3, vector3 + unit))
+            arg2.AssemblyLinearVelocity = unit * num2
+            task.wait(0.02)
+        end
+    end
+    arg1:PivotTo(CFrame.new(position + Vector3.new(0, 2, 0)))
+    arg2.AssemblyLinearVelocity = Vector3.zero
+    task.wait(1)
+    local copchasedifficulty
+    pcall(function()
+        copchasedifficulty = localplayer.PlayerGui:FindFirstChild("CopChaseDifficulty")
+        if not copchasedifficulty then
+            copchasedifficulty = localplayer.PlayerGui:FindFirstChild("MainGameMenu")
+            copchasedifficulty = copchasedifficulty and copchasedifficulty:FindFirstChild("CopChaseDifficulty")
+        end
+    end)
+    local clock2 = os.clock()
+    while os.clock() - clock2 < 8 do
+        if not config.AutoFarm then
+            return false
+        end
+        arg2.AssemblyLinearVelocity = Vector3.zero
+        arg1:PivotTo(CFrame.new(position + Vector3.new(0, 2, 0)))
+        local flag = false
+        pcall(function()
+            local copchasedifficulty2 = localplayer.PlayerGui:FindFirstChild("CopChaseDifficulty")
+            if copchasedifficulty2 then
+                for i6, v5 in ipairs(copchasedifficulty2:GetChildren()) do
+                    if v5:IsA("Frame") and v5.Visible then
+                        flag = true
+                        break
+                    end
+                end
+                if not flag and copchasedifficulty2:IsA("ScreenGui") and copchasedifficulty2.Enabled then
+                    flag = true
+                end
+            end
+            if not flag then
+                local maingamemenu = localplayer.PlayerGui:FindFirstChild("MainGameMenu")
+                local copchasedifficulty3 = maingamemenu and maingamemenu:FindFirstChild("CopChaseDifficulty")
+                if copchasedifficulty3 and copchasedifficulty3.Visible then
+                    flag = true
+                end
+            end
+        end)
+        if flag then
+            break
+        end
+        task.wait(0.25)
+    end
+    task.wait(0.3)
+    pcall(function()
+        local policedifficultycontroll = ReplicatedStorage:FindFirstChild("Controllers") and ReplicatedStorage.Controllers:FindFirstChild("PoliceDifficultyController")
+        if policedifficultycontroll then
+            local module2 = require(policedifficultycontroll)
+            if module2 then
+                module2.selected = tonumber(config.PoliceStars) or 5
+                pcall(function()
+                    module2:Paint()
+                end)
             end
         end
-
-        if not target then
-            dbg("JOB", "no customer after 30s")
-
-            task.wait(2)
-
-            continue
+    end)
+    pcall(function()
+        local copchasedifficulty2 = localplayer.PlayerGui:FindFirstChild("CopChaseDifficulty")
+        local copchasedifficulty3 = copchasedifficulty2 and (copchasedifficulty2:FindFirstChild("CopChaseDifficulty") or copchasedifficulty2)
+        if copchasedifficulty3 then
+            local findfirstchild = copchasedifficulty3:FindFirstChild("Star" .. tostring(config.PoliceStars))
+            if findfirstchild and findfirstchild:IsA("GuiButton") then
+                firesignal(findfirstchild.Activated)
+            end
+            local buy = copchasedifficulty3:FindFirstChild("Buy")
+            if buy and buy:IsA("GuiButton") then
+                firesignal(buy.Activated)
+            end
         end
-
-        local orderData = takeOrderFromCustomer(target, orderIndex)
-
-        if not orderData then
-            dbg("JOB", "no order data for #" .. orderIndex)
-
-            orderIndex += 1
-
-            task.wait(1)
-
-            continue
+    end)
+    pcall(function()
+        local policeremotes = ReplicatedStorage:FindFirstChild("Controllers") and ReplicatedStorage.Controllers:FindFirstChild("PoliceRemotes")
+        if policeremotes then
+            local module2 = require(policeremotes)
+            if module2 and module2.PoliceDifficultyPick then
+                local v5 = module2.PoliceDifficultyPick
+                local v6 = tonumber(config.PoliceStars) or 5
+                v5:FireServer(v6)
+            end
         end
-
-        lastOrderData = nil
-
-        local result = makeDrink(orderData, ws)
-
-        dbg("JOB", "make result", result)
-
-        if result == "done" then
-            serveCustomer(target)
+    end)
+    pcall(function()
+        local policedifficultycontroll = ReplicatedStorage:FindFirstChild("Controllers") and ReplicatedStorage.Controllers:FindFirstChild("PoliceDifficultyController")
+        if policedifficultycontroll then
+            local module2 = require(policedifficultycontroll)
+            if module2 and module2.Hide then
+                module2:Hide()
+            end
         end
-
-        orderIndex += 1
-
+    end)
+    local clock3 = os.clock()
+    while os.clock() - clock3 < 10 do
+        if not config.AutoFarm then
+            return false
+        end
+        local cond2 = tonumber(localplayer:GetAttribute("Wanted")) or 0
+        if cond2 > 0 then
+            task.wait(0.5)
+            return true
+        end
+        task.wait(0.25)
+    end
+    return false
+end
+local section = window:Section({Title = "Main", Icon = "home", Opened = true})
+local tab = section:Tab({Title = "Farming", Icon = "sparkles"})
+local section2 = tab:Section({Title = "Auto Farming", Opened = true})
+pcall(function()
+    tab:Space()
+end)
+local toggle = tab:Toggle({
+    Title = "Start Farming",
+    Default = false,
+    Callback = function(arg1)
+        config.AutoFarm = arg1
+        if arg1 and config.ZeroLag then
+            fn6()
+        end
+    end,
+})
+tab:Toggle({
+    Title = "Zero Lag Mode",
+    Default = true,
+    Callback = function(arg1)
+        config.ZeroLag = arg1
+        if arg1 then
+            fn6()
+        end
+    end,
+})
+task.defer(function()
+    if config.ZeroLag then
+        fn6()
+    end
+end)
+tab:Slider({
+    Title = "Speed (MPH)",
+    Step = 5,
+    Value = {Min = 60, Max = 250, Default = 110},
+    Callback = function(arg1)
+        config.Speed = arg1
+    end,
+})
+local dropdown = tab:Dropdown({
+    Title = "Select Car",
+    Multi = false,
+    Value = config.SelectedCar,
+    Values = fn11(),
+    Callback = function(arg1)
+        config.SelectedCar = arg1
+    end,
+})
+local result = fn11()
+local function fn19(arg1, arg2)
+    if not arg1 or not arg2 or #arg1 ~= #arg2 then
+        return false
+    end
+    for i5 = 1, #arg1 do
+        if arg1[i5] ~= arg2[i5] then
+            return false
+        end
+    end
+    return true
+end
+local function fn20()
+    local result2, v5 = fn11()
+    if v5 and #result2 > 0 and not fn19(result, result2) then
+        result = result2
+        pcall(function()
+            if dropdown and dropdown.Refresh then
+                dropdown:Refresh(result2)
+                if table.find(result2, config.SelectedCar) then
+                    dropdown:Select(config.SelectedCar)
+                else
+                    config.SelectedCar = result2[1]
+                    dropdown:Select(result2[1])
+                end
+            end
+        end)
+    end
+end
+task.defer(fn20)
+pcall(function()
+    local addcar = remotes:FindFirstChild("AddCar")
+    if addcar and addcar:IsA("RemoteEvent") then
+        addcar.OnClientEvent:Connect(function()
+            task.wait(0.5)
+            fn20()
+        end)
+    end
+    local removecar = remotes:FindFirstChild("RemoveCar")
+    if removecar and removecar:IsA("RemoteEvent") then
+        removecar.OnClientEvent:Connect(function()
+            task.wait(0.5)
+            fn20()
+        end)
+    end
+end)
+task.spawn(function()
+    while true do
+        task.wait(4)
+        pcall(fn20)
+    end
+end)
+tab:Dropdown({
+    Title = "Select Mode",
+    Multi = false,
+    Value = config.SelectedMode,
+    Values = {"Normal", "Police Chase"},
+    Callback = function(arg1)
+        config.SelectedMode = arg1
+    end,
+})
+tab:Dropdown({
+    Title = "Police Stars",
+    Multi = false,
+    Value = tostring(config.PoliceStars),
+    Values = {"1", "2", "3", "4", "5"},
+    Callback = function(arg1)
+        config.PoliceStars = tonumber(arg1) or 3
+    end,
+})
+local section3 = tab:Section({Title = "Information", Opened = true})
+pcall(function()
+    tab:Space()
+end)
+local paragraph = tab:Paragraph({Title = "Total Earning", Desc = "$0"})
+local paragraph2 = tab:Paragraph({Title = "Total Point", Desc = "0 PTS"})
+local paragraph3 = tab:Paragraph({Title = "Current Rank", Desc = "-"})
+local paragraph4 = tab:Paragraph({Title = "Current Level", Desc = "0"})
+local paragraph5 = tab:Paragraph({Title = "Current XP", Desc = "0 / 0"})
+local paragraph6 = tab:Paragraph({Title = "Total Overtake", Desc = "0"})
+local tab2 = window:Tab({Title = "Configuration", Icon = "settings"})
+local section4 = tab2:Section({Title = "Theme"})
+pcall(function()
+    tab2:Space()
+end)
+local list4 = {}
+pcall(function()
+    local themes = chunk:GetThemes()
+    if themes then
+        for k, v5 in pairs(themes) do
+            if type(v5) == "string" then
+                table.insert(list4, v5)
+            else
+                if type(k) ~= "string" then
+                    continue
+                end
+                table.insert(list4, k)
+            end
+        end
+    end
+end)
+if #list4 == 0 then
+    list4 = {
+        "Dark",
+        "Light",
+        "Rose",
+        "Plant",
+        "Red",
+        "Indigo",
+        "Sky",
+        "Violet",
+        "Amber",
+        "Emerald",
+        "Midnight",
+        "Crimson",
+        "Monokai Pro",
+        "Cotton Candy",
+        "Mellowsi",
+        "Rainbow",
+    }
+end
+local v5 = {
+    Title = "Select Theme",
+    Multi = false,
+    Value = chunk:GetCurrentTheme() or "Dark",
+    Values = list4,
+    Callback = function(arg1)
+        pcall(function()
+            chunk:SetTheme(arg1)
+        end)
+    end,
+}
+tab2:Dropdown(v5)
+local section5 = tab2:Section({Title = "Config"})
+pcall(function()
+    tab2:Space()
+end)
+local text = ""
+local text2 = ""
+local function fn21()
+    local list5 = {}
+    pcall(function()
+        local allconfigs = window.ConfigManager:AllConfigs()
+        if allconfigs then
+            for i5, v6 in ipairs(allconfigs) do
+                table.insert(list5, v6)
+            end
+        end
+    end)
+    return list5
+end
+local dropdown2 = tab2:Dropdown({
+    Title = "Select Config",
+    Multi = false,
+    Value = "",
+    Values = fn21(),
+    Callback = function(arg1)
+        text = arg1
+    end,
+})
+tab2:Input({
+    Title = "Config Name",
+    PlaceholderText = "Enter config name...",
+    Callback = function(arg1)
+        text2 = arg1
+    end,
+})
+tab2:Button({
+    Title = "Save Config",
+    Callback = function()
+        if text2 == "" then
+            chunk:Notify({Title = "Config", Content = "Enter config name first!", Duration = 3})
+            return
+        end
+        pcall(function()
+            text = text2
+            pcall(function()
+                dropdown2:Select(text2)
+            end)
+            local config2 = window.ConfigManager:CreateConfig(text2)
+            config2:Save()
+        end)
+        chunk:Notify({Title = "Config", Content = "Config '" .. text2 .. "' saved successfully!", Duration = 3})
+        pcall(function()
+            dropdown2:Refresh(fn21())
+            dropdown2:Select(text2)
+        end)
+    end,
+})
+tab2:Button({
+    Title = "Load Config",
+    Callback = function()
+        if text == "" or text == "--" then
+            chunk:Notify({Title = "Config", Content = "Select config first!", Duration = 3})
+            return
+        end
+        pcall(function()
+            local config2 = window.ConfigManager:CreateConfig(text)
+            config2:Load()
+            pcall(function()
+                dropdown2:Select(text)
+            end)
+        end)
+        chunk:Notify({Title = "Config", Content = "Config '" .. text .. "' loaded successfully!", Duration = 3})
+    end,
+})
+tab2:Button({
+    Title = "Rewrite Config",
+    Callback = function()
+        if text == "" or text == "--" then
+            chunk:Notify({Title = "Config", Content = "Select config first!", Duration = 3})
+            return
+        end
+        local v6 = window.Folder or "GhostDriver"
+        local text3 = "WindUI/" .. v6 .. "/config/" .. text .. ".json"
+        local flag = false
+        local list5 = {}
+        if isfile and isfile(text3) and readfile then
+            pcall(function()
+                local jsondecode = HttpService:JSONDecode(readfile(text3))
+                if type(jsondecode) == "table" then
+                    flag = jsondecode.__autoload or false
+                    list5 = jsondecode.__custom or {}
+                end
+            end)
+        end
+        local ok, v7 = pcall(function()
+            pcall(function()
+                dropdown2:Select(text)
+            end)
+            local list6 = {}
+            local parser = window.ConfigManager.Parser
+            local pendingflags = window.PendingFlags or window.Flags or {}
+            for k, v8 in pairs(pendingflags) do
+                if not (v8 and v8.__type and parser and parser[v8.__type]) then
+                    continue
+                end
+                pcall(function()
+                    list6[tostring(k)] = parser[v8.__type].Save(v8)
+                end)
+            end
+            local config2 = {__version = 1.2, __elements = list6, __autoload = flag, __custom = list5}
+            if writefile then
+                writefile(text3, HttpService:JSONEncode(config2))
+            end
+            if window.ConfigManager and window.ConfigManager.Configs and window.ConfigManager.Configs[text] then
+                local entry = window.ConfigManager.Configs[text]
+                entry.AutoLoad = flag
+                entry.CustomData = list5
+                if pendingflags then
+                    for k2, v9 in pairs(pendingflags) do
+                        entry:Register(k2, v9)
+                    end
+                end
+            end
+        end)
+        if ok then
+            chunk:Notify({
+                Title = "Config",
+                Content = "Config '" .. text .. "' rewritten successfully!",
+                Duration = 3,
+            })
+        else
+            chunk:Notify({
+                Title = "Config",
+                Content = "Failed to rewrite config: " .. tostring(v7),
+                Duration = 3,
+            })
+        end
+    end,
+})
+tab2:Button({
+    Title = "Delete Config",
+    Callback = function()
+        if text == "" or text == "--" then
+            chunk:Notify({Title = "Config", Content = "Select config first!", Duration = 3})
+            return
+        end
+        pcall(function()
+            local config2 = window.ConfigManager:CreateConfig(text)
+            config2:Delete()
+        end)
+        chunk:Notify({Title = "Config", Content = "Config '" .. text .. "' deleted successfully!", Duration = 3})
+        text = ""
+        pcall(function()
+            dropdown2:Refresh(fn21())
+            dropdown2:Select("")
+        end)
+    end,
+})
+tab2:Button({
+    Title = "Set Auto Load",
+    Callback = function()
+        if text == "" or text == "--" then
+            chunk:Notify({Title = "Config", Content = "Select config first!", Duration = 3})
+            return
+        end
+        pcall(function()
+            local allconfigs = window.ConfigManager:AllConfigs()
+            if allconfigs and isfile and readfile and writefile then
+                local folder
+                for i5, v6 in ipairs(allconfigs) do
+                    folder = window.Folder or "GhostDriver"
+                    local text3 = "WindUI/" .. folder .. "/config/" .. v6 .. ".json"
+                    if not isfile(text3) then
+                        continue
+                    end
+                    pcall(function()
+                        local jsondecode = HttpService:JSONDecode(readfile(text3))
+                        if type(jsondecode) == "table" then
+                            jsondecode.__autoload = v6 == text
+                            writefile(text3, HttpService:JSONEncode(jsondecode))
+                        end
+                    end)
+                end
+            end
+            pcall(function()
+                dropdown2:Select(text)
+            end)
+            if window.ConfigManager and window.ConfigManager.Configs then
+                for k, v7 in pairs(window.ConfigManager.Configs) do
+                    if not (v7 and v7.SetAutoLoad) then
+                        continue
+                    end
+                    v7:SetAutoLoad(k == text)
+                end
+            end
+        end)
+        chunk:Notify({Title = "Config", Content = "Auto load set to '" .. text .. "'!", Duration = 3})
+    end,
+})
+pcall(function()
+    local allconfigs = window.ConfigManager:AllConfigs()
+    if allconfigs and readfile and isfile then
+        local folder
+        for k, v6 in pairs(allconfigs) do
+            folder = window.Folder or "GhostDriver"
+            local text3 = "WindUI/" .. folder .. "/config/" .. v6 .. ".json"
+            if not isfile(text3) then
+                continue
+            end
+            local ok, v7 = pcall(function()
+                return HttpService:JSONDecode(readfile(text3))
+            end)
+            if ok and type(v7) == "table" and v7.__autoload then
+                local config2 = window.ConfigManager:CreateConfig(v6)
+                config2:Load()
+                text = v6
+                task.defer(function()
+                    pcall(function()
+                        dropdown2:Select(v6)
+                    end)
+                end)
+                break
+            end
+        end
+    end
+end)
+window:EditOpenButton({
+    Title = "Open UI",
+    Icon = "monitor",
+    CornerRadius = UDim.new(0, 16),
+    StrokeThickness = 2,
+    Color = ColorSequence.new(Color3.fromHex("FF0F7B"), Color3.fromHex("F89B29")),
+    OnlyMobile = false,
+    Enabled = true,
+    Draggable = true,
+})
+task.spawn(function()
+    while true do
         task.wait(0.5)
-    end
-
-    -- -----------------------------------------------------
-    -- CLEANUP
-    -- -----------------------------------------------------
-
-    if baristaConn then
-        baristaConn:Disconnect()
-        baristaConn = nil
-    end
-
-    stopWatchers()
-
-    AutofarmBarista.JobActive = false
-    AutofarmBarista.CurrentStep = "Idle"
-
-    dbg("JOB", "stopped")
-end
-
--- =========================================================
--- STOP FARM
--- =========================================================
-
-local function stopFarm()
-    AutofarmBarista.Running = false
-
-    if AutofarmBarista.Thread then
-        pcall(task.cancel, AutofarmBarista.Thread)
-
-        AutofarmBarista.Thread = nil
-    end
-
-    if baristaConn then
-        baristaConn:Disconnect()
-        baristaConn = nil
-    end
-
-    AutofarmBarista.JobActive = false
-    stopWatchers()
-
-    AutofarmBarista.CurrentStep = "Idle"
-end
-
--- =========================================================
--- RESTORE CONFIG
--- =========================================================
-
-local savedAutoLoad
-
-if hasFS and isfile(AUTOLOAD) then
-    local ok, name = pcall(readfile, AUTOLOAD)
-
-    if ok and name and name ~= "" then
-        savedAutoLoad = name
-
-        ConfigManager.Load(name)
-    end
-end
-
--- =========================================================
--- WINDOW
--- =========================================================
-
-local Window = WindUI:CreateWindow({
-    Title = "DX-SR Hub",
-    Icon = "coffee",
-    Author = "Barista Autofarm v0.0.0.11",
-    Folder = FOLDER,
-    Size = UDim2.fromOffset(580, 400),
-    Theme = Flags.SelectedTheme,
-    Resizable = true,
-    SideBarWidth = 200,
-    ScrollBarEnabled = true,
-    HideSearchBar = false,
-    ToggleKey = Enum.KeyCode.V,
-})
-
--- =========================================================
--- MAIN TAB
--- =========================================================
-
-local mainTab = Window:Tab({
-    Title = "Main",
-    Icon = "home"
-})
-
-mainTab:Section({
-    Title = "Autofarm Barista"
-})
-
-local statusPara = mainTab:Paragraph({
-    Title = "Status",
-    Desc = "Idle"
-})
-
-local stepPara = mainTab:Paragraph({
-    Title = "Current Step",
-    Desc = "Idle"
-})
-
-local statsPara = mainTab:Paragraph({
-    Title = "Session Stats",
-    Desc = fmtStats()
-})
-
-local farmToggle
-
-farmToggle = mainTab:Toggle({
-    Title = "Barista Autofarm",
-    Desc = "Auto complete barista orders",
-    Value = false,
-    Callback = function(state)
-        Flags.AutofarmBarista = state
-
-        if state then
-            if AutofarmBarista.Running then
-                return
+        pcall(function()
+            local leaderstats = localplayer:FindFirstChild("leaderstats")
+            local cond = leaderstats and leaderstats:FindFirstChild("Cash") and leaderstats.Cash.Value or 0
+            local cond2 = leaderstats and leaderstats:FindFirstChild("Rank") and leaderstats.Rank.Value or "-"
+            local cond3 = leaderstats and leaderstats:FindFirstChild("Level") and leaderstats.Level.Value or 0
+            local cond4 = localplayer:FindFirstChild("XP") and localplayer.XP.Value or 0
+            local cond5 = localplayer:FindFirstChild("MaxXP") and localplayer.MaxXP.Value or 0
+            local attribute = localplayer:GetAttribute("TrafficRunPoints") or 0
+            local attribute2 = localplayer:GetAttribute("DrivingCombo") or 0
+            local attribute3 = localplayer:GetAttribute("PoliceChaseCash") or 0
+            local num2 = math.max(0, cond - config.StartCash)
+            if config.SelectedMode == "Police Chase" and attribute3 > 0 then
+                fn8(paragraph, "+$" .. fn9(num2) .. " (Chase: $" .. fn9(attribute3) .. ")")
+            else
+                fn8(paragraph, "+$" .. fn9(num2) .. " (Total: $" .. fn9(cond) .. ")")
             end
-
-            AutofarmBarista.Running = true
-
-            notify("Barista Autofarm", "Started", 3, "coffee")
-
-            AutofarmBarista.Thread = task.spawn(function()
-                local ok, err = pcall(startJob)
-
-                if not ok then
-                    dbg("ERROR", err)
-
-                    warn("[Barista] Error: " .. tostring(err))
-
-                    notify("Error", tostring(err), 5)
-
-                    stopFarm()
-
-                    if farmToggle then
+            fn8(paragraph2, fn9(attribute) .. " PTS (" .. tostring(attribute2) .. "X Combo)")
+            fn8(paragraph3, tostring(cond2))
+            fn8(paragraph4, "Level " .. tostring(cond3))
+            fn8(paragraph5, fn9(cond4) .. " / " .. fn9(cond5))
+            fn8(paragraph6, tostring(attribute2))
+        end)
+    end
+end)
+task.spawn(function()
+    local result2 = fn12()
+    local num2 = 0
+    while true do
+        if not result2 and num2 < 25 then
+            task.wait(0.5)
+            result2 = fn12()
+            num2 = num2 + 1
+        else
+            break
+        end
+    end
+    if not result2 then
+        return
+    end
+    local function fn22(arg1)
+        local num3 = 1
+        local huge = math.huge
+        for i5 = 1, #result2 do
+            local entry = result2[i5]
+            local entry2 = result2[i5 % #result2 + 1]
+            local result3 = fn14(arg1, entry, entry2)
+            local magnitude = (arg1 - result3).Magnitude
+            if not (magnitude < huge) then
+                continue
+            end
+            huge = magnitude
+            num3 = i5
+        end
+        return num3
+    end
+    local function fn23(arg1)
+        local lastValue3
+        local huge = math.huge
+        for k in pairs(list2) do
+            if k.Parent then
+                local primarypart = k.PrimaryPart or k:FindFirstChild("CollisionShell") or k:FindFirstChild("DriveSeat")
+                if not primarypart then
+                    continue
+                end
+                local magnitude = (primarypart.Position - arg1).Magnitude
+                if not (magnitude < huge) then
+                    continue
+                end
+                huge = magnitude
+                lastValue3 = k
+            else
+                list2[k] = nil
+                fn4(k)
+            end
+        end
+        return lastValue3, huge
+    end
+    local function fn24(arg1)
+        local aChassisTune = arg1 and arg1:FindFirstChild("A-Chassis Tune")
+        aChassisTune = aChassisTune and aChassisTune:FindFirstChild("A-Chassis Interface")
+        return aChassisTune and aChassisTune:FindFirstChild("Values")
+    end
+    local function fn25()
+        pcall(function()
+            local policebustedui = localplayer.PlayerGui:FindFirstChild("PoliceBustedUI")
+            if policebustedui and policebustedui.Enabled then
+                local skip = policebustedui:FindFirstChild("Skip", true)
+                if skip and skip:IsA("GuiButton") and skip.Visible then
+                    firesignal(skip.Activated)
+                end
+                local close = policebustedui:FindFirstChild("Close", true)
+                if close and close:IsA("GuiButton") and close.Visible then
+                    firesignal(close.Activated)
+                end
+            end
+        end)
+    end
+    local num3 = 1
+    local num4 = 0
+    local num5 = 0
+    local num6 = 0
+    local idle = "IDLE"
+    local num7 = 0
+    local num8 = 0
+    local num9 = 0
+    local num10 = 1
+    while true do
+        if not config.AutoFarm then
+            task.wait(0.4)
+            continue
+        end
+        local result3, v6 = fn10()
+        if not result3 or not v6 then
+            if spawncarevent then
+                spawncarevent:FireServer(config.SelectedCar)
+                task.wait(2)
+                result3, v6 = fn10()
+            end
+            if not result3 or not v6 then
+                task.wait(0.5)
+                continue
+            end
+        end
+        if v6.Position.Y > 80 and v6.Position.X > -3800 then
+            while fn17() do
+                if not config.AutoFarm then
+                    break
+                end
+                v6.AssemblyLinearVelocity = Vector3.zero
+                num6 = 0
+                task.wait(0.5)
+            end
+            if config.SelectedMode == "Police Chase" then
+                local result4 = fn18(result3, v6)
+                if not result4 then
+                    task.wait(0.5)
+                    continue
+                end
+                task.wait(1)
+                result3, v6 = fn10()
+                if not result3 or not v6 then
+                    task.wait(0.5)
+                    continue
+                end
+                idle = "WAITING_POLICE"
+                num7 = os.clock()
+                num8 = 0
+                num9 = os.clock()
+                num6 = 0
+            end
+            local result5 = fn15(result3, v6)
+            if not result5 then
+                task.wait(0.5)
+                continue
+            end
+            num3 = fn22(v6.Position)
+        end
+        if config.SelectedMode == "Police Chase" then
+            local attribute = localplayer:GetAttribute("PoliceStatus")
+            local cond = tonumber(localplayer:GetAttribute("Wanted")) or 0
+            if attribute ~= "CHASE" and cond == 0 and v6.Position.Y < 80 then
+                idle = "IDLE"
+                num6 = 0
+                v6.AssemblyLinearVelocity = Vector3.zero
+                fn25()
+                local attribute2 = localplayer:GetAttribute("PoliceBustedScreenActive")
+                if attribute2 then
+                    local clock = os.clock()
+                    while true do
+                        if not (localplayer:GetAttribute("PoliceBustedScreenActive") and os.clock() - clock < 6) then
+                            break
+                        end
+                        if not config.AutoFarm then
+                            break
+                        end
+                        fn25()
+                        task.wait(0.5)
+                    end
+                    task.wait(1.5)
+                end
+                while fn17() do
+                    if not config.AutoFarm then
+                        break
+                    end
+                    v6.AssemblyLinearVelocity = Vector3.zero
+                    task.wait(0.5)
+                end
+                fn16(result3, v6)
+                task.wait(1)
+                continue
+            end
+        end
+        local position = v6.Position
+        if not (config.SelectedMode ~= "Police Chase" and num3 > 500 and position.Z <= 1650 and position.Z >= 1350 and position.X > -3530 and position.X < -3470) then
+            local speed = config.Speed
+            local v7
+            local huge = math.huge
+            if config.SelectedMode == "Police Chase" then
+                if config.ZeroLag then
+                    fn6()
+                end
+                v7, huge = fn23(v6.Position)
+                if idle == "WAITING_POLICE" then
+                    speed = 18
+                    local cond2 = tonumber(localplayer:GetAttribute("Busted")) or 0
+                    if cond2 > 0.01 or huge < 85 or os.clock() - num7 > 8 then
+                        idle = "CHASING"
+                    end
+                elseif idle == "CHASING" or idle == "ESCAPING" then
+                    local cond3 = tonumber(localplayer:GetAttribute("PoliceChaseCash")) or 0
+                    if cond3 > num8 then
+                        num8 = cond3
+                        num9 = os.clock()
+                    end
+                    local ok = cond3 >= num or cond3 >= 70000 or cond3 >= 4000 and os.clock() - num9 > 6
+                    if idle == "ESCAPING" or ok or cond3 >= num or cond3 >= 70000 then
+                        idle = "ESCAPING"
+                        speed = 250
+                    else
+                        local cond4 = tonumber(localplayer:GetAttribute("Busted")) or 0
+                        local cond5 = tonumber(localplayer:GetAttribute("PoliceEvadeProgress")) or 0
+                        local num11 = math.clamp(config.Speed, 75, 105)
+                        if cond5 > 0.03 then
+                            if cond5 > 0.4 then
+                                speed = 35
+                            elseif cond5 > 0.2 then
+                                speed = 50
+                            elseif cond5 > 0.08 then
+                                speed = 65
+                            else
+                                speed = 75
+                            end
+                        elseif cond4 > 0.03 then
+                            if cond4 > 0.4 then
+                                speed = 160
+                            elseif cond4 > 0.2 then
+                                speed = 135
+                            elseif cond4 > 0.08 then
+                                speed = 115
+                            else
+                                speed = 100
+                            end
+                        else
+                            speed = num11
+                            if huge < 45 then
+                                speed = num11 + 12
+                            elseif huge > 160 and huge < math.huge then
+                                speed = num11 - 12
+                            end
+                        end
+                    end
+                end
+            end
+            local entry = result2[num3]
+            local entry2 = result2[num3 % #result2 + 1]
+            local result6, v8 = fn14(position, entry, entry2)
+            if (position - result6).Magnitude > 45 then
+                num3 = fn22(position)
+                entry = result2[num3]
+                entry2 = result2[num3 % #result2 + 1]
+                result6, v8 = fn14(position, entry, entry2)
+            end
+            local result7 = entry2 - entry
+            local magnitude = result7.Magnitude
+            local unit = result7.Unit
+            local unit2 = Vector3.new(-unit.Z, 0, unit.X).Unit
+            local num12 = 0.02
+            local num13 = 50
+            local num14 = 80
+            local result8 = fn24(result3)
+            if num6 < speed then
+                num6 = math.min(speed, num6 + num13 * num12)
+                pcall(function()
+                    v6.Throttle = 1
+                    v6.ThrottleFloat = 1
+                    if result8 and result8:FindFirstChild("Throttle") then
+                        result8.Throttle.Value = 1
+                    end
+                    if result8 and result8:FindFirstChild("Brake") then
+                        result8.Brake.Value = 0
+                    end
+                end)
+            elseif num6 > speed then
+                num6 = math.max(speed, num6 - num14 * num12)
+                pcall(function()
+                    v6.Throttle = 0
+                    v6.ThrottleFloat = 0
+                    if result8 and result8:FindFirstChild("Throttle") then
+                        result8.Throttle.Value = 0
+                    end
+                    if result8 and result8:FindFirstChild("Brake") then
+                        result8.Brake.Value = 0.4
+                    end
+                end)
+            else
+                pcall(function()
+                    v6.Throttle = 0.7
+                    v6.ThrottleFloat = 0.7
+                    if result8 and result8:FindFirstChild("Throttle") then
+                        result8.Throttle.Value = 0.7
+                    end
+                end)
+            end
+            local result9 = num6 * 1.76
+            local result10 = v8 * magnitude
+            local result11 = result10 + result9 * num12
+            while true do
+                if result11 >= magnitude and magnitude > 0.01 then
+                    num3 = num3 % #result2 + 1
+                    entry = result2[num3]
+                    entry2 = result2[num3 % #result2 + 1]
+                    result7 = entry2 - entry
+                    result11 = result11 - magnitude
+                    magnitude = result7.Magnitude
+                    unit = result7.Unit
+                    unit2 = Vector3.new(-unit.Z, 0, unit.X).Unit
+                else
+                    break
+                end
+            end
+            local result12 = entry + unit * math.clamp(result11, 0, magnitude)
+            if config.SelectedMode == "Police Chase" then
+                local cond6 = tonumber(localplayer:GetAttribute("PoliceChaseCash")) or 0
+                local ok2 = cond6 >= num or cond6 >= 70000 or cond6 >= 4000 and os.clock() - num9 > 6
+                if idle == "ESCAPING" or ok2 or cond6 >= num or cond6 >= 70000 then
+                    pcall(function()
+                        for i5, v9 in ipairs(CollectionService:GetTagged("PoliceAI")) do
+                            if not v9:IsA("Model") then
+                                continue
+                            end
+                            v9:PivotTo(CFrame.new(v6.Position - unit * 3500))
+                            local primarypart = v9.PrimaryPart or v9:FindFirstChild("CollisionShell") or v9:FindFirstChild("DriveSeat")
+                            if not primarypart then
+                                continue
+                            end
+                            primarypart.AssemblyLinearVelocity = Vector3.zero
+                        end
+                        for k in pairs(list2) do
+                            if not (k.Parent and k:IsA("Model")) then
+                                continue
+                            end
+                            k:PivotTo(CFrame.new(v6.Position - unit * 3500))
+                            local primarypart2 = k.PrimaryPart or k:FindFirstChild("CollisionShell") or k:FindFirstChild("DriveSeat")
+                            if not primarypart2 then
+                                continue
+                            end
+                            primarypart2.AssemblyLinearVelocity = Vector3.zero
+                        end
+                    end)
+                elseif idle == "CHASING" then
+                    local v7_2 = v7
+                    if v7_2 and v7_2:IsA("Model") and v7_2.Parent then
+                        if not list[v7_2] then
+                            fn3(v7_2)
+                        end
                         pcall(function()
-                            farmToggle:Set(false)
+                            local result13 = v6.Position - unit * 45
+                            local vector3 = Vector3.new(result13.X, v6.Position.Y, result13.Z)
+                            v7_2:PivotTo(CFrame.lookAt(vector3, vector3 + unit))
+                            local primarypart = v7_2.PrimaryPart or v7_2:FindFirstChild("CollisionShell") or v7_2:FindFirstChild("DriveSeat")
+                            if primarypart and primarypart:IsA("BasePart") then
+                                primarypart.AssemblyLinearVelocity = v6.AssemblyLinearVelocity
+                            end
                         end)
                     end
                 end
-            end)
-
-        else
-            stopFarm()
-
-            notify("Barista Autofarm", "Stopped.", 2)
-        end
-    end
-})
-
-mainTab:Toggle({
-    Title = "Only Mobile",
-    Desc = "Use mobile-only input method",
-    Value = false,
-    Callback = function(state)
-        Flags.OnlyMobile = state
-    end
-})
-
--- =========================================================
--- STATUS UPDATE
--- =========================================================
-
-task.spawn(function()
-    while task.wait(0.5) do
-        pcall(function()
-            statusPara:SetDesc(
-                AutofarmBarista.Running and "Running" or "Idle"
-            )
-
-            stepPara:SetDesc(tostring(AutofarmBarista.CurrentStep))
-
-            statsPara:SetDesc(fmtStats())
-        end)
-    end
-end)
-
--- =========================================================
--- SETTINGS
--- =========================================================
-
-local settingsTab = Window:Tab({
-    Title = "Settings",
-    Icon = "settings"
-})
-
-settingsTab:Section({
-    Title = "Configuration"
-})
-
-local configName = ""
-local selectedConfig = nil
-
-settingsTab:Input({
-    Title = "Config Name",
-    Placeholder = "Enter config name...",
-    Callback = function(text)
-        configName = text
-    end
-})
-
-local configDropdown
-
-local function refreshConfigs()
-    if configDropdown then
-        pcall(function()
-            configDropdown:Refresh(ConfigManager.List())
-        end)
-    end
-end
-
-settingsTab:Button({
-    Title = "Save Config",
-    Desc = "Save current settings to a new config",
-    Callback = function()
-        if ConfigManager.Save(configName) then
-            refreshConfigs()
-        end
-    end
-})
-
-settingsTab:Section({
-    Title = "Load / Delete Config"
-})
-
-configDropdown = settingsTab:Dropdown({
-    Title = "Select Config",
-    Values = ConfigManager.List(),
-    Multi = false,
-    Callback = function(value)
-        selectedConfig = value
-    end
-})
-
-settingsTab:Button({
-    Title = "Load Config",
-    Callback = function()
-        if ConfigManager.Load(selectedConfig) then
-            pcall(function()
-                WindUI:SetTheme(Flags.SelectedTheme)
-            end)
-        end
-    end
-})
-
-settingsTab:Button({
-    Title = "Rewrite Config",
-    Callback = function()
-        ConfigManager.Save(selectedConfig)
-    end
-})
-
-settingsTab:Button({
-    Title = "Delete Config",
-    Callback = function()
-        if ConfigManager.Delete(selectedConfig) then
-            selectedConfig = nil
-
-            refreshConfigs()
-        end
-    end
-})
-
-settingsTab:Toggle({
-    Title = "Set Auto Load",
-    Desc = "Load the selected config on start",
-    Value = savedAutoLoad ~= nil,
-    Callback = function(state)
-        ConfigManager.SetAutoLoad(selectedConfig, state)
-    end
-})
-
--- =========================================================
--- THEME
--- =========================================================
-
-local themeTab = Window:Tab({
-    Title = "Theme",
-    Icon = "palette"
-})
-
-themeTab:Section({
-    Title = "Select Theme"
-})
-
-local themeNames = {}
-
-local okThemes, themeTable = pcall(function()
-    return WindUI:GetThemes()
-end)
-
-if okThemes and type(themeTable) == "table" then
-    for name in pairs(themeTable) do
-        table.insert(themeNames, name)
-    end
-
-    table.sort(themeNames)
-end
-
-if #themeNames == 0 then
-    themeNames = {
-        "Dark", "Light", "Rose", "Indigo", "Sky",
-        "Violet", "Amber", "Emerald", "Midnight", "Crimson"
-    }
-end
-
-themeTab:Dropdown({
-    Title = "Choose UI Theme",
-    Values = themeNames,
-    Value = Flags.SelectedTheme,
-    Callback = function(value)
-        Flags.SelectedTheme = value
-
-        pcall(function()
-            WindUI:SetTheme(value)
-        end)
-    end
-})
-
--- =========================================================
--- DEBUG TAB
--- =========================================================
-
-local debugTab = Window:Tab({
-    Title = "Debug",
-    Icon = "bug"
-})
-
-debugTab:Section({
-    Title = "Logging"
-})
-
-debugTab:Toggle({
-    Title = "Console Logging",
-    Desc = "Print debug lines to the executor console",
-    Value = Debug.Enabled,
-    Callback = function(state)
-        Debug.Enabled = state
-    end
-})
-
-debugTab:Button({
-    Title = "Copy Log",
-    Desc = "Copy the last " .. Debug.Max .. " lines to the clipboard",
-    Callback = function()
-        if type(setclipboard) == "function" then
-            setclipboard(table.concat(Debug.Buffer, "\n"))
-
-            notify("Debug", "Log copied (" .. #Debug.Buffer .. " lines)")
-        else
-            notify("Debug", "setclipboard unsupported")
-        end
-    end
-})
-
-debugTab:Button({
-    Title = "Clear Log",
-    Callback = function()
-        table.clear(Debug.Buffer)
-
-        notify("Debug", "Log cleared")
-    end
-})
-
-debugTab:Button({
-    Title = "Dump State",
-    Desc = "Log running state, remotes and executor capabilities",
-    Callback = function()
-        dbg(
-            "STATE",
-            "running", AutofarmBarista.Running,
-            "jobActive", AutofarmBarista.JobActive,
-            "step", AutofarmBarista.CurrentStep,
-            "skipping", skipping,
-            "phoneBusy", phoneBusy,
-            "phoneRinging", phoneRinging()
-        )
-
-        dbg(
-            "STATE",
-            "BaristaRemote", BaristaRemote ~= nil,
-            "NpcDialog", NpcDialogRemote ~= nil,
-            "Job", JobRemote ~= nil
-        )
-
-        dbg(
-            "STATE",
-            "orders", Stats.Orders,
-            "salary", Stats.Salary,
-            "xp", Stats.XP
-        )
-
-        dbg(
-            "STATE",
-            "fireproximityprompt", type(fireproximityprompt) == "function",
-            "firesignal", type(firesignal) == "function",
-            "writefile", type(writefile) == "function",
-            "listfiles", type(listfiles) == "function",
-            "setclipboard", type(setclipboard) == "function"
-        )
-
-        local hrp = getHRP()
-
-        dbg(
-            "STATE",
-            "hrp", hrp and tostring(hrp.Position) or "nil",
-            "distToNpcCFrame",
-            hrp and (hrp.Position - NPC_CFRAME.Position).Magnitude or "nil"
-        )
-
-        local open, guiName = isDialogOpen()
-
-        dbg("STATE", "dialogOpen", open, "gui", guiName)
-
-        notify("Debug", "State dumped to log")
-    end
-})
-
-debugTab:Button({
-    Title = "Dump Barista UI",
-    Desc = "Log every visible text in PlayerGui (press while the phone rings)",
-    Callback = function()
-        local count = 0
-
-        for _, inst in ipairs(PlayerGui:GetDescendants()) do
-            if (inst:IsA("TextLabel") or inst:IsA("TextButton"))
-                and inst.Text ~= ""
-                and isGuiShown(inst) then
-
-                count += 1
-
-                if count <= 150 then
-                    dbg(
-                        "UI",
-                        inst:GetFullName(),
-                        "|",
-                        inst.Text:sub(1, 90)
-                    )
-                end
             end
-        end
-
-        dbg("UI", "total visible texts", count, "phoneRinging", phoneRinging())
-
-        notify("Debug", count .. " UI texts logged")
-    end
-})
-
-debugTab:Button({
-    Title = "Dump Dialog GUIs",
-    Desc = "Log every enabled ScreenGui (open a dialog first, then press)",
-    Callback = function()
-        local count = 0
-
-        for _, gui in ipairs(PlayerGui:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Enabled then
-                count += 1
-
-                dbg("GUI", gui.Name, "children", #gui:GetChildren())
-            end
-        end
-
-        dbg("GUI", "total enabled", count)
-
-        notify("Debug", count .. " enabled GUIs logged")
-    end
-})
-
-debugTab:Button({
-    Title = "Dump Stations",
-    Desc = "Log every child of workspace.Barista.Stations with its position",
-    Callback = function()
-        local barista = workspace:FindFirstChild("Barista")
-
-        local stations =
-            barista
-            and barista:FindFirstChild("Stations")
-
-        if not stations then
-            dbg("STATIONS", "workspace.Barista.Stations not found")
-            notify("Debug", "Stations not found (job not active or not streamed)")
-            return
-        end
-
-        for _, obj in ipairs(stations:GetChildren()) do
-            local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
-
-            dbg(
-                "STATIONS",
-                obj.Name,
-                obj.ClassName,
-                tostring(instPos(obj)),
-                "prompt", prompt and prompt:GetFullName() or "nil"
-            )
-        end
-
-        notify("Debug", "Stations dumped to log")
-    end
-})
-
-debugTab:Button({
-    Title = "Dump Nearby Prompts",
-    Desc = "Log every ProximityPrompt within 60 studs of you",
-    Callback = function()
-        local hrp = getHRP()
-
-        if not hrp then
-            return
-        end
-
-        local count = 0
-
-        for _, inst in ipairs(workspace:GetDescendants()) do
-            if inst:IsA("ProximityPrompt") then
-                local pos = promptWorldPos(inst)
-
-                if pos then
-                    local dist = (pos - hrp.Position).Magnitude
-
-                    if dist <= 60 then
-                        count += 1
-
-                        dbg(
-                            "NEAR",
-                            string.format("%.1f", dist),
-                            inst:GetFullName(),
-                            "action", inst.ActionText,
-                            "object", inst.ObjectText,
-                            "phone", isPhonePrompt(inst)
-                        )
+            local huge2 = math.huge
+            local huge3 = math.huge
+            local huge4 = math.huge
+            local flag = false
+            local flag2 = false
+            local flag3 = false
+            if trafficfolder then
+                for i5, v9 in ipairs(trafficfolder:GetChildren()) do
+                    if not list[v9] then
+                        fn3(v9)
+                    end
+                    local corehitbox = v9:FindFirstChild("CoreHitbox") or v9.PrimaryPart
+                    if not corehitbox then
+                        continue
+                    end
+                    local result13 = corehitbox.Position - position
+                    local dot = result13:Dot(unit)
+                    if not (dot > -30 and dot < config.LookAheadDist) then
+                        continue
+                    end
+                    local dot2 = (corehitbox.Position - result12):Dot(unit2)
+                    if dot2 < -6.5 then
+                        if dot > 0 and dot < huge2 then
+                            huge2 = dot
+                        end
+                        if not (dot >= -28 and dot <= 30) then
+                            continue
+                        end
+                        flag = true
+                        continue
+                    end
+                    if dot2 > 6.5 then
+                        if dot > 0 and dot < huge4 then
+                            huge4 = dot
+                        end
+                        if not (dot >= -28 and dot <= 30) then
+                            continue
+                        end
+                        flag3 = true
+                    else
+                        if dot > 0 and dot < huge3 then
+                            huge3 = dot
+                        end
+                        if not (dot >= -28 and dot <= 30) then
+                            continue
+                        end
+                        flag2 = true
                     end
                 end
             end
+            local ok3 = not flag and huge2 > 30
+            local ok4 = not flag2 and huge3 > 30
+            local ok5 = not flag3 and huge4 > 30
+            local lanewidth = config.LaneWidth
+            local num15 = math.clamp(num6 * 0.45, 52, 75)
+            local result14 = num15 + 18
+            if num5 > 6.5 then
+                if huge4 < num15 then
+                    if ok4 then
+                        num5 = 0
+                    elseif ok3 and huge2 > huge3 then
+                        num5 = -lanewidth
+                        num10 = -1
+                    end
+                elseif ok4 and huge3 > result14 and huge4 > result14 then
+                    num5 = 0
+                end
+            elseif num5 < -6.5 then
+                if huge2 < num15 then
+                    if ok4 then
+                        num5 = 0
+                    elseif ok5 and huge4 > huge3 then
+                        num5 = lanewidth
+                        num10 = 1
+                    end
+                elseif ok4 and huge3 > result14 and huge2 > result14 then
+                    num5 = 0
+                end
+            elseif huge3 < num15 then
+                if ok3 and ok5 then
+                    if huge2 > num15 and huge4 > num15 then
+                        num10 = -num10
+                        num5 = num10 * lanewidth
+                    elseif huge2 > huge4 then
+                        num5 = -lanewidth
+                        num10 = -1
+                    elseif huge4 > huge2 then
+                        num5 = lanewidth
+                        num10 = 1
+                    else
+                        num10 = -num10
+                        num5 = num10 * lanewidth
+                    end
+                elseif ok3 then
+                    num5 = -lanewidth
+                    num10 = -1
+                elseif ok5 then
+                    num5 = lanewidth
+                    num10 = 1
+                end
+            else
+                num5 = 0
+            end
+            num4 = num4 + (num5 - num4) * math.clamp(num12 * config.WeaveLerpSpeed, 0, 1)
+            local result15 = result12 + unit2 * num4
+            local result16 = fn13(result15, result3)
+            local vector3 = Vector3.new(result15.X, result16, result15.Z)
+            local lookat = CFrame.lookAt(vector3, vector3 + unit)
+            result3:PivotTo(lookat)
+            v6.AssemblyLinearVelocity = unit * result9
+            if updatespeedbridge then
+                updatespeedbridge:Fire(math.floor(num6))
+            end
+            task.wait(num12)
+            continue
         end
-
-        dbg("NEAR", "total", count)
-
-        notify("Debug", count .. " prompts logged")
+        fn16(result3, v6)
+        local result17 = fn15(result3, v6)
+        if not result17 then
+            task.wait(0.5)
+        else
+            num3 = fn22(v6.Position)
+        end
     end
-})
-
--- =========================================================
--- INFORMATION
--- =========================================================
-
-local infoTab = Window:Tab({
-    Title = "Information",
-    Icon = "info"
-})
-
-infoTab:Section({
-    Title = "Script Hub"
-})
-
-infoTab:Paragraph({ Title = "Hub",     Desc = "DX-SR Hub" })
-infoTab:Paragraph({ Title = "Script",  Desc = "Autofarm Barista" })
-infoTab:Paragraph({ Title = "Version", Desc = "v0.0.0.11" })
-infoTab:Paragraph({ Title = "Author",  Desc = "DX-SR" })
-infoTab:Paragraph({ Title = "UI",      Desc = "WindUI" })
-
--- =========================================================
--- LOADED
--- =========================================================
-
-notify(
-    "DX-SR Hub",
-    "Barista Autofarm v0.0.0.11 loaded! Press V to toggle UI.",
-    5,
-    "coffee"
-)
-
-dbg("BOOT", "UI ready")
+end)
