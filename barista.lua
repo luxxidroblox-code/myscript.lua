@@ -13,8 +13,8 @@ local SoundService        = game:GetService("SoundService")
 local LocalPlayer         = Players.LocalPlayer
 local playerGui           = LocalPlayer:FindFirstChild("PlayerGui")
 
-local Connections    = {}
-local CleanupObjects = {}
+local Connections         = {}
+local CleanupObjects      = {}
 local originalMaterials   = {}
 local originalShadows     = {}
 local originalQualityLevel = settings().Rendering.QualityLevel
@@ -79,29 +79,26 @@ local function destroyHub(reason)
     debugPrint("Cleaning up... Reason: " .. tostring(reason or "Manual"))
     Config.IS_RUNNING = false
     for name, conn in pairs(Connections) do
-        if conn then pcall(function() conn:Disconnect() end) debugPrint("Disconnected: " .. name) end
+        if conn then pcall(function() conn:Disconnect() end) end
     end
     table.clear(Connections)
     for name, obj in pairs(CleanupObjects) do
-        if obj and obj.Parent then pcall(function() obj:Destroy() end) debugPrint("Destroyed: " .. name) end
+        if obj and obj.Parent then pcall(function() obj:Destroy() end) end
     end
     table.clear(CleanupObjects)
 end
 
--- =========================================================
--- AUTO CLEANUP ON LEAVE
--- =========================================================
 Connections["PlayerLeave"] = LocalPlayer.AncestryChanged:Connect(function(_, parent)
     destroyHub("Player Close The Game")
 end)
 
 -- =========================================================
--- RAYFIELD LOAD
+-- RAYFIELD
 -- =========================================================
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 -- =========================================================
--- MAIN HUB
+-- MAIN
 -- =========================================================
 local function mainScreen()
     Config.IS_RUNNING = true
@@ -118,7 +115,7 @@ local function mainScreen()
         KeySystem              = false,
     })
 
-    -- ── HOME TAB ──────────────────────────────────────────
+    -- HOME TAB
     local HomeTab = Window:CreateTab("Home", "home")
 
     HomeTab:CreateSection("Profile")
@@ -177,9 +174,8 @@ local function mainScreen()
         end,
     })
 
-    -- ── BARISTA TAB ───────────────────────────────────────
+    -- BARISTA TAB
     local BaristaTab = Window:CreateTab("Barista", "coffee")
-
     BaristaTab:CreateSection("Auto Barista")
 
     local statusLabel   = BaristaTab:CreateLabel("Status: ● STOPPED")
@@ -189,7 +185,7 @@ local function mainScreen()
     local menuLabel     = BaristaTab:CreateLabel("Menu: -")
     local flavourLabel  = BaristaTab:CreateLabel("Flavour: -")
 
-    -- ── BARISTA LOGIC ─────────────────────────────────────
+    -- BARISTA STATE
     local autoBarista          = false
     local startTime            = 0
     local ordersCompletedCount = 0
@@ -203,7 +199,8 @@ local function mainScreen()
     local function firePrompt(prompt)
         if not (prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled) then return end
         pcall(function()
-            if fireproximityprompt then fireproximityprompt(prompt)
+            if fireproximityprompt then
+                fireproximityprompt(prompt)
             else
                 prompt:InputHoldBegin()
                 task.wait(prompt.HoldDuration or 0.5)
@@ -255,6 +252,37 @@ local function mainScreen()
         end
     end
 
+    -- tunggu NpcDialog muncul dan punya text, return textnya
+    local function waitForDialog(timeout)
+        timeout = timeout or 8
+        local deadline = os.clock() + timeout
+        repeat
+            local dlg = playerGui:FindFirstChild("NpcDialog")
+            if dlg then
+                local textObj = dlg
+                if not (dlg:IsA("TextLabel") or dlg:IsA("TextButton") or dlg:IsA("TextBox")) then
+                    textObj = dlg:FindFirstChildWhichIsA("TextLabel", true)
+                end
+                if textObj and textObj.Text and textObj.Text ~= "" then
+                    return dlg, textObj.Text
+                end
+            end
+            task.wait(0.1)
+        until os.clock() > deadline
+        return nil, nil
+    end
+
+    -- skip semua halaman dialog sampai NpcDialog hilang
+    local function skipDialog(timeout)
+        timeout = timeout or 6
+        local deadline = os.clock() + timeout
+        repeat
+            pressSpaceKey(1, 0.15)
+            task.wait(0.2)
+        until not playerGui:FindFirstChild("NpcDialog") or os.clock() > deadline
+        task.wait(0.3)
+    end
+
     local function clickGuiButton(btn)
         if not btn then return end
         if firesignal then
@@ -264,9 +292,8 @@ local function mainScreen()
             return
         end
         if getconnections then
-            local events = { btn.MouseButton1Click, btn.MouseButton1Down, btn.Activated }
-            local fired  = false
-            for _, event in ipairs(events) do
+            local fired = false
+            for _, event in ipairs({ btn.MouseButton1Click, btn.MouseButton1Down, btn.Activated }) do
                 for _, conn in pairs(getconnections(event)) do
                     if conn.Fire     then pcall(function() conn:Fire()     end) fired = true
                     elseif conn.Function then pcall(function() conn:Function() end) fired = true end
@@ -339,40 +366,26 @@ local function mainScreen()
     end
 
     local function scanCurrentOrder()
-        local npcDialog = playerGui:FindFirstChild("NpcDialog")
-        if not npcDialog then return nil end
-        local textObj = npcDialog
-        if not (npcDialog:IsA("TextLabel") or npcDialog:IsA("TextButton") or npcDialog:IsA("TextBox")) then
-            textObj = npcDialog:FindFirstChildWhichIsA("TextLabel", true)
-        end
-        if not textObj then return nil end
-        local text = textObj.Text
-        if not text or text == "" then return nil end
+        local dlg, text = waitForDialog(5)
+        if not dlg or not text then return nil end
+
         local menuName, flavour
         menuName, flavour = text:match("[Pp]esan%s+(.+),%s*[Rr]asa%s+(.+)%s+[Yy]a")
         if not menuName then menuName = text:match("[Pp]esan%s+(.+)%s+[Yy]a") end
         if not menuName then return nil end
+
         menuName = menuName:gsub("^%s+", ""):gsub("%s+$", "")
         if flavour then flavour = flavour:gsub("^%s+", ""):gsub("%s+$", "") end
+
         local menuId = getMenuIdFromName(menuName)
         if not menuId then return nil end
+
         currentOrder = { Menu = menuName, MenuId = menuId, Flavour = flavour, RawText = text }
         pcall(function()
             menuLabel.Label.Text    = "Menu: "    .. (currentOrder.Menu    or "-")
             flavourLabel.Label.Text = "Flavour: " .. (currentOrder.Flavour or "-")
         end)
         return currentOrder
-    end
-
-    local function waitForCurrentOrder(timeout)
-        timeout = timeout or 10
-        local deadline = os.clock() + timeout
-        while os.clock() < deadline do
-            local order = scanCurrentOrder()
-            if order then return order end
-            task.wait(0.2)
-        end
-        return nil
     end
 
     local function selectCurrentFlavour()
@@ -395,7 +408,7 @@ local function mainScreen()
         return false
     end
 
-    -- Drink constructors ──────────────────────────────────
+    -- DRINK CONSTRUCTORS
     local function stations() return workspace.Barista.Stations end
 
     local function doKopiHitam()
@@ -594,6 +607,7 @@ local function mainScreen()
         smartTeleportTo(cashierCF)
         task.wait(1)
 
+        -- scan customer
         updateStatus("Waiting for Customer...")
         local customers       = workspace:FindFirstChild("BaristaCustomers")
         local scanStart       = os.clock()
@@ -621,24 +635,37 @@ local function mainScreen()
             if not servePrompt then task.wait(0.2) end
         end
 
-        if servePrompt then
-            updateStatus("Talking to Customer...")
-            firePrompt(servePrompt)
-        else
+        if not servePrompt then
             updateStatus("Customer Not Found!")
             return
         end
-        task.wait(1)
 
-        updateStatus("Receiving Order...")
+        -- fire prompt ke customer
+        updateStatus("Talking to Customer...")
+        firePrompt(servePrompt)
+
+        -- tunggu dialog muncul dan ada text
+        updateStatus("Waiting for Dialog...")
+        local dlg, dialogText = waitForDialog(8)
+        if not dlg then
+            updateStatus("Dialog Not Found!")
+            return
+        end
+
+        -- scan order dari dialog yang sedang visible
+        updateStatus("Reading Order...")
         currentOrder = nil
-        local order = waitForCurrentOrder(10)
-        if not order then updateStatus("Order Not Found!") return end
+        local order = scanCurrentOrder()
+        if not order then
+            updateStatus("Order Not Found!")
+            return
+        end
 
-        task.wait(1)
-        pressSpaceKey(1, 0.5)
-        task.wait(1)
+        -- skip semua halaman dialog sampai hilang
+        updateStatus("Confirming Order...")
+        skipDialog(6)
 
+        -- ambil cup
         updateStatus("Getting Cup...")
         smartTeleportTo(CFrame.new(-11.643688201904297, 24.607194900512695, 8409.1103515625))
         task.wait(1)
@@ -678,11 +705,13 @@ local function mainScreen()
         end
         task.wait(1)
 
+        -- buat minuman
         updateStatus("Making: " .. currentOrder.MenuId)
         local drinkFn = DRINK_MAP[currentOrder.MenuId]
         if not drinkFn then updateStatus("Menu Not Supported: " .. currentOrder.MenuId) return end
         if not drinkFn() then updateStatus("Drink Preparation Failed!") return end
 
+        -- kembali ke kasir
         updateStatus("Returning to Cashier...")
         smartTeleportTo(cashierCF)
         task.wait(1)
@@ -692,6 +721,7 @@ local function mainScreen()
             return
         end
 
+        -- tunggu customer balik ke kasir
         local serveStart   = os.clock()
         local servePrompt2 = nil
 
@@ -703,7 +733,9 @@ local function mainScreen()
                 local dist = (hrp.Position - cashierCF.Position).Magnitude
                 if dist <= 6 then
                     local p = hrp:FindFirstChild("BaristaServePrompt")
-                    if p and p:IsA("ProximityPrompt") and p.Enabled then servePrompt2 = p end
+                    if p and p:IsA("ProximityPrompt") and p.Enabled then
+                        servePrompt2 = p
+                    end
                 end
             end
             if not servePrompt2 then task.wait(0.2) end
@@ -726,7 +758,7 @@ local function mainScreen()
         task.wait(1)
     end
 
-    -- ── TOGGLE ────────────────────────────────────────────
+    -- TOGGLE
     BaristaTab:CreateToggle({
         Name         = "Auto Barista",
         CurrentValue = false,
@@ -764,7 +796,8 @@ local function mainScreen()
                             end
                             obj.Material   = Enum.Material.SmoothPlastic
                             obj.CastShadow = false
-                        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") then
+                        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail")
+                            or obj:IsA("Smoke") or obj:IsA("Fire") then
                             obj.Enabled = false
                         elseif obj:IsA("PostEffect") then
                             obj.Enabled = false
@@ -782,8 +815,11 @@ local function mainScreen()
                     firePrompt(workspace.Barista.NPC_BARISTA_MANAGER.Head.DialogPrompt)
                     task.wait(0.5)
                 end
-                pressSpaceKey(5, 0.2)
-                task.wait(1)
+
+                -- tunggu dan skip dialog manager
+                local mgrDlg = waitForDialog(5)
+                if mgrDlg then skipDialog(5) end
+                task.wait(0.5)
 
                 task.spawn(function()
                     while autoBarista do
@@ -811,7 +847,8 @@ local function mainScreen()
                     table.clear(originalMaterials)
                     table.clear(originalShadows)
                     for _, obj in ipairs(workspace:GetDescendants()) do
-                        if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") then
+                        if obj:IsA("ParticleEmitter") or obj:IsA("Trail")
+                            or obj:IsA("Smoke") or obj:IsA("Fire") then
                             obj.Enabled = true
                         elseif obj:IsA("PostEffect") then
                             obj.Enabled = true
