@@ -9,40 +9,23 @@ local UserInputService    = game:GetService("UserInputService")
 local CoreGui             = game:GetService("CoreGui")
 local RunService          = game:GetService("RunService")
 local HttpService         = game:GetService("HttpService")
-local RbxAnalyticsService = game:GetService("RbxAnalyticsService")
 local SoundService        = game:GetService("SoundService")
 local LocalPlayer         = Players.LocalPlayer
 local playerGui           = LocalPlayer:FindFirstChild("PlayerGui")
 
 local Connections    = {}
 local CleanupObjects = {}
-local originalMaterials  = {}
-local originalShadows    = {}
+local originalMaterials   = {}
+local originalShadows     = {}
 local originalQualityLevel = settings().Rendering.QualityLevel
 
 -- =========================================================
 -- CONFIG
 -- =========================================================
 local Config = {
-    API_URL            = (getgenv and getgenv().Nexova_api_url) or "https://www.nexova.my.id/",
-    GAME_NAME          = "Car Driving Indonesia",
-    PRODUCT_CODE       = "NEX-CDID-BARISTA",
-    LICENSE_KEY        = (getgenv and getgenv().Nexova_key) or (getgenv and getgenv().projectsion_key) or Nexova_key or "",
-    REQUEST_FUNC       = request or http_request or (syn and syn.request) or (fluxus and fluxus.request),
-    HEADERS            = { ["Content-Type"] = "application/json" },
-    PUBLISH_MODE       = true,
-    DEBUG_MODE         = false,
-    SESSION_TOKEN      = nil,
-    HEARTBEAT_INTERVAL = 60,
-    IS_RUNNING         = false,
-}
-
-local AuthState = {
-    status_license = "unknown",
-    key            = "",
-    plan_license   = "N/A",
-    max_devices    = 1,
-    expired_at     = "N/A",
+    DEBUG_MODE    = false,
+    IS_RUNNING    = false,
+    SESSION_TOKEN = nil,
 }
 
 -- =========================================================
@@ -63,11 +46,11 @@ local function playEffect(actionType, isLooping)
     end
     task.spawn(function()
         pcall(function()
-            local snd      = Instance.new("Sound")
-            snd.SoundId    = AudioRegistry[actionType] or AudioRegistry.ToastSFX
-            snd.Volume     = 0.8
-            snd.Looped     = isLooping or false
-            local holder   = nil
+            local snd   = Instance.new("Sound")
+            snd.SoundId = AudioRegistry[actionType] or AudioRegistry.ToastSFX
+            snd.Volume  = 0.8
+            snd.Looped  = isLooping or false
+            local holder = nil
             pcall(function() holder = gethui() end)
             if not holder then pcall(function() holder = CoreGui end) end
             if not holder then holder = SoundService end
@@ -89,61 +72,12 @@ end
 local function debugPrint(msg) if Config.DEBUG_MODE then print("[PROJ-PRINT] " .. tostring(msg)) end end
 local function debugWarn(msg)  if Config.DEBUG_MODE then warn("[PROJ-WARN] "  .. tostring(msg)) end end
 
-local function getHWID()
-    local hwid = nil
-    pcall(function()
-        if gethwid then
-            local r = gethwid()
-            if r and r ~= "" then hwid = r end
-        end
-    end)
-    if not hwid then
-        pcall(function()
-            local c = RbxAnalyticsService:GetClientId()
-            if c and c ~= "" then hwid = c end
-        end)
-    end
-    return hwid and tostring(hwid) or nil
-end
-
-local function sendApiRequest(action, payload)
-    local ok, response = pcall(function()
-        return Config.REQUEST_FUNC({
-            Url     = Config.API_URL .. "/API/route_license.php?act=" .. tostring(action),
-            Method  = "POST",
-            Headers = Config.HEADERS,
-            Body    = HttpService:JSONEncode(payload),
-        })
-    end)
-    if not ok or not response or not response.Body then
-        return false, { message = "Connection error / No response from server." }
-    end
-    local pok, parsed = pcall(function() return HttpService:JSONDecode(response.Body) end)
-    if pok and parsed then return parsed.success, parsed end
-    return false, { message = "Invalid JSON response from server." }
-end
-
 -- =========================================================
--- SESSION / LIFECYCLE
+-- LIFECYCLE
 -- =========================================================
-local function endSession()
-    if not Config.SESSION_TOKEN then return end
-    local hwid = getHWID()
-    if not hwid then return end
-    local ok, resp = sendApiRequest("session_end", {
-        session_token = Config.SESSION_TOKEN,
-        hwid_hash     = hwid,
-    })
-    if ok then debugPrint("Session terminated cleanly.")
-    else      debugWarn("Failed to end session: " .. tostring(resp.message)) end
-    Config.SESSION_TOKEN = nil
-end
-
 local function destroyHub(reason)
-    if not Config.IS_RUNNING and #Connections == 0 and #CleanupObjects == 0 then return end
     debugPrint("Cleaning up... Reason: " .. tostring(reason or "Manual"))
     Config.IS_RUNNING = false
-    endSession()
     for name, conn in pairs(Connections) do
         if conn then pcall(function() conn:Disconnect() end) debugPrint("Disconnected: " .. name) end
     end
@@ -154,95 +88,8 @@ local function destroyHub(reason)
     table.clear(CleanupObjects)
 end
 
-local function startHeartbeatLoop()
-    task.spawn(function()
-        while Config.IS_RUNNING and Config.SESSION_TOKEN do
-            task.wait(Config.HEARTBEAT_INTERVAL)
-            if not Config.IS_RUNNING then break end
-            local hbOk, hbData = sendApiRequest("heartbeat", {
-                session_token = Config.SESSION_TOKEN,
-                hwid_hash     = getHWID(),
-            })
-            if not hbOk then
-                local msg = (type(hbData) == "table" and hbData.message) or "Session expired."
-                debugWarn("Heartbeat Failed: " .. tostring(msg))
-                destroyHub("Heartbeat Failed: " .. tostring(msg))
-                LocalPlayer:Kick("[PROJECTSION] Session Ended: " .. tostring(msg))
-                break
-            else
-                debugPrint("Heartbeat OK: " .. tostring((type(hbData) == "table" and hbData.message) or "OK"))
-            end
-        end
-    end)
-end
-
 -- =========================================================
--- AUTH (simple loading label via Rayfield notification)
--- =========================================================
-local function authenticateUser()
-    if not Config.REQUEST_FUNC then
-        LocalPlayer:Kick("[PROJECTSION] Executor HTTP not supported!")
-        return false
-    end
-
-    local hwid = getHWID()
-    if not hwid then
-        LocalPlayer:Kick("[PROJECTSION] Failed to detect HWID.")
-        return false
-    end
-
-    if Config.LICENSE_KEY == "" then
-        LocalPlayer:Kick("[PROJECTSION] License key is empty!")
-        return false
-    end
-
-    local authPayload = {
-        license_key     = Config.LICENSE_KEY,
-        product_code    = Config.PRODUCT_CODE,
-        place_id        = game.PlaceId,
-        roblox_id       = LocalPlayer.UserId,
-        roblox_username = LocalPlayer.Name,
-        hwid_hash       = hwid,
-    }
-
-    local vOk, vData = sendApiRequest("verify", authPayload)
-    if not vOk then
-        if type(vData) == "table" and vData.code == "max_devices_reached" then
-            LocalPlayer:Kick("[PROJECTSION] Device Limit! Reset HWID via Discord Bot.")
-        else
-            local errMsg = (type(vData) == "table" and vData.message) or "Invalid/expired key."
-            LocalPlayer:Kick("[PROJECTSION] Verify Failed: " .. tostring(errMsg))
-        end
-        return false
-    end
-
-    pcall(function()
-        local licInfo = type(vData) == "table" and vData.data and (vData.data.license or vData.data)
-        if licInfo then
-            AuthState.status_license = tostring(licInfo.status or licInfo.status_license or "active")
-            AuthState.key            = tostring(licInfo.license_key or Config.LICENSE_KEY)
-            AuthState.plan_license   = tostring(licInfo.plan_code or licInfo.plan or "N/A")
-            AuthState.max_devices    = licInfo.max_devices or 1
-            local exp = licInfo.expired_at or licInfo.expires
-            AuthState.expired_at = (not exp or exp == "" or tostring(exp) == "nil") and "Lifetime" or tostring(exp)
-        end
-    end)
-
-    local sessOk, sessData = sendApiRequest("session_start", authPayload)
-    if not sessOk or type(sessData) ~= "table" or not sessData.data or not sessData.data.session_token then
-        local errMsg = (type(sessData) == "table" and sessData.message) or "Active on another device."
-        LocalPlayer:Kick("[PROJECTSION] Session Failed: " .. tostring(errMsg))
-        return false
-    end
-
-    Config.SESSION_TOKEN = sessData.data.session_token
-    Config.IS_RUNNING    = true
-    startHeartbeatLoop()
-    return true
-end
-
--- =========================================================
--- AUTO END SESSION
+-- AUTO CLEANUP ON LEAVE
 -- =========================================================
 Connections["PlayerLeave"] = LocalPlayer.AncestryChanged:Connect(function(_, parent)
     destroyHub("Player Close The Game")
@@ -253,25 +100,18 @@ end)
 -- =========================================================
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
-local function maskLicense(key)
-    if not key or key == "" then return "N/A" end
-    if #key <= 8 then return key end
-    return string.sub(key, 1, 4) .. "-XXXX-XXXX-" .. string.sub(key, -4)
-end
-
 -- =========================================================
 -- MAIN HUB
 -- =========================================================
 local function mainScreen()
-    -- Auth first — Rayfield boots after
-    if not authenticateUser() then return end
+    Config.IS_RUNNING = true
 
     local Window = Rayfield:CreateWindow({
-        Name             = ".projectsion",
-        Icon             = 0,
-        LoadingTitle     = ".projectsion",
-        LoadingSubtitle  = "Car Driving Indonesia | Barista",
-        Theme            = "Default",
+        Name                   = ".projectsion",
+        Icon                   = 0,
+        LoadingTitle           = ".projectsion",
+        LoadingSubtitle        = "Car Driving Indonesia | Barista",
+        Theme                  = "Default",
         DisableRayfieldPrompts = false,
         DisableBuildWarnings   = false,
         ConfigurationSaving    = { Enabled = false },
@@ -286,26 +126,14 @@ local function mainScreen()
     HomeTab:CreateLabel("Display Name: " .. LocalPlayer.DisplayName)
     HomeTab:CreateLabel("User ID: "      .. tostring(LocalPlayer.UserId))
 
-    HomeTab:CreateSection("License")
-    local licStatusText = tostring(AuthState.status_license or "unknown")
-    if licStatusText == "active"  then licStatusText = "✓ Active"
-    elseif licStatusText == "expired" then licStatusText = "✕ Expired"
-    elseif licStatusText == "revoked" then licStatusText = "✕ Revoked" end
-
-    HomeTab:CreateLabel("Status: "      .. licStatusText)
-    HomeTab:CreateLabel("Product: "     .. tostring(Config.PRODUCT_CODE))
-    HomeTab:CreateLabel("License Key: " .. maskLicense(AuthState.key))
-    HomeTab:CreateLabel("Plan: "        .. tostring(AuthState.plan_license or "N/A"))
-    HomeTab:CreateLabel("Expires: "     .. tostring(AuthState.expired_at or "N/A"))
-
     HomeTab:CreateSection("Stats")
-    local sessionStartTick = tick()
-    local sessionLabel  = HomeTab:CreateLabel("Session: 00:00:00")
-    local fpsLabel      = HomeTab:CreateLabel("FPS: 0")
-    local pingLabel     = HomeTab:CreateLabel("Ping: 0 MS")
+    local sessionLabel = HomeTab:CreateLabel("Session: 00:00:00")
+    local fpsLabel     = HomeTab:CreateLabel("FPS: 0")
+    local pingLabel    = HomeTab:CreateLabel("Ping: 0 MS")
 
-    local countedFrames = 0
-    local timerTick     = tick()
+    local sessionStartTick = tick()
+    local countedFrames    = 0
+    local timerTick        = tick()
 
     Connections["FPS_RS"] = RunService.RenderStepped:Connect(function()
         countedFrames += 1
@@ -313,8 +141,8 @@ local function mainScreen()
 
     task.spawn(function()
         while task.wait(0.5) do
-            local now   = tick()
-            local dt    = now - timerTick
+            local now     = tick()
+            local dt      = now - timerTick
             local elapsed = math.floor(now - sessionStartTick)
             pcall(function()
                 sessionLabel.Label.Text = string.format("Session: %02d:%02d:%02d",
@@ -354,12 +182,12 @@ local function mainScreen()
 
     BaristaTab:CreateSection("Auto Barista")
 
-    local statusLabel  = BaristaTab:CreateLabel("Status: ● STOPPED")
-    local ordersLabel  = BaristaTab:CreateLabel("Orders Completed: 0")
-    local elapsedLabel = BaristaTab:CreateLabel("Elapsed: 00:00:00")
-    local progressLabel= BaristaTab:CreateLabel("Info: Idle / Waiting to start...")
-    local menuLabel    = BaristaTab:CreateLabel("Menu: -")
-    local flavourLabel = BaristaTab:CreateLabel("Flavour: -")
+    local statusLabel   = BaristaTab:CreateLabel("Status: ● STOPPED")
+    local ordersLabel   = BaristaTab:CreateLabel("Orders Completed: 0")
+    local elapsedLabel  = BaristaTab:CreateLabel("Elapsed: 00:00:00")
+    local progressLabel = BaristaTab:CreateLabel("Info: Idle / Waiting to start...")
+    local menuLabel     = BaristaTab:CreateLabel("Menu: -")
+    local flavourLabel  = BaristaTab:CreateLabel("Flavour: -")
 
     -- ── BARISTA LOGIC ─────────────────────────────────────
     local autoBarista          = false
@@ -476,8 +304,8 @@ local function mainScreen()
         end
 
         while BrewGui.Parent and BrewGui.Visible do
-            local now     = os.clock()
-            local dt      = now - lastTime
+            local now = os.clock()
+            local dt  = now - lastTime
             if dt > 0 then
                 local needleX  = Needle.Position.X.Scale
                 local zoneX    = Zone.Position.X.Scale
@@ -568,7 +396,7 @@ local function mainScreen()
     end
 
     -- Drink constructors ──────────────────────────────────
-    local stations = function() return workspace.Barista.Stations end
+    local function stations() return workspace.Barista.Stations end
 
     local function doKopiHitam()
         updateStatus("Getting Coffee Beans...")
@@ -767,9 +595,9 @@ local function mainScreen()
         task.wait(1)
 
         updateStatus("Waiting for Customer...")
-        local customers   = workspace:FindFirstChild("BaristaCustomers")
-        local scanStart   = os.clock()
-        local servePrompt = nil
+        local customers       = workspace:FindFirstChild("BaristaCustomers")
+        local scanStart       = os.clock()
+        local servePrompt     = nil
         local currentCustomer = nil
 
         while not servePrompt and os.clock() - scanStart < 30 do
@@ -782,8 +610,8 @@ local function mainScreen()
                         if prompt and prompt:IsA("ProximityPrompt") and prompt.Enabled then
                             local dist = (hrp.Position - cashierCF.Position).Magnitude
                             if dist <= closestDist then
-                                closestDist   = dist
-                                servePrompt   = prompt
+                                closestDist     = dist
+                                servePrompt     = prompt
                                 currentCustomer = cust
                             end
                         end
@@ -898,7 +726,7 @@ local function mainScreen()
         task.wait(1)
     end
 
-    -- Toggle button ───────────────────────────────────────
+    -- ── TOGGLE ────────────────────────────────────────────
     BaristaTab:CreateToggle({
         Name         = "Auto Barista",
         CurrentValue = false,
@@ -910,18 +738,7 @@ local function mainScreen()
                 pcall(function() statusLabel.Label.Text = "Status: ● RUNNING" end)
                 startTime = os.time()
                 updateStatus("Starting Auto Barista...")
-
                 Rayfield:Notify({ Title = ".projectsion", Content = "Auto Barista Started!", Duration = 3 })
-
-                if #Players:GetChildren() > 1 then
-                    LocalPlayer:Kick("[PROJECTSION] Used on a Private Server!")
-                    return
-                end
-
-                if game.PlaceId ~= 14005966837 then
-                    LocalPlayer:Kick("[PROJECTSION] Wrong place!")
-                    return
-                end
 
                 task.spawn(function()
                     while autoBarista do
