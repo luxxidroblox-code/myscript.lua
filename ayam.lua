@@ -1,5 +1,5 @@
 -- Lua 5.1 | CDID | Delta / Arceus X
--- Rayfield UI | dataReplication:GetVehicleData() → NewModification
+-- Rayfield UI | garage → dropdown raw ActualName → unlock
 
 local RS              = game:GetService("ReplicatedStorage")
 local dataReplication = require(RS.Services.DataReplication)
@@ -20,8 +20,24 @@ local Window = Rayfield:CreateWindow({
 
 local Tab = Window:CreateTab("Engine", 4483362458)
 
--- ─── Status label ─────────────────────────────────────────────────────────
-local StatusSection = Tab:CreateSection("Status")
+-- ─── Fetch garage ─────────────────────────────────────────────────────────
+local vehicleData = dataReplication:GetVehicleData()
+local carList     = {}
+
+for carID, _ in pairs(vehicleData) do
+    if RS.CarData:FindFirstChild(carID) then
+        table.insert(carList, carID)
+    end
+end
+
+table.sort(carList)
+
+-- ─── State ────────────────────────────────────────────────────────────────
+local selectedCar   = carList[1] or ""
+local selectedStage = "Stage3"
+
+-- ─── Status ───────────────────────────────────────────────────────────────
+Tab:CreateSection("Status")
 
 local StatusParagraph = Tab:CreateParagraph({
     Title   = "Status",
@@ -29,68 +45,70 @@ local StatusParagraph = Tab:CreateParagraph({
 })
 
 local function SetStatus(text)
-    StatusParagraph:Set({
-        Title   = "Status",
-        Content = text
-    })
+    StatusParagraph:Set({ Title = "Status", Content = text })
 end
 
--- ─── Stage dropdown ───────────────────────────────────────────────────────
-local selectedStage = "Stage3"
+-- ─── Car dropdown ─────────────────────────────────────────────────────────
+Tab:CreateSection("Select Car")
 
 Tab:CreateDropdown({
-    Name    = "Engine Stage",
-    Options = { "Stage1", "Stage2", "Stage3" },
+    Name          = "Car List (" .. #carList .. " mobil)",
+    Options       = carList,
+    CurrentOption = { carList[1] },
+    Flag          = "SelectedCar",
+    Callback      = function(val)
+        selectedCar = val[1]
+    end
+})
+
+-- ─── Stage dropdown ───────────────────────────────────────────────────────
+Tab:CreateDropdown({
+    Name          = "Engine Stage",
+    Options       = { "Stage1", "Stage2", "Stage3" },
     CurrentOption = { "Stage3" },
-    Flag    = "EngineStage",
-    Callback = function(val)
+    Flag          = "EngineStage",
+    Callback      = function(val)
         selectedStage = val[1]
     end
 })
 
--- ─── Delay slider ─────────────────────────────────────────────────────────
-local fireDelay = 0.35
+-- ─── Unlock selected ──────────────────────────────────────────────────────
+Tab:CreateButton({
+    Name     = "Unlock Selected Car",
+    Callback = function()
+        if selectedCar == "" then
+            SetStatus("Pilih mobil dulu.")
+            return
+        end
 
-Tab:CreateSlider({
-    Name    = "Fire Delay (s)",
-    Range   = { 0.1, 2.0 },
-    Increment = 0.05,
-    CurrentValue = 0.35,
-    Flag    = "FireDelay",
-    Callback = function(val)
-        fireDelay = val
+        local ok, err = pcall(function()
+            ModEvent:FireServer(selectedCar, {
+                EngineInternals = selectedStage
+            })
+        end)
+
+        if ok then
+            SetStatus(string.format("Unlocked: %s → %s", selectedCar, selectedStage))
+            Rayfield:Notify({
+                Title    = "Unlocker",
+                Content  = selectedCar .. " → " .. selectedStage,
+                Duration = 4,
+            })
+        else
+            SetStatus("ERROR: " .. tostring(err))
+        end
     end
 })
 
--- ─── Unlock button ────────────────────────────────────────────────────────
+-- ─── Unlock all ───────────────────────────────────────────────────────────
 Tab:CreateButton({
     Name     = "Unlock All Cars",
     Callback = function()
-        SetStatus("Fetching garage...")
+        local total   = #carList
+        local success = 0
+        local failed  = 0
 
-        local vehicleData = dataReplication:GetVehicleData()
-
-        if type(vehicleData) ~= "table" then
-            SetStatus("ERROR: GetVehicleData() tidak return table.")
-            return
-        end
-
-        local carList = {}
-
-        for carID, _ in pairs(vehicleData) do
-            if RS.CarData:FindFirstChild(carID) then
-                table.insert(carList, carID)
-            end
-        end
-
-        if #carList == 0 then
-            SetStatus("Tidak ada mobil ditemukan di garage.")
-            return
-        end
-
-        SetStatus(string.format("Unlocking %d mobil...", #carList))
-
-        local success, failed = 0, 0
+        SetStatus(string.format("Unlocking %d mobil...", total))
 
         for _, carID in ipairs(carList) do
             local ok, err = pcall(function()
@@ -102,69 +120,19 @@ Tab:CreateButton({
             if ok then
                 success += 1
             else
-                failed += 1
-                warn(string.format("[Unlocker] %s gagal: %s", carID, tostring(err)))
+                failed  += 1
+                warn(string.format("[Unlocker] %s: %s", carID, tostring(err)))
             end
 
-            SetStatus(string.format(
-                "Progress: %d / %d (gagal: %d)",
-                success + failed, #carList, failed
-            ))
-
-            task.wait(fireDelay)
+            SetStatus(string.format("Progress: %d / %d", success + failed, total))
+            task.wait(0.35)
         end
 
-        SetStatus(string.format(
-            "Done — %d berhasil, %d gagal.",
-            success, failed
-        ))
-
+        SetStatus(string.format("Done — %d berhasil, %d gagal.", success, failed))
         Rayfield:Notify({
             Title    = "Unlocker",
-            Content  = string.format("%d mobil unlocked ke %s", success, selectedStage),
+            Content  = string.format("%d/%d unlocked ke %s", success, total, selectedStage),
             Duration = 5,
         })
-    end
-})
-
--- ─── Single car unlock ────────────────────────────────────────────────────
-Tab:CreateSection("Manual")
-
-local manualCarID = ""
-
-Tab:CreateInput({
-    Name        = "Car ID",
-    PlaceholderText = "e.g. 2021GTBlackSeries",
-    RemoveTextAfterFocusLost = false,
-    Flag        = "ManualCarID",
-    Callback    = function(val)
-        manualCarID = val
-    end
-})
-
-Tab:CreateButton({
-    Name     = "Unlock This Car",
-    Callback = function()
-        if manualCarID == "" then
-            SetStatus("ERROR: Car ID kosong.")
-            return
-        end
-
-        local ok, err = pcall(function()
-            ModEvent:FireServer(manualCarID, {
-                EngineInternals = selectedStage
-            })
-        end)
-
-        if ok then
-            SetStatus(string.format("Unlocked: %s → %s", manualCarID, selectedStage))
-            Rayfield:Notify({
-                Title    = "Unlocker",
-                Content  = manualCarID .. " → " .. selectedStage,
-                Duration = 4,
-            })
-        else
-            SetStatus("ERROR: " .. tostring(err))
-        end
     end
 })
