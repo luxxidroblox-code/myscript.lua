@@ -786,11 +786,12 @@ do
 								or tryInvokeGameMethod(l, "get_delta_time_from_release_time")
 							assert(b.finite(q), "Hold tail clock is unavailable")
 						end
+						-- FIX: get_track_index is 0-based; shift to 1-based so lane aligns with keys[lane]
 						table.insert(j, {
 							id = tostring(n) .. ":" .. tostring(o),
 							object = l,
 							state = m,
-							lane = n,
+							lane = n + 1,
 							raw = p,
 							remaining = -p,
 							rawTail = q,
@@ -1179,7 +1180,7 @@ do
 			local function formatDistribution(g)
 				local h = d.probabilities(g)
 				if not h then
-					return "Paused â€” raise any judgement weight to resume."
+					return "Paused — raise any judgement weight to resume."
 				end
 				local i = {}
 				for j, k in ipairs(d.names) do
@@ -1187,7 +1188,7 @@ do
 						table.insert(i, string.format("%s %.1f%%", k, h[k] * 100))
 					end
 				end
-				return table.concat(i, "  Â·  ")
+				return table.concat(i, "  ·  ")
 			end
 
 			return function(g)
@@ -2339,8 +2340,8 @@ do
 
 			local function executeMove(h, i, j, k)
 				local l = b.delayMs(i.difficulty, h.options.useCalculatedDelay, h.options.executeDelay)
-				h.emit("status", `Waiting {l} ms before movingâ€¦`)
-				h.requestPhase = "Waiting before movingâ€¦"
+				h.emit("status", `Waiting {l} ms before moving…`)
+				h.requestPhase = "Waiting before moving…"
 				local m = os.clock() + l / 1000
 				repeat
 					if not isPositionCurrent(h, i, j, k) then
@@ -2355,7 +2356,7 @@ do
 					task.wait(f)
 				until false
 
-				h.requestPhase = "Selecting the pieceâ€¦"
+				h.requestPhase = "Selecting the piece…"
 				local n, o = h.board:autoMove(i.fromPos, i.toPos, i.promotion, function()
 					return isPositionCurrent(h, i, j, k)
 				end, function()
@@ -2363,7 +2364,7 @@ do
 				end, function()
 					if isRequestActive(h, j) then
 						h.submittedMove = i
-						h.requestPhase = "Waiting for the game to finish the moveâ€¦"
+						h.requestPhase = "Waiting for the game to finish the move…"
 					end
 				end)
 				if not isRequestActive(h, j) then
@@ -2461,9 +2462,9 @@ do
 				h.requestVersion += 1
 				local k = h.requestVersion
 				h.activeRequest = k
-				h.requestPhase = "Calculating with Stockfishâ€¦"
+				h.requestPhase = "Calculating with Stockfish…"
 				h.submittedMove = nil
-				h.emit("status", "Calculatingâ€¦")
+				h.emit("status", "Calculating…")
 
 				task.delay(d, function()
 					if not isRequestActive(h, k) or h.activeRequest ~= k or not h.busy then
@@ -2526,7 +2527,7 @@ do
 					then "Inactive"
 					elseif not i then "Waiting for a match"
 					elseif not j then "Waiting for your turn"
-					elseif h.busy then h.requestPhase or "Calculating or movingâ€¦"
+					elseif h.busy then h.requestPhase or "Calculating or moving…"
 					else "Waiting for your move"
 				if n ~= h.automationStatus then
 					h.emit("auto", n)
@@ -2629,7 +2630,7 @@ do
 			end
 
 			local function formatMoveMessage(j)
-				return string.gsub(j, "Best move: ([a-h][1-8])([a-h][1-8])", "%1 â†’ %2", 1)
+				return string.gsub(j, "Best move: ([a-h][1-8])([a-h][1-8])", "%1 → %2", 1)
 			end
 
 			local function readEngineStatus(j)
@@ -2697,7 +2698,7 @@ do
 					end
 					if y == "auto" then
 						if q then
-							q:Set(if z == "Inactive" then "Off Â· Enable Auto calculate to begin" else z)
+							q:Set(if z == "Inactive" then "Off · Enable Auto calculate to begin" else z)
 						end
 					elseif y == "status" then
 						if o then
@@ -2746,7 +2747,7 @@ do
 						return
 					end
 					n = true
-					z:Set("Checking the desktop serverâ€¦")
+					z:Set("Checking the desktop server…")
 					local A
 					local B
 					local C, D = pcall(function()
@@ -2765,13 +2766,13 @@ do
 					local E = if A then readEngineStatus(A) else "unknown"
 
 					if not A then
-						z:Set("Offline Â· Open the desktop app and try again.")
+						z:Set("Offline · Open the desktop app and try again.")
 						j:notify("Connection failed", B or "The server did not respond.")
 					elseif E == "ready" then
-						z:Set("Connected Â· Stockfish is ready")
+						z:Set("Connected · Stockfish is ready")
 						j:notify("Server connected", "Stockfish is ready.")
 					else
-						z:Set("Connected Â· Engine: " .. E)
+						z:Set("Connected · Engine: " .. E)
 						j:notify("Server connected", "Engine: " .. E)
 					end
 				end
@@ -2812,7 +2813,7 @@ do
 					name = "Suggested move",
 					text = "Join a match, then choose Suggest move below.",
 				})
-				q = A:CreateText({ name = "Auto Play", text = "Off Â· Enable Auto calculate to begin" })
+				q = A:CreateText({ name = "Auto Play", text = "Off · Enable Auto calculate to begin" })
 
 				z:CreateSection({ name = "Your next move" })
 				local C = z:CreateGroup({ direction = "row" })
