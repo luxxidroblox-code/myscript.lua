@@ -1,5 +1,5 @@
 -- Lua 5.1 | CDID | Delta / Arceus X
--- Rayfield UI | teleport + engine + ECU + turbo + supercharger + boost slider
+-- Rayfield UI | teleport + engine + ECU + turbo + supercharger + boost slider + delete limiter bypass
 
 local RS              = game:GetService("ReplicatedStorage")
 local Players         = game:GetService("Players")
@@ -67,10 +67,11 @@ local fullCarList    = scanInventory()
 local selectedCar    = fullCarList[1] or ""
 
 -- toggle flags
-local toggleEngine      = false
-local toggleECU         = false
-local toggleTurbo       = false
-local toggleSuperCharger = false
+local toggleEngine        = false
+local toggleECU           = false
+local toggleTurbo         = false
+local toggleSuperCharger  = false
+local toggleDeleteLimiter = false
 
 -- selected values
 local selectedEngineStage  = "Stage3"
@@ -241,6 +242,17 @@ Tab:CreateSlider({
     end
 })
 
+-- ─── Delete Limiter Bypass ────────────────────────────────────────────────
+Tab:CreateSection("Delete Limiter Bypass")
+
+Tab:CreateToggle({
+    Name     = "Unlock Delete Limiter",
+    Flag     = "ToggleDeleteLimiter",
+    Callback = function(val)
+        toggleDeleteLimiter = val
+    end
+})
+
 -- ─── Apply ────────────────────────────────────────────────────────────────
 Tab:CreateSection("Apply")
 
@@ -260,6 +272,9 @@ local function applyUnlock(carID)
     if toggleSuperCharger then
         mods.SuperCharger = "SuperCharger"
         mods.SuperBoost   = selectedSuperBoost
+    end
+    if toggleDeleteLimiter then
+        mods.DeleteLimiter = "Limiter"
     end
 
     if next(mods) == nil then
