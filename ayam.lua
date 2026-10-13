@@ -3,7 +3,6 @@ local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
 
 local player, VU = game:GetService("Players").LocalPlayer, game:GetService("VirtualUser")
 
--- Hapus instance yang mengganggu
 pcall(function() workspace.Etc:Destroy() end)
 pcall(function() game:GetService("ReplicatedStorage").NetworkContainer.RemoteEvents.NewModification:Destroy() end)
 pcall(function() player.PlayerGui.NewModification:Destroy() end)
@@ -75,31 +74,32 @@ local unantiidle = function()
     end
 end
 
-local Players          = game:GetService("Players")
-local Workspace        = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players             = game:GetService("Players")
+local Workspace           = game:GetService("Workspace")
+local ReplicatedStorage   = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local LocalPlayer      = Players.LocalPlayer
+local LocalPlayer         = Players.LocalPlayer
 
-local isEventRunning   = false
-local targetEarningLimit = 0
-local tweenSpeed       = 150
-local tweenHeight      = 4
+local isEventRunning      = false
+local targetEarningLimit  = 0
+local tweenSpeed          = 150
+local tweenHeight         = 4
 local tweenArriveDistance = 33
-local minigameStart    = 2
-local minigameEnd      = 8
+local minigameStart       = 2
+local minigameEnd         = 8
 
-local webhookUrl       = ""
-local webhookEnabled   = false
+local webhookUrl          = ""
+local webhookEnabled      = false
 
-local currentLiveCurText  = "0"
-local currentMPerHourText = "0"
-local currentTotalEarnedText = "0"
-local currentTimeElapsedText = "0"
+local currentLiveCurText      = "0"
+local currentMPerHourText     = "0"
+local currentTotalEarnedText  = "0"
+local currentTimeElapsedText  = "0"
 
-local globalTotalEarned  = 0
-local lastObservedSalary = -1
-local scriptStartTick    = tick()
+-- Session-gated: nil until farm starts
+local sessionStartTick    = nil
+local sessionTotalEarned  = 0
+local lastObservedSalary  = -1
 
 -- ============================================================
 -- UTILS
@@ -127,7 +127,7 @@ local function formatTime(seconds)
 end
 
 -- ============================================================
--- CORE FUNCTIONS (logic tidak diubah)
+-- CORE FUNCTIONS
 -- ============================================================
 local PromptButtonHoldBegan
 
@@ -468,7 +468,6 @@ local function startBCAEventLogic()
     local hasFinishedDelivery = false
 
     while isEventRunning do
-        -- Tahap 1: Ke Andhini
         local andhiniCFrame = CFrame.new(1804, 23, -4632)
         teleportWithSlowmoDrop(andhiniCFrame, 60, 2.5)
         task.wait(0.5)
@@ -521,7 +520,6 @@ local function startBCAEventLogic()
             end
         end
 
-        -- Tahap 2: Ke Putra (Spawn Mobil)
         local car = getActiveCar()
         if not car then
             local putraCFrame = CFrame.new(1869, 22, -4879)
@@ -557,7 +555,6 @@ local function startBCAEventLogic()
             end
         end
 
-        -- Tahap 3: Ambil Koper & Minigame
         local currentKoper, maxKoper = getKoperCount()
         local koperSpawn = bcaFolder:FindFirstChild("Job")
             and bcaFolder.Job:FindFirstChild("BankCourier")
@@ -601,7 +598,6 @@ local function startBCAEventLogic()
             end
         end
 
-        -- Tahap 4: Antar ke ATM
         local currentAtm, maxAtm = getAtmCount()
         while currentAtm < maxAtm and isEventRunning do
             car = getActiveCar()
@@ -674,10 +670,10 @@ local function startBCAEventLogic()
                 end
             end
 
-            local routeFolder = Workspace:FindFirstChild("BankCourierRoute")
-            local targetNode  = routeFolder and routeFolder:FindFirstChild("To")
-            if targetNode then
-                local targetCFrame = targetNode:IsA("CFrameValue") and targetNode.Value or targetNode.CFrame
+            local routeFolder2 = Workspace:FindFirstChild("BankCourierRoute")
+            local targetNode2  = routeFolder2 and routeFolder2:FindFirstChild("To")
+            if targetNode2 then
+                local targetCFrame = targetNode2:IsA("CFrameValue") and targetNode2.Value or targetNode2.CFrame
                 local targetPos    = targetCFrame.Position
 
                 teleportPlayer(targetCFrame + Vector3.new(0, 3, 0))
@@ -716,7 +712,7 @@ local function startBCAEventLogic()
                     if cAtm > currentAtm then break end
                     if os.clock() - isiStart > 15 then break end
 
-                    local isiPrompt = targetNode:FindFirstChild("IsiAtmPrompt", true)
+                    local isiPrompt = targetNode2:FindFirstChild("IsiAtmPrompt", true)
                     if isiPrompt then
                         holdPromptKey(isiPrompt, Enum.KeyCode.F, 0.3)
                         if fireproximityprompt then
@@ -748,7 +744,7 @@ local function startBCAEventLogic()
                     local moveWaitStart = os.clock()
                     local oldPos        = targetPos
                     while isEventRunning do
-                        local newNode = routeFolder and routeFolder:FindFirstChild("To")
+                        local newNode = routeFolder2 and routeFolder2:FindFirstChild("To")
                         local newPos  = newNode and (newNode:IsA("CFrameValue") and newNode.Value.Position or newNode.Position)
                         if newPos and newPos ~= oldPos then break end
                         task.wait(0.1)
@@ -756,9 +752,9 @@ local function startBCAEventLogic()
                     end
                 end
 
-                local char = LocalPlayer.Character
-                if char then
-                    for _, v in ipairs(char:GetDescendants()) do
+                local char2 = LocalPlayer.Character
+                if char2 then
+                    for _, v in ipairs(char2:GetDescendants()) do
                         if v:IsA("BasePart") then v.Anchored = false end
                     end
                 end
@@ -771,21 +767,19 @@ local function startBCAEventLogic()
         hasFinishedDelivery = true
         task.wait(2)
 
-        local currentEarned = _G.TotalEarned or 0
-        local cycleEarned   = currentEarned - (_G.LastCycleEarned or 0)
+        local cycleEarned = sessionTotalEarned
         if cycleEarned > 0 then
             Rayfield:Notify({
-                title   = "Job Completed",
-                content = "Kamu mendapatkan " .. formatCurrency(cycleEarned) .. " dari shift ini!",
+                title    = "Job Completed",
+                content  = "Session total: " .. formatCurrency(cycleEarned),
                 duration = 5
             })
         end
-        _G.LastCycleEarned = currentEarned
     end
 end
 
 -- ============================================================
--- RAYFIELD GEN2 UI SETUP (THEME COBALT)
+-- RAYFIELD UI
 -- ============================================================
 local window = Rayfield:CreateWindow({
     name     = "BCA",
@@ -793,7 +787,6 @@ local window = Rayfield:CreateWindow({
     theme    = "cobalt"
 })
 
--- TAB 1: FARMING
 local farmTab = window:CreateTab({ name = "Farming" })
 
 farmTab:CreateSection({ name = "Auto BCA" })
@@ -834,7 +827,19 @@ farmTab:CreateToggle({
     callback = function(state)
         isEventRunning = state
         if isEventRunning then
+            -- Reset all session state on start
+            sessionStartTick    = tick()
+            sessionTotalEarned  = 0
+            lastObservedSalary  = -1
+            currentTimeElapsedText  = "00:00:00"
+            currentTotalEarnedText  = "Rp. 0"
+            currentMPerHourText     = "Rp. 0"
+            timeStat:Set("00:00:00")
+            totalEarnedStat:Set("Rp. 0")
+            mEarningStat:Set("Rp. 0")
             task.spawn(startBCAEventLogic)
+        else
+            sessionStartTick = nil  -- freeze timer on stop
         end
     end,
 })
@@ -863,12 +868,11 @@ farmTab:CreateSlider({
 
 farmTab:CreateSection({ name = "Information" })
 
-local timeStat       = farmTab:CreateStat({ name = "Time Elapsed",  value = "00:00:00"  })
-local liveCurStat    = farmTab:CreateStat({ name = "Live Currency", value = "Loading..." })
-local mEarningStat   = farmTab:CreateStat({ name = "Money / Hour",  value = "Loading..." })
-local totalEarnedStat = farmTab:CreateStat({ name = "Total Earned", value = "Rp. 0"     })
+local timeStat        = farmTab:CreateStat({ name = "Time Elapsed",  value = "00:00:00"   })
+local liveCurStat     = farmTab:CreateStat({ name = "Live Currency", value = "Loading..."  })
+local mEarningStat    = farmTab:CreateStat({ name = "Money / Hour",  value = "Rp. 0"      })
+local totalEarnedStat = farmTab:CreateStat({ name = "Session Earned",value = "Rp. 0"      })
 
--- TAB 2: WEBHOOK
 local webhookTab = window:CreateTab({ name = "Webhook" })
 
 webhookTab:CreateInput({
@@ -886,7 +890,6 @@ webhookTab:CreateToggle({
     end,
 })
 
--- TAB 3: CONFIG
 local configTab = window:CreateTab({ name = "Config" })
 
 configTab:CreateSection({ name = "Theme" })
@@ -907,7 +910,7 @@ configTab:CreateDropdown({
 })
 
 -- ============================================================
--- LIVE STATS UPDATE LOOP
+-- LIVE STATS LOOP — session-gated
 -- ============================================================
 task.spawn(function()
     while true do
@@ -915,14 +918,7 @@ task.spawn(function()
         local pGui = LocalPlayer:FindFirstChild("PlayerGui")
         if not pGui then continue end
 
-        -- Time elapsed
-        local totalElapsed = tick() - scriptStartTick
-        if totalElapsed > 0 then
-            currentTimeElapsedText = formatTime(totalElapsed)
-            timeStat:Set(currentTimeElapsedText)
-        end
-
-        -- Live currency
+        -- Live currency always updates regardless of session state
         local liveCurText = "0"
         local mGui = pGui:FindFirstChild("Main")
         if mGui and mGui:FindFirstChild("Container") and mGui.Container:FindFirstChild("Hub") then
@@ -934,7 +930,15 @@ task.spawn(function()
         currentLiveCurText = liveCurText
         liveCurStat:Set(liveCurText)
 
-        -- Total earned via salary delta
+        -- Everything below only runs while a session is active
+        if not sessionStartTick then continue end
+
+        -- Session timer
+        local elapsed = tick() - sessionStartTick
+        currentTimeElapsedText = formatTime(elapsed)
+        timeStat:Set(currentTimeElapsedText)
+
+        -- Session earned via salary delta
         local jobGui = pGui:FindFirstChild("Job")
         if jobGui and jobGui:FindFirstChild("BankCourier") then
             local salaryLabel = jobGui.BankCourier:FindFirstChild("Status")
@@ -944,14 +948,15 @@ task.spawn(function()
                 if lastObservedSalary == -1 then
                     lastObservedSalary = currentSalary
                 elseif currentSalary > lastObservedSalary then
-                    globalTotalEarned  = globalTotalEarned + (currentSalary - lastObservedSalary)
+                    sessionTotalEarned = sessionTotalEarned + (currentSalary - lastObservedSalary)
                     lastObservedSalary = currentSalary
 
-                    if targetEarningLimit > 0 and globalTotalEarned >= targetEarningLimit then
-                        isEventRunning = false
+                    if targetEarningLimit > 0 and sessionTotalEarned >= targetEarningLimit then
+                        isEventRunning   = false
+                        sessionStartTick = nil
                         Rayfield:Notify({
                             title    = "Target Reached!",
-                            content  = "You have reached " .. formatCurrency(globalTotalEarned) .. ". Auto farm stopped.",
+                            content  = "You earned " .. formatCurrency(sessionTotalEarned) .. ". Auto farm stopped.",
                             duration = 10
                         })
                     end
@@ -964,11 +969,11 @@ task.spawn(function()
         end
 
         -- Update stat displays
-        currentTotalEarnedText = formatCurrency(globalTotalEarned)
+        currentTotalEarnedText = formatCurrency(sessionTotalEarned)
         totalEarnedStat:Set(currentTotalEarnedText)
 
-        if totalElapsed > 0 then
-            local mPerHour = (globalTotalEarned / totalElapsed) * 3600
+        if elapsed > 0 then
+            local mPerHour = (sessionTotalEarned / elapsed) * 3600
             currentMPerHourText = formatCurrency(mPerHour)
             mEarningStat:Set(currentMPerHourText)
         end
@@ -992,7 +997,7 @@ _G.SendWebhook = function(isDisconnect, customMsg)
             fields      = {
                 {name = "Live Currency",   value = currentLiveCurText,     inline = true},
                 {name = "Money Per Hour",  value = currentMPerHourText,    inline = true},
-                {name = "Total Earning",   value = currentTotalEarnedText, inline = true},
+                {name = "Session Earned",  value = currentTotalEarnedText, inline = true},
                 {name = "Time Elapsed",    value = currentTimeElapsedText, inline = true}
             },
             timestamp = DateTime.now():ToIsoDate()
