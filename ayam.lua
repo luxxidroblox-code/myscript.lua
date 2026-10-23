@@ -10,124 +10,19 @@ local function verifyFunction(func)
     return true
 end
 
--- ── Adonis Bypass (inlined) ──────────────────────────────────────────────────
-local function unfreezeTable(t)
-    if type(t) == "table" then
-        pcall(function()
-            if setreadonly    then setreadonly(t, false)  end
-            if table.unfreeze then table.unfreeze(t)      end
-            if make_writeable then make_writeable(t)      end
-        end)
-        for _, v in pairs(t) do
-            if type(v) == "table" then unfreezeTable(v) end
-        end
-    end
-end
+local targetUrl1 = 'https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/adonis.lua'
+local targetUrl2 = 'https://sirius.menu/rayfield'
 
-local function falsifyIndexInstance()
-    if not getgc then return end
-    for _, v in pairs(getgc(true)) do
-        pcall(function()
-            local idx = rawget(v, "indexInstance")
-            if type(idx) == "table" and idx[1] == "kick" then
-                setreadonly(v, false)
-                v.tvk = { "kick", function()
-                    return game.Workspace:WaitForChild("")
-                end }
-                setreadonly(v, true)
-            end
-        end)
-    end
-end
+if #targetUrl1 ~= 77 or #targetUrl2 ~= 28 then _crash() end
 
-local function hiadonis()
-    local Detected = filtergc("function", {
-        Constants      = { " - On Xbox", " - On mobile", "_" },
-        IgnoreExecutor = true,
-    }, true)
-    if not Detected then
-        warn("[projectsion] filtergc miss — Adonis not loaded or constants changed")
-        return false
-    end
-
-    local s, l, a, n, f = debug.info(Detected, "slanf")
-    warn("[projectsion] Detected located.")
-
-    local targetDebug = (typeof(REnv) == "table" and REnv.debug) or debug
-    local origDebugInfo
-    if targetDebug and targetDebug.info then
-        origDebugInfo = hookfunction(targetDebug.info, newcclosure(function(fn, fmt, ...)
-            if fn == Detected and fmt == "slanf" then return s, l, a, n, f end
-            return origDebugInfo(fn, fmt, ...)
-        end))
-    end
-
-    hookfunction(Detected, newcclosure(function(...)
-        return coroutine.yield(coroutine.running())
-    end))
-
-    local Kill = filtergc("function", {
-        Constants = { "Kill", "Variables", "Process" }, IgnoreExecutor = true,
-    }, true)
-    if Kill then
-        warn("[projectsion] Kill located.")
-        hookfunction(Kill, newcclosure(function(...) end))
-    end
-
-    local Log = filtergc("function", {
-        Constants = { "Log", "Logs", "LogMessage" }, IgnoreExecutor = true,
-    }, true)
-    if Log then
-        warn("[projectsion] Log located.")
-        hookfunction(Log, newcclosure(function(...) end))
-    end
-
-    setthreadidentity(2)
-    for _, v in getgc(true) do
-        if typeof(v) == "table" then
-            unfreezeTable(v)
-            local dk = rawget(v, "Detected")
-            local kk = rawget(v, "Kill")
-            local lk = rawget(v, "Log")
-            if dk ~= nil then
-                pcall(rawset, v, "Detected", function() return false end)
-            end
-            if typeof(dk) == "function" and dk ~= Detected then
-                pcall(hookfunction, dk, function(...) return true end)
-            end
-            if typeof(kk) == "function" and kk ~= Kill then
-                pcall(hookfunction, kk, function(...) end)
-            end
-            if typeof(lk) == "function" and lk ~= Log then
-                pcall(hookfunction, lk, function(...) end)
-            end
-        end
-    end
-    setthreadidentity(7)
-
-    pcall(falsifyIndexInstance)
-    return true
-end
-
-task.delay(1.5, function()
-    local ok = hiadonis()
-    if not ok then
-        task.delay(3, function()
-            local retry = hiadonis()
-            warn("[projectsion] Adonis bypass " .. (retry and "active (retry)." or "failed — check constants."))
-        end)
-    else
-        warn("[projectsion] Adonis bypass active.")
-    end
-end)
--- ── End Adonis Bypass ────────────────────────────────────────────────────────
+loadstring(game:HttpGet(targetUrl1))()
 
 pcall(function()
     local networkPause = game:GetService('CoreGui').RobloxGui:FindFirstChild('CoreScripts/NetworkPause')
     if networkPause then networkPause:Destroy() end
 end)
 
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Rayfield = loadstring(game:HttpGet(targetUrl2))()
 
 local HttpService       = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -335,6 +230,12 @@ local function RejoinServer()
             end
 
             task.wait(4)
+            local ok = pcall(function()
+                loadstring(game:HttpGet(
+                    "https://raw.githubusercontent.com/luxxidroblox-code/myscript.lua/refs/heads/main/adonis.lua"
+                ))()
+            end)
+            if not ok then warn("[PROJECTSION] adonis load failed") return end
 
             waitRS("Delivery System")
             waitRS("JobEvents")
@@ -420,6 +321,7 @@ end)
 
 local function updateBlackScreen()
     verifyFunction(updateBlackScreen)
+    -- RideGO sengaja TIDAK masuk blackscreen
     local isAnyFarmActive = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled or _G.AutoDriveActive)
     _syncFarmTimer()
     if isAnyFarmActive then
@@ -593,6 +495,7 @@ local function sendWebhook(income, target)
     end
 end
 
+-- ─── Stat label handles ───────────────────────────────────────────────────
 local lblTotalEarned, lblCurrentMoney, lblSessionTime, lblCurrentSpeed
 local lblCourierEarned, lblBaristaEarned, lblPoliceEarned, lblAutoDriveEarned, lblRideGOEarned
 local lblTotalPerHour, lblCourierPerHour, lblBaristaPerHour, lblPolicePerHour, lblAutoDrivePerHour, lblRideGOPerHour
@@ -1747,71 +1650,34 @@ local function adEnsureFloor(root)
     floor.Color         = Color3.fromRGB(35, 35, 35)
     floor.Parent        = workspace
     adSavedFloor = floor
+
+    local oldWalls = adSavedFloor:FindFirstChild("AD_WALLS")
+    if oldWalls then oldWalls:Destroy() end
+    local walls = Instance.new("Folder")
+    walls.Name   = "AD_WALLS"
+    walls.Parent = adSavedFloor
+    local cf = adSavedFloor.CFrame
+    local hX = adSavedFloor.Size.X / 2
+    local hZ = adSavedFloor.Size.Z / 2
+    local wH = 140
+    local wT = 10
+    local specs = {
+        {cf * CFrame.new( hX, wH/2, 0), Vector3.new(wT, wH, adSavedFloor.Size.Z)},
+        {cf * CFrame.new(-hX, wH/2, 0), Vector3.new(wT, wH, adSavedFloor.Size.Z)},
+        {cf * CFrame.new(0, wH/2,  hZ), Vector3.new(adSavedFloor.Size.X, wH, wT)},
+        {cf * CFrame.new(0, wH/2, -hZ), Vector3.new(adSavedFloor.Size.X, wH, wT)},
+    }
+    for _, spec in ipairs(specs) do
+        local wall          = Instance.new("Part")
+        wall.Name           = "SafetyWall"
+        wall.Anchored       = true
+        wall.CanCollide     = true
+        wall.Transparency   = 1
+        wall.Size           = spec[2]
+        wall.CFrame         = spec[1]
+        wall.Parent         = walls
+    end
     return adSavedFloor
-end
-
-local function adCleanWorkspace()
-    local char = LP.Character
-    if not char then char = LP.CharacterAdded:Wait() task.wait(2) end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then root = char:WaitForChild("HumanoidRootPart") task.wait(2) end
-
-    local searching = true
-    while searching do
-        local result = workspace:Raycast(root.Position, Vector3.new(0, -1000, 0))
-        if result and result.Instance then
-            local part = result.Instance
-            if part.Size.X >= AD_HUGE_PLATFORM or part.Name == "AD_FARM_FLOOR" then
-                adSavedFloor        = part
-                adSavedFloor.Name   = "AD_FARM_FLOOR"
-                adSavedFloor.Parent = workspace
-                searching = false
-            else
-                part:Destroy()
-                task.wait(0.02)
-            end
-        else
-            searching = false
-        end
-    end
-    adEnsureFloor(root)
-
-    for _, obj in pairs(workspace:GetChildren()) do
-        if obj ~= workspace.CurrentCamera and obj ~= char
-        and obj ~= adSavedFloor
-        and not obj:IsA("Terrain") then
-            obj:Destroy()
-        end
-    end
-
-    if adSavedFloor then
-        local oldWalls = adSavedFloor:FindFirstChild("AD_WALLS")
-        if oldWalls then oldWalls:Destroy() end
-        local walls = Instance.new("Folder")
-        walls.Name  = "AD_WALLS"
-        walls.Parent = adSavedFloor
-        local cf  = adSavedFloor.CFrame
-        local hX  = adSavedFloor.Size.X / 2
-        local hZ  = adSavedFloor.Size.Z / 2
-        local wH  = 140
-        local wT  = 10
-        local specs = {
-            {cf * CFrame.new( hX, wH/2, 0),  Vector3.new(wT, wH, adSavedFloor.Size.Z)},
-            {cf * CFrame.new(-hX, wH/2, 0),  Vector3.new(wT, wH, adSavedFloor.Size.Z)},
-            {cf * CFrame.new(0, wH/2,  hZ),  Vector3.new(adSavedFloor.Size.X, wH, wT)},
-            {cf * CFrame.new(0, wH/2, -hZ),  Vector3.new(adSavedFloor.Size.X, wH, wT)},
-        }
-        for _, spec in ipairs(specs) do
-            local wall           = Instance.new("Part")
-            wall.Name            = "SafetyWall"
-            wall.Anchored        = true
-            wall.CanCollide      = true
-            wall.Transparency    = 1
-            wall.Size            = spec[2]
-            wall.CFrame          = spec[1]
-            wall.Parent          = walls
-        end
-    end
 end
 
 local function adRespawnVehicle(hum, statusText)
@@ -1873,8 +1739,8 @@ local function adStartFarming()
     local hum  = char:WaitForChild("Humanoid")
     local root = char:WaitForChild("HumanoidRootPart")
 
-    if adLblStatus then adLblStatus:Set("Status: Cleaning workspace...") end
-    adCleanWorkspace()
+    if adLblStatus then adLblStatus:Set("Status: Setting up floor...") end
+    adEnsureFloor(root)
 
     if adLblStatus then adLblStatus:Set("Status: Buying & spawning Mio...") end
     local spawned = adSpawnVehicle()
@@ -2472,7 +2338,7 @@ local function rgEnsureBike()
     return rgSpawnAndMountBike()
 end
 
--- ── Flight Engine V6 ────────────────────────────────────────────────────────
+-- ── Flight Engine V6 ──────────────────────────────────────────────────────
 local RG_MAX_SPEED  = 230
 local RG_HOVER      = 12
 local RG_LAND       = 3
@@ -2783,6 +2649,7 @@ local function rgFlyToTarget(targetPos)
     return true
 end
 
+-- TaxiEvent
 local TaxiEventRG = nil
 task.spawn(function()
     local assets = ReplicatedStorage:WaitForChild("TaxiAssets", 15)
@@ -3010,7 +2877,7 @@ task.spawn(function()
     rgFetchOwnedVehicles()
 end)
 
--- ── UI ──────────────────────────────────────────────────────────────────────
+-- ─── UI ──────────────────────────────────────────────────────────────────
 local Window = Rayfield:CreateWindow({
     Name            = "Projectsion",
     LoadingTitle    = "Projectsion",
@@ -3211,6 +3078,7 @@ AutofarmTab:CreateSlider({
     Callback     = function(value) AutoPoliceConfig.PostTeleportWait.max = value end
 })
 
+-- ─── Stats tab ────────────────────────────────────────────────────────────
 local StatsTab = Window:CreateTab("Stats", "trending-up")
 
 StatsTab:CreateSection("Session Stats")
@@ -3232,6 +3100,7 @@ lblAutoDrivePerHour = StatsTab:CreateLabel("Auto Drive /hr: RP. 0/hr")
 lblRideGOEarned     = StatsTab:CreateLabel("RideGO: RP. 0")
 lblRideGOPerHour    = StatsTab:CreateLabel("RideGO /hr: RP. 0/hr")
 
+-- ─── Auto Drive tab ───────────────────────────────────────────────────────
 local AutoDriveTab = Window:CreateTab("Auto Drive", 4483362458)
 
 AutoDriveTab:CreateSection("Config")
@@ -3304,6 +3173,7 @@ adLblCurrent = AutoDriveTab:CreateLabel("Current Money: RP. 0")
 adLblEarned  = AutoDriveTab:CreateLabel("Earned This Cycle: RP. 0")
 adLblElapsed = AutoDriveTab:CreateLabel("Elapsed: 00:00:00")
 
+-- ─── RideGO tab ───────────────────────────────────────────────────────────
 local RideGOTab = Window:CreateTab("RideGO", 4483362458)
 
 RideGOTab:CreateSection("Vehicle")
@@ -3408,6 +3278,7 @@ rgLblPhase    = RideGOTab:CreateLabel("Phase: idle")
 rgLblTrips    = RideGOTab:CreateLabel("Trips Completed: 0")
 rgLblEarnings = RideGOTab:CreateLabel("Session Fares: RP. 0")
 
+-- ─── Webhook tab ──────────────────────────────────────────────────────────
 local WebhookTab = Window:CreateTab("Webhook", 4483362458)
 
 WebhookTab:CreateSection("Webhook Configuration")
@@ -3427,6 +3298,7 @@ WebhookTab:CreateToggle({
     Callback     = function(state) _G.AutoWebhook = state end
 })
 
+-- ─── Stats ticker ─────────────────────────────────────────────────────────
 task.spawn(function()
     while true do
         task.wait(1)
@@ -3475,6 +3347,7 @@ task.spawn(function()
     end
 end)
 
+-- ─── Auto Drive Heartbeat ─────────────────────────────────────────────────
 RunService.Heartbeat:Connect(function()
     if not adActive or not adForce or not adCurrentVehicle then return end
 
