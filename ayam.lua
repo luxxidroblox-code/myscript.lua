@@ -1650,7 +1650,7 @@ local function rgSafeDismount()
     if root then rgZeroVelocity(root) end
 end
 
--- Strip CanCollide on a character/NPC model and all its BaseParts
+-- Strip CanCollide on every BasePart in a model, recursively.
 local function rgStripModel(model)
     if not model then return end
     for _, p in ipairs(model:GetDescendants()) do
@@ -1658,41 +1658,53 @@ local function rgStripModel(model)
     end
 end
 
--- Noclip loop — Heartbeat so it fires every frame, not once per physics step.
--- Covers: local char · bike parts · ALL seat occupants (including passenger NPCs
--- that sit on a VehicleSeat clone) · any NPC model parented inside the bike ·
--- any NPC character within 20 studs of the bike's primary part · Batas barriers.
+-- ── RideGO noclip — mirrors the reference script's bikeFlyTo noclipOn() logic
+-- The reference strips four things every frame during active travel:
+--   1. Local char BaseParts (charSnap)
+--   2. Bike BaseParts (snap)
+--   3. The named passenger NPC at ActiveMissions/RideGO_Passenger
+--   4. Any VehicleSeat occupant on the bike (covers NPC seated on a passenger seat)
+-- A workspace proximity sweep catches edge cases where the game moves the NPC
+-- model outside ActiveMissions (observed in some server builds).
 RunService.Heartbeat:Connect(function()
     if not rgState.IsActive then return end
     pcall(function()
-        -- local character
+        -- 1. local character
         rgStripModel(rgChar.Character)
 
         local bike = rgGetBikeModel() or rgFindMyMotor()
         if bike then
-            -- bike parts themselves
+            -- 2. every part on the bike
             for _, p in ipairs(bike:GetDescendants()) do
                 if p:IsA("BasePart") then p.CanCollide = false end
             end
 
-            -- every VehicleSeat occupant on the bike (covers passenger NPCs
-            -- that the game seats on a mirrored/cloned seat inside the vehicle)
+            -- 4. every VehicleSeat occupant (drive seat and passenger seat)
             for _, seat in ipairs(bike:GetDescendants()) do
                 if seat:IsA("VehicleSeat") and seat.Occupant then
                     rgStripModel(seat.Occupant.Parent)
                 end
             end
+        end
 
-            -- any Model children of the bike (some games parent the NPC
-            -- directly under the vehicle model rather than seating it)
-            for _, child in ipairs(bike:GetChildren()) do
-                if child:IsA("Model") then
-                    rgStripModel(child)
+        -- 3. named passenger NPC — the authoritative path used by the reference
+        local am = Workspace:FindFirstChild("ActiveMissions")
+        if am then
+            local pax = am:FindFirstChild("RideGO_Passenger")
+            if pax then rgStripModel(pax) end
+
+            -- strip Batas barrier parts while we're here
+            for _, inst in ipairs(am:GetDescendants()) do
+                if inst:IsA("BasePart") and inst.Name == "Batas" then
+                    inst.CanCollide = false; inst.CanQuery = false
                 end
             end
+        end
 
-            -- proximity sweep: NPC characters within 20 studs of the bike's
-            -- primary part that are NOT player characters
+        -- proximity fallback: any non-player Model with a Humanoid within
+        -- 25 studs of the bike's primary part gets stripped too.
+        -- Catches server builds that reparent the NPC out of ActiveMissions.
+        if bike then
             local primary = rgGetPrimary(bike)
             if primary then
                 local playerChars = {}
@@ -1700,23 +1712,13 @@ RunService.Heartbeat:Connect(function()
                     if plr.Character then playerChars[plr.Character] = true end
                 end
                 for _, obj in ipairs(Workspace:GetChildren()) do
-                    if obj:IsA("Model") and not playerChars[obj] then
-                        local root = obj:FindFirstChild("HumanoidRootPart")
-                            or obj.PrimaryPart
-                        if root and (root.Position - primary.Position).Magnitude <= 20 then
+                    if obj:IsA("Model") and not playerChars[obj]
+                       and obj:FindFirstChildOfClass("Humanoid") then
+                        local root = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
+                        if root and (root.Position - primary.Position).Magnitude <= 25 then
                             rgStripModel(obj)
                         end
                     end
-                end
-            end
-        end
-
-        -- Batas collision barriers from ActiveMissions
-        local am = Workspace:FindFirstChild("ActiveMissions")
-        if am then
-            for _, inst in ipairs(am:GetDescendants()) do
-                if inst:IsA("BasePart") and inst.Name == "Batas" then
-                    inst.CanCollide = false; inst.CanQuery = false
                 end
             end
         end
@@ -2210,19 +2212,21 @@ CourierTab:Toggle({
 })
 
 CourierTab:Slider({
-    Title   = "Min Speed",
-    Min     = 50,
-    Max     = 500,
-    Default = 150,
-    Callback = function(v) _G.CourierSpeedMin = v end,
+    Title     = "Min Speed",
+    Min       = 50,
+    Max       = 500,
+    Default   = 150,
+    Increment = 1,
+    Callback  = function(v) _G.CourierSpeedMin = v end,
 })
 
 CourierTab:Slider({
-    Title   = "Max Speed",
-    Min     = 50,
-    Max     = 500,
-    Default = 330,
-    Callback = function(v) _G.CourierSpeedMax = v end,
+    Title     = "Max Speed",
+    Min       = 50,
+    Max       = 500,
+    Default   = 330,
+    Increment = 1,
+    Callback  = function(v) _G.CourierSpeedMax = v end,
 })
 
 -- ============================================================================
@@ -2240,19 +2244,21 @@ BaristaTab:Toggle({
 })
 
 BaristaTab:Slider({
-    Title   = "Min Speed",
-    Min     = 50,
-    Max     = 500,
-    Default = 200,
-    Callback = function(v) _G.BaristaSpeedMin = v end,
+    Title     = "Min Speed",
+    Min       = 50,
+    Max       = 500,
+    Default   = 200,
+    Increment = 1,
+    Callback  = function(v) _G.BaristaSpeedMin = v end,
 })
 
 BaristaTab:Slider({
-    Title   = "Max Speed",
-    Min     = 50,
-    Max     = 500,
-    Default = 380,
-    Callback = function(v) _G.BaristaSpeedMax = v end,
+    Title     = "Max Speed",
+    Min       = 50,
+    Max       = 500,
+    Default   = 380,
+    Increment = 1,
+    Callback  = function(v) _G.BaristaSpeedMax = v end,
 })
 
 -- ============================================================================
@@ -2273,19 +2279,21 @@ PoliceTab:Toggle({
 })
 
 PoliceTab:Slider({
-    Title   = "Teleport Speed Min",
-    Min     = 50,
-    Max     = 600,
-    Default = 200,
-    Callback = function(v) AutoPoliceConfig.TeleportSpeed.min = v end,
+    Title     = "Teleport Speed Min",
+    Min       = 50,
+    Max       = 600,
+    Default   = 200,
+    Increment = 1,
+    Callback  = function(v) AutoPoliceConfig.TeleportSpeed.min = v end,
 })
 
 PoliceTab:Slider({
-    Title   = "Teleport Speed Max",
-    Min     = 50,
-    Max     = 600,
-    Default = 300,
-    Callback = function(v) AutoPoliceConfig.TeleportSpeed.max = v end,
+    Title     = "Teleport Speed Max",
+    Min       = 50,
+    Max       = 600,
+    Default   = 300,
+    Increment = 1,
+    Callback  = function(v) AutoPoliceConfig.TeleportSpeed.max = v end,
 })
 
 -- ============================================================================
@@ -2302,32 +2310,45 @@ RideTab:Toggle({
 })
 
 RideTab:Slider({
-    Title   = "Min Speed",
-    Min     = 30,
-    Max     = 230,
-    Default = 70,
-    Callback = function(v) rgState.MinSpeed = v end,
+    Title     = "Min Speed",
+    Min       = 30,
+    Max       = 230,
+    Default   = 70,
+    Increment = 1,
+    Callback  = function(v) rgState.MinSpeed = v end,
 })
 
 RideTab:Slider({
-    Title   = "Max Speed",
-    Min     = 30,
-    Max     = 230,
-    Default = 95,
-    Callback = function(v) rgState.MaxSpeed = v end,
+    Title     = "Max Speed",
+    Min       = 30,
+    Max       = 230,
+    Default   = 95,
+    Increment = 1,
+    Callback  = function(v) rgState.MaxSpeed = v end,
 })
 
--- Vehicle dropdown — populated after rgFetchOwnedVehicles() resolves
+-- Vehicle dropdown — built immediately with a placeholder list so WindUI
+-- registers the element at construction time. After rgFetchOwnedVehicles()
+-- resolves we call :Refresh() which replaces the values without rebuilding.
+-- Adding elements inside task.spawn after the tab is built causes them to
+-- silently disappear on most WindUI versions.
+local vehicleDropdown = RideTab:Dropdown({
+    Title    = "Vehicle",
+    Values   = { "Fetching..." },
+    Default  = "Fetching...",
+    Callback = function(v)
+        if v ~= "Fetching..." then rgState.SelectedCar = v end
+    end,
+})
+
 task.spawn(function()
-    task.wait(2.5)
+    task.wait(2.5)   -- rgFetchOwnedVehicles already fired at the bottom of core
     local vehicles = rgState.OwnedVehicles
-    if #vehicles > 0 then
-        RideTab:Dropdown({
-            Title   = "Vehicle",
-            Values  = vehicles,
-            Default = vehicles[1],
-            Callback = function(v) rgState.SelectedCar = v end,
-        })
+    if #vehicles > 0 and vehicleDropdown then
+        pcall(function()
+            vehicleDropdown:Refresh(vehicles, vehicles[1])
+            rgState.SelectedCar = vehicles[1]
+        end)
     end
 end)
 
