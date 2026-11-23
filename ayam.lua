@@ -1,15 +1,6 @@
--- ============================================================================
--- PROJECTSION × WINDUI
--- WindUI library: https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua
--- Autofarm core merged — Rayfield removed, Adonis replaced with hiadonis()
--- verifyFunction/genv/fenv block replaced with game-load guard
--- ============================================================================
-
--- ── Game-load guard (replaces verifyFunction/genv/fenv block) ─────────────────
 if not game:IsLoaded() then game.Loaded:Wait() end
 task.wait(1)
 
--- ── Adonis bypass (replaces the raw HttpGet adonis load) ─────────────────────
 local function unfreezeTable(t)
     if type(t) == "table" then
         pcall(function()
@@ -125,7 +116,6 @@ pcall(function()
     if networkPause then networkPause:Destroy() end
 end)
 
--- ── Services ─────────────────────────────────────────────────────────────────
 local HttpService       = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
@@ -138,7 +128,6 @@ local Workspace         = game:GetService("Workspace")
 local TeleportService   = game:GetService("TeleportService")
 local VIM               = game:GetService("VirtualInputManager")
 
--- ── Game refs ─────────────────────────────────────────────────────────────────
 local CourierSettings = require(ReplicatedStorage:WaitForChild("Delivery System"):WaitForChild("Settings"))
 local MachinePrompt   = workspace.BaristaJob.Interactions.MachinePart.MachinePart.MachinePrompt
 local RegisterPrompt  = workspace.BaristaJob.Interactions.RegisterPart.RegisterPart.RegisterPrompt
@@ -152,7 +141,6 @@ local StartJobCF      = CFrame.new(-4989.80078, 5.30382967, -715.013062)
 local TAKE_BOX_CFRAME = CFrame.new(-5105.61182, 4.48948574, -3758.98267)
 local TAKE_PROMPT     = workspace:WaitForChild("Livrason"):WaitForChild("Take1"):WaitForChild("Take"):WaitForChild("ProximityPrompt")
 
--- ── _G flags ──────────────────────────────────────────────────────────────────
 _G.AutofarmCourier      = false
 _G.CourierSpeedMin      = 150
 _G.CourierSpeedMax      = 330
@@ -175,7 +163,6 @@ _G.PoliceEarned     = 0
 _G.AutoDriveEarned  = 0
 _G.RideGOEarned     = 0
 
--- ── Locals ───────────────────────────────────────────────────────────────────
 local LastActivity    = tick()
 local lastMoney       = PlayerData.RPValue.Value
 local pendingIncome   = 0
@@ -197,7 +184,6 @@ local missionsCompleted = 0
 local AnchoredPartsList = {}
 local ActiveMissions    = Workspace:WaitForChild("ActiveMissions", 10)
 
--- ── Helpers ───────────────────────────────────────────────────────────────────
 local function rngSpeed(minSpd, maxSpd)
     local a = minSpd + math.random() * (maxSpd - minSpd)
     local b = minSpd + math.random() * (maxSpd - minSpd)
@@ -278,7 +264,6 @@ local function sendWebhook(income, target)
     end
 end
 
--- ── Black screen ──────────────────────────────────────────────────────────────
 local BlackScreen = Instance.new("ScreenGui")
 local Frame       = Instance.new("Frame")
 if gethui then
@@ -320,7 +305,6 @@ local function updateBlackScreen()
     BlackScreen.Enabled = _G.blackscreen
 end
 
--- ── Money tracker ─────────────────────────────────────────────────────────────
 PlayerData.RPValue.Changed:Connect(function(newMoney)
     if newMoney > lastMoney then
         local gained = newMoney - lastMoney
@@ -351,7 +335,6 @@ PlayerData.RPValue.Changed:Connect(function(newMoney)
     lastMoney = newMoney
 end)
 
--- ── Rejoin ────────────────────────────────────────────────────────────────────
 local function RejoinServer()
     local queue_teleport = queue_on_teleport
         or (syn and syn.queue_on_teleport)
@@ -401,7 +384,6 @@ task.spawn(function()
     end
 end)
 
--- ── Anti-idle ─────────────────────────────────────────────────────────────────
 task.spawn(function()
     local VirtualUser = game:GetService("VirtualUser")
     game:GetService("Players").LocalPlayer.Idled:Connect(function()
@@ -430,7 +412,6 @@ local idledConn = LP.Idled:Connect(function()
 end)
 table.insert(ActiveConnections, idledConn)
 
--- ── Anti-cheat hooks ──────────────────────────────────────────────────────────
 local d = false
 local h = {}
 local x, y
@@ -457,10 +438,6 @@ local o; o = hookfunction(getrenv().debug.info, newcclosure(function(...)
     return o(...)
 end))
 setthreadidentity(7)
-
--- ============================================================================
--- COURIER AUTOFARM
--- ============================================================================
 
 local function SwitchToCourier()
     local TeamRemote = ReplicatedStorage:FindFirstChild("TeamChangeRequest", true)
@@ -599,10 +576,6 @@ task.spawn(function()
     end
 end)
 
--- ============================================================================
--- BARISTA AUTOFARM
--- ============================================================================
-
 local function GetBaristaElements()
     local Gui = LP.PlayerGui:FindFirstChild("BaristaGUI")
     if Gui then
@@ -694,10 +667,6 @@ RunService.Heartbeat:Connect(function()
         if tz then tz.Size = UDim2.new(1, 0, 1, 0); tz.Position = UDim2.new(0, 0, 0, 0) end
     end
 end)
-
--- ============================================================================
--- POLICE AUTOFARM
--- ============================================================================
 
 local function getPoliceUI()
     local pGui = LP:FindFirstChild("PlayerGui")
@@ -1301,10 +1270,6 @@ task.spawn(function()
     end
 end)
 
--- ============================================================================
--- RIDEGO AUTOFARM (Flight V6 · Anti-Bablas)
--- ============================================================================
-
 _G.RideGOEnabled = false
 
 local rgState = {
@@ -1320,6 +1285,8 @@ local rgState = {
     LastSeat          = nil,
     SelectedCar       = nil,
     OwnedVehicles     = {},
+    -- Hard defaults — these are the values used by rgFlyToTarget even before
+    -- any slider callback fires. Guards against WindUI calling Callback(0) on init.
     MinSpeed          = 70,
     MaxSpeed          = 95,
 }
@@ -1650,7 +1617,6 @@ local function rgSafeDismount()
     if root then rgZeroVelocity(root) end
 end
 
--- Strip CanCollide on every BasePart in a model, recursively.
 local function rgStripModel(model)
     if not model then return end
     for _, p in ipairs(model:GetDescendants()) do
@@ -1658,52 +1624,31 @@ local function rgStripModel(model)
     end
 end
 
--- ── RideGO noclip — mirrors the reference script's bikeFlyTo noclipOn() logic
--- The reference strips four things every frame during active travel:
---   1. Local char BaseParts (charSnap)
---   2. Bike BaseParts (snap)
---   3. The named passenger NPC at ActiveMissions/RideGO_Passenger
---   4. Any VehicleSeat occupant on the bike (covers NPC seated on a passenger seat)
--- A workspace proximity sweep catches edge cases where the game moves the NPC
--- model outside ActiveMissions (observed in some server builds).
 RunService.Heartbeat:Connect(function()
     if not rgState.IsActive then return end
     pcall(function()
-        -- 1. local character
         rgStripModel(rgChar.Character)
-
         local bike = rgGetBikeModel() or rgFindMyMotor()
         if bike then
-            -- 2. every part on the bike
             for _, p in ipairs(bike:GetDescendants()) do
                 if p:IsA("BasePart") then p.CanCollide = false end
             end
-
-            -- 4. every VehicleSeat occupant (drive seat and passenger seat)
             for _, seat in ipairs(bike:GetDescendants()) do
                 if seat:IsA("VehicleSeat") and seat.Occupant then
                     rgStripModel(seat.Occupant.Parent)
                 end
             end
         end
-
-        -- 3. named passenger NPC — the authoritative path used by the reference
         local am = Workspace:FindFirstChild("ActiveMissions")
         if am then
             local pax = am:FindFirstChild("RideGO_Passenger")
             if pax then rgStripModel(pax) end
-
-            -- strip Batas barrier parts while we're here
             for _, inst in ipairs(am:GetDescendants()) do
                 if inst:IsA("BasePart") and inst.Name == "Batas" then
                     inst.CanCollide = false; inst.CanQuery = false
                 end
             end
         end
-
-        -- proximity fallback: any non-player Model with a Humanoid within
-        -- 25 studs of the bike's primary part gets stripped too.
-        -- Catches server builds that reparent the NPC out of ActiveMissions.
         if bike then
             local primary = rgGetPrimary(bike)
             if primary then
@@ -1853,9 +1798,10 @@ local function rgFlyToTarget(targetPos)
 
     local reached    = false
     local flatTarget = Vector3.new(targetPos.X, 0, targetPos.Z)
-    local minSpd     = tonumber(rgState.MinSpeed) or 70
-    local maxSpd     = tonumber(rgState.MaxSpeed) or 95
-    if minSpd > maxSpd then minSpd, maxSpd = maxSpd, minSpd end
+
+    -- Read min/max at trip start; slider changes take effect next trip.
+    local minSpd = math.max(tonumber(rgState.MinSpeed) or 70, 30)
+    local maxSpd = math.max(tonumber(rgState.MaxSpeed) or 95, minSpd)
 
     local baseSpeed      = math.random(math.floor(minSpd), math.floor(maxSpd))
     local curSpeed       = 0
@@ -2177,29 +2123,23 @@ task.spawn(function()
     rgFetchOwnedVehicles()
 end)
 
--- ============================================================================
--- WIND UI
--- ============================================================================
-
+-- WindUI: https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua
 local Wind = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
 ))()
 
 _G._wallStart = os.time()
 
--- ── Window ────────────────────────────────────────────────────────────────────
 local Window = Wind:CreateWindow({
     Title    = "Projectsion",
-    SubTitle = "Autofarm",
+    SubTitle = "Drag Drive Simulator",
     TabWidth = 160,
     Size     = UDim2.fromOffset(580, 460),
     Acrylic  = true,
-    Theme    = "Dark",
+    Theme    = "Dark"
+    Background = "rbxassetid://3293972833",
 })
 
--- ============================================================================
--- TAB: COURIER
--- ============================================================================
 local CourierTab = Window:Tab({ Title = "Courier", Icon = "package" })
 
 CourierTab:Toggle({
@@ -2217,7 +2157,10 @@ CourierTab:Slider({
     Max       = 500,
     Default   = 150,
     Increment = 1,
-    Callback  = function(v) _G.CourierSpeedMin = v end,
+    Callback  = function(v)
+        local n = tonumber(v)
+        if n and n > 0 then _G.CourierSpeedMin = n end
+    end,
 })
 
 CourierTab:Slider({
@@ -2226,12 +2169,12 @@ CourierTab:Slider({
     Max       = 500,
     Default   = 330,
     Increment = 1,
-    Callback  = function(v) _G.CourierSpeedMax = v end,
+    Callback  = function(v)
+        local n = tonumber(v)
+        if n and n > 0 then _G.CourierSpeedMax = n end
+    end,
 })
 
--- ============================================================================
--- TAB: BARISTA
--- ============================================================================
 local BaristaTab = Window:Tab({ Title = "Barista", Icon = "coffee" })
 
 BaristaTab:Toggle({
@@ -2249,7 +2192,10 @@ BaristaTab:Slider({
     Max       = 500,
     Default   = 200,
     Increment = 1,
-    Callback  = function(v) _G.BaristaSpeedMin = v end,
+    Callback  = function(v)
+        local n = tonumber(v)
+        if n and n > 0 then _G.BaristaSpeedMin = n end
+    end,
 })
 
 BaristaTab:Slider({
@@ -2258,12 +2204,12 @@ BaristaTab:Slider({
     Max       = 500,
     Default   = 380,
     Increment = 1,
-    Callback  = function(v) _G.BaristaSpeedMax = v end,
+    Callback  = function(v)
+        local n = tonumber(v)
+        if n and n > 0 then _G.BaristaSpeedMax = n end
+    end,
 })
 
--- ============================================================================
--- TAB: POLICE
--- ============================================================================
 local PoliceTab = Window:Tab({ Title = "Police", Icon = "shield" })
 
 PoliceTab:Toggle({
@@ -2284,7 +2230,10 @@ PoliceTab:Slider({
     Max       = 600,
     Default   = 200,
     Increment = 1,
-    Callback  = function(v) AutoPoliceConfig.TeleportSpeed.min = v end,
+    Callback  = function(v)
+        local n = tonumber(v)
+        if n and n > 0 then AutoPoliceConfig.TeleportSpeed.min = n end
+    end,
 })
 
 PoliceTab:Slider({
@@ -2293,12 +2242,12 @@ PoliceTab:Slider({
     Max       = 600,
     Default   = 300,
     Increment = 1,
-    Callback  = function(v) AutoPoliceConfig.TeleportSpeed.max = v end,
+    Callback  = function(v)
+        local n = tonumber(v)
+        if n and n > 0 then AutoPoliceConfig.TeleportSpeed.max = n end
+    end,
 })
 
--- ============================================================================
--- TAB: RIDEGO
--- ============================================================================
 local RideTab = Window:Tab({ Title = "RideGO", Icon = "car" })
 
 RideTab:Toggle({
@@ -2309,13 +2258,19 @@ RideTab:Toggle({
     end,
 })
 
+-- Sliders write into rgState directly. rgState.MinSpeed/MaxSpeed are pre-seeded
+-- to 70/95 above, so the first trip uses correct defaults even if WindUI calls
+-- Callback(0) on construction (observed on some executor builds).
 RideTab:Slider({
     Title     = "Min Speed",
     Min       = 30,
     Max       = 230,
     Default   = 70,
     Increment = 1,
-    Callback  = function(v) rgState.MinSpeed = v end,
+    Callback  = function(v)
+        local n = tonumber(v)
+        if n and n >= 30 then rgState.MinSpeed = n end
+    end,
 })
 
 RideTab:Slider({
@@ -2324,14 +2279,12 @@ RideTab:Slider({
     Max       = 230,
     Default   = 95,
     Increment = 1,
-    Callback  = function(v) rgState.MaxSpeed = v end,
+    Callback  = function(v)
+        local n = tonumber(v)
+        if n and n >= 30 then rgState.MaxSpeed = n end
+    end,
 })
 
--- Vehicle dropdown — built immediately with a placeholder list so WindUI
--- registers the element at construction time. After rgFetchOwnedVehicles()
--- resolves we call :Refresh() which replaces the values without rebuilding.
--- Adding elements inside task.spawn after the tab is built causes them to
--- silently disappear on most WindUI versions.
 local vehicleDropdown = RideTab:Dropdown({
     Title    = "Vehicle",
     Values   = { "Fetching..." },
@@ -2342,7 +2295,7 @@ local vehicleDropdown = RideTab:Dropdown({
 })
 
 task.spawn(function()
-    task.wait(2.5)   -- rgFetchOwnedVehicles already fired at the bottom of core
+    task.wait(2.5)
     local vehicles = rgState.OwnedVehicles
     if #vehicles > 0 and vehicleDropdown then
         pcall(function()
@@ -2352,9 +2305,6 @@ task.spawn(function()
     end
 end)
 
--- ============================================================================
--- TAB: WEBHOOK
--- ============================================================================
 local WebhookTab = Window:Tab({ Title = "Webhook", Icon = "link" })
 
 WebhookTab:Toggle({
@@ -2369,9 +2319,6 @@ WebhookTab:Input({
     Callback    = function(v) _G.WebhookURL = v end,
 })
 
--- ============================================================================
--- TAB: MISC
--- ============================================================================
 local MiscTab = Window:Tab({ Title = "Misc", Icon = "settings" })
 
 MiscTab:Button({
@@ -2387,34 +2334,53 @@ MiscTab:Button({
     end,
 })
 
--- ── Stats label — updates every 5 s ──────────────────────────────────────────
-local StatsSection = MiscTab:Section({ Title = "Stats" })
+-- Stats tab — paragraph created once; inner TextLabel patched every 5 s.
+-- WindUI does not expose a :Set() method on Paragraph, so we walk the
+-- instance tree to find the content TextLabel and write directly.
+local StatsTab  = Window:Tab({ Title = "Stats", Icon = "bar-chart-2" })
+
+local function buildStatsText()
+    local secs = getActiveSeconds()
+    return string.format(
+        "Total: %s\nCourier: %s\nBarista: %s\nPolice: %s\nRideGO: %s\nFarm time: %02d:%02d:%02d",
+        formatRP(_G.TotalEarning),
+        formatRP(_G.CourierEarned),
+        formatRP(_G.BaristaEarned),
+        formatRP(_G.PoliceEarned),
+        formatRP(_G.RideGOEarned),
+        math.floor(secs / 3600),
+        math.floor((secs % 3600) / 60),
+        math.floor(secs % 60)
+    )
+end
+
+local statsEl = StatsTab:Paragraph({ Title = "Earnings", Content = buildStatsText() })
 
 task.spawn(function()
     while true do
         task.wait(5)
-        local secs = getActiveSeconds()
-        local hh   = math.floor(secs / 3600)
-        local mm   = math.floor((secs % 3600) / 60)
-        local ss   = math.floor(secs % 60)
-        local farmTime = string.format("%02d:%02d:%02d", hh, mm, ss)
-        -- WindUI Section titles are static; use a Label paragraph under Misc
-        -- The label API varies by version; use a paragraph if available
-        pcall(function()
-            StatsSection:Paragraph({
-                Title   = "Earnings",
-                Content = string.format(
-                    "Total: %s\nCourier: %s\nBarista: %s\nPolice: %s\nRideGO: %s\nFarm time: %s",
-                    formatRP(_G.TotalEarning),
-                    formatRP(_G.CourierEarned),
-                    formatRP(_G.BaristaEarned),
-                    formatRP(_G.PoliceEarned),
-                    formatRP(_G.RideGOEarned),
-                    farmTime
-                ),
-            })
+        local newText = buildStatsText()
+        -- Try WindUI's own Set method first (some builds expose it).
+        local ok = pcall(function()
+            if statsEl.Set then statsEl:Set({ Content = newText }) end
         end)
+        -- Fallback: find any TextLabel named "Content" or "Description"
+        -- inside the paragraph's root Frame and write directly.
+        if not ok then
+            pcall(function()
+                local root = statsEl.Frame or statsEl.Instance or statsEl
+                if typeof(root) == "Instance" then
+                    for _, v in ipairs(root:GetDescendants()) do
+                        if v:IsA("TextLabel")
+                           and (v.Name == "Content" or v.Name == "Description" or v.Name == "Value") then
+                            v.Text = newText
+                            break
+                        end
+                    end
+                end
+            end)
+        end
     end
 end)
 
-warn("[PROJECTSION × WINDUI] Loaded. Adonis bypass queued.")
+warn("[PROJECTSION] Loaded.")
