@@ -1,3 +1,9 @@
+-- Language: Luau (Roblox Client / Executor)
+-- Module: projectsion_windui.txt (Full script)
+-- Runtime: Roblox Luau VM (WindUI dist/main.lua)
+-- *WindUI Slider reads bounds and initial position from `Value = { Min = ..., Max = ..., Default = ... }` and normalizes callbacks across numeric or table values.*
+-- *WindUI Dropdown reads initial selection from `Value` alongside `Values` and updates options via `:Refresh(values)`.*
+
 -- ============================================================================
 -- PROJECTSION × WINDUI
 -- WindUI library: https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua
@@ -202,6 +208,19 @@ local function rngSpeed(minSpd, maxSpd)
     local a = minSpd + math.random() * (maxSpd - minSpd)
     local b = minSpd + math.random() * (maxSpd - minSpd)
     return (a + b) / 2
+end
+
+local function extractSliderValue(raw, fallback)
+    if type(raw) == "number" then
+        return raw
+    elseif type(raw) == "table" then
+        local candidate = raw.Value or raw.Default or raw.Current or raw[1]
+        if type(candidate) == "number" then
+            return candidate
+        end
+    end
+    local parsed = tonumber(raw)
+    return parsed or fallback
 end
 
 local _activeSeconds = 0
@@ -2154,6 +2173,24 @@ local Wind = loadstring(game:HttpGet(
 
 _G._wallStart = os.time()
 
+local function createWindSlider(tab, title, minVal, maxVal, defaultVal, stepVal, onChanged)
+    local sliderSpec = {
+        Title = title,
+        Value = {
+            Min     = minVal,
+            Max     = maxVal,
+            Default = defaultVal,
+        },
+        Callback = function(raw)
+            onChanged(extractSliderValue(raw, defaultVal))
+        end,
+    }
+    if stepVal then
+        sliderSpec.Step = stepVal
+    end
+    return tab:Slider(sliderSpec)
+end
+
 -- ── Window ────────────────────────────────────────────────────────────────────
 local Window = Wind:CreateWindow({
     Title    = "Projectsion",
@@ -2178,21 +2215,13 @@ CourierTab:Toggle({
     end,
 })
 
-CourierTab:Slider({
-    Title   = "Min Speed",
-    Min     = 50,
-    Max     = 500,
-    Default = 150,
-    Callback = function(v) _G.CourierSpeedMin = v end,
-})
+createWindSlider(CourierTab, "Min Speed", 50, 500, _G.CourierSpeedMin, 1, function(v)
+    _G.CourierSpeedMin = v
+end)
 
-CourierTab:Slider({
-    Title   = "Max Speed",
-    Min     = 50,
-    Max     = 500,
-    Default = 330,
-    Callback = function(v) _G.CourierSpeedMax = v end,
-})
+createWindSlider(CourierTab, "Max Speed", 50, 500, _G.CourierSpeedMax, 1, function(v)
+    _G.CourierSpeedMax = v
+end)
 
 -- ============================================================================
 -- TAB: BARISTA
@@ -2208,21 +2237,13 @@ BaristaTab:Toggle({
     end,
 })
 
-BaristaTab:Slider({
-    Title   = "Min Speed",
-    Min     = 50,
-    Max     = 500,
-    Default = 200,
-    Callback = function(v) _G.BaristaSpeedMin = v end,
-})
+createWindSlider(BaristaTab, "Min Speed", 50, 500, _G.BaristaSpeedMin, 1, function(v)
+    _G.BaristaSpeedMin = v
+end)
 
-BaristaTab:Slider({
-    Title   = "Max Speed",
-    Min     = 50,
-    Max     = 500,
-    Default = 380,
-    Callback = function(v) _G.BaristaSpeedMax = v end,
-})
+createWindSlider(BaristaTab, "Max Speed", 50, 500, _G.BaristaSpeedMax, 1, function(v)
+    _G.BaristaSpeedMax = v
+end)
 
 -- ============================================================================
 -- TAB: POLICE
@@ -2241,21 +2262,13 @@ PoliceTab:Toggle({
     end,
 })
 
-PoliceTab:Slider({
-    Title   = "Teleport Speed Min",
-    Min     = 50,
-    Max     = 600,
-    Default = 200,
-    Callback = function(v) AutoPoliceConfig.TeleportSpeed.min = v end,
-})
+createWindSlider(PoliceTab, "Teleport Speed Min", 50, 600, AutoPoliceConfig.TeleportSpeed.min, 1, function(v)
+    AutoPoliceConfig.TeleportSpeed.min = v
+end)
 
-PoliceTab:Slider({
-    Title   = "Teleport Speed Max",
-    Min     = 50,
-    Max     = 600,
-    Default = 300,
-    Callback = function(v) AutoPoliceConfig.TeleportSpeed.max = v end,
-})
+createWindSlider(PoliceTab, "Teleport Speed Max", 50, 600, AutoPoliceConfig.TeleportSpeed.max, 1, function(v)
+    AutoPoliceConfig.TeleportSpeed.max = v
+end)
 
 -- ============================================================================
 -- TAB: RIDEGO
@@ -2270,33 +2283,56 @@ RideTab:Toggle({
     end,
 })
 
-RideTab:Slider({
-    Title   = "Min Speed",
-    Min     = 30,
-    Max     = 230,
-    Default = 70,
-    Callback = function(v) rgState.MinSpeed = v end,
+createWindSlider(RideTab, "Min Speed", 30, 230, rgState.MinSpeed, 1, function(v)
+    rgState.MinSpeed = v
+end)
+
+createWindSlider(RideTab, "Max Speed", 30, 230, rgState.MaxSpeed, 1, function(v)
+    rgState.MaxSpeed = v
+end)
+
+local initialVehicles = (#rgState.OwnedVehicles > 0) and rgState.OwnedVehicles or { "No Vehicles Found" }
+local initialSelected = rgState.SelectedCar or initialVehicles[1]
+
+local VehicleDropdown = RideTab:Dropdown({
+    Title  = "Vehicle",
+    Values = initialVehicles,
+    Value  = initialSelected,
+    Callback = function(v)
+        if type(v) == "string" and v ~= "" and v ~= "No Vehicles Found" then
+            rgState.SelectedCar = v
+        end
+    end,
 })
 
-RideTab:Slider({
-    Title   = "Max Speed",
-    Min     = 30,
-    Max     = 230,
-    Default = 95,
-    Callback = function(v) rgState.MaxSpeed = v end,
-})
+local function syncVehicleDropdown()
+    local owned = rgFetchOwnedVehicles()
+    if #owned > 0 then
+        pcall(function()
+            VehicleDropdown:Refresh(owned)
+        end)
+        if not rgState.SelectedCar then
+            rgState.SelectedCar = owned[1]
+        end
+        pcall(function()
+            if VehicleDropdown.Select then
+                VehicleDropdown:Select(rgState.SelectedCar)
+            end
+        end)
+    else
+        pcall(function()
+            VehicleDropdown:Refresh({ "No Vehicles Found" })
+        end)
+    end
+end
 
--- Vehicle dropdown — populated after rgFetchOwnedVehicles() resolves
 task.spawn(function()
     task.wait(2.5)
-    local vehicles = rgState.OwnedVehicles
-    if #vehicles > 0 then
-        RideTab:Dropdown({
-            Title   = "Vehicle",
-            Values  = vehicles,
-            Default = vehicles[1],
-            Callback = function(v) rgState.SelectedCar = v end,
-        })
+    syncVehicleDropdown()
+    local retryDeadline = os.clock() + 12
+    while #rgState.OwnedVehicles == 0 and os.clock() < retryDeadline do
+        task.wait(2)
+        syncVehicleDropdown()
     end
 end)
 
@@ -2335,7 +2371,6 @@ MiscTab:Button({
     end,
 })
 
--- ── Stats label — updates every 5 s ──────────────────────────────────────────
 local StatsSection = MiscTab:Section({ Title = "Stats" })
 
 task.spawn(function()
@@ -2346,8 +2381,6 @@ task.spawn(function()
         local mm   = math.floor((secs % 3600) / 60)
         local ss   = math.floor(secs % 60)
         local farmTime = string.format("%02d:%02d:%02d", hh, mm, ss)
-        -- WindUI Section titles are static; use a Label paragraph under Misc
-        -- The label API varies by version; use a paragraph if available
         pcall(function()
             StatsSection:Paragraph({
                 Title   = "Earnings",
