@@ -5,7 +5,7 @@
 
 local LP = game:GetService("Players").LocalPlayer
 
-local Window = WindUI:CreateWindow()
+local Window = WindUI:CreateWindow({
     Title      = "Projectsion DDS",
     SubTitle   = "by Projectsion",
     TabWidth   = 160,
