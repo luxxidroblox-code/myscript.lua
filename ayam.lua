@@ -2136,8 +2136,7 @@ local Window = Wind:CreateWindow({
     TabWidth = 160,
     Size     = UDim2.fromOffset(580, 460),
     Acrylic  = true,
-    Theme    = "Dark"
-    Background = "rbxassetid://3293972833",
+    Theme    = "Dark",
 })
 
 local CourierTab = Window:Tab({ Title = "Courier", Icon = "package" })
