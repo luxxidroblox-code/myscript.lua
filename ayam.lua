@@ -2120,6 +2120,9 @@ task.spawn(function()
     rgFetchOwnedVehicles()
 end)
 
+-- ── UI ────────────────────────────────────────────────────────────────────────
+-- FIX: Use OpenButton/draggable pattern from voidline (confirmed working).
+--      Acrylic removed — not in public WindUI, causes silent init failure.
 local Wind = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
 ))()
@@ -2131,10 +2134,15 @@ local Window = Wind:CreateWindow({
     SubTitle = "Autofarm",
     TabWidth = 160,
     Size     = UDim2.fromOffset(580, 460),
-    Acrylic  = true,
     Theme    = "Dark",
+    OpenButton = {
+        Enabled  = true,
+        Title    = "Projectsion",
+        Draggable = true,
+    },
 })
 
+-- ── Courier Tab ───────────────────────────────────────────────────────────────
 local CourierTab = Window:Tab({ Title = "Courier", Icon = "package" })
 
 CourierTab:Toggle({
@@ -2146,54 +2154,23 @@ CourierTab:Toggle({
     end,
 })
 
--- ── Slider helper ─────────────────────────────────────────────────────────────
--- WindUI does not fire the Callback on construction, so the value label stays
--- at "0" until the user drags. We capture the slider object and call :Set()
--- immediately, which forces WindUI to redraw the label with the default value
--- and also writes the correct value into the target variable from the start.
-local function makeSlider(tab, cfg, defaultVal, writeFn)
-    local sl = tab:Slider(cfg)
-    writeFn(defaultVal)
-    task.defer(function() pcall(function() sl:Set(defaultVal) end) end)
-    return sl
-end
-
-local CourierMinDef  = 150
-local CourierMaxDef  = 330
-local BaristaMinDef  = 200
-local BaristaMaxDef  = 380
-local PoliceMinDef   = 200
-local PoliceMaxDef   = 300
-local RGMinDef       = 70
-local RGMaxDef       = 95
-
-CourierTab:Toggle({
-    Title   = "Auto Courier",
-    Default = false,
-    Callback = function(state)
-        _G.AutofarmCourier = state
-        updateBlackScreen()
-    end,
-})
-
-makeSlider(CourierTab, {
+-- FIX: WindUI Slider uses Value = {Min, Max, Default}, not flat Min/Max/Default.
+--      Callback fires on construction with the default — no :Set() trick needed.
+CourierTab:Slider({
     Title     = "Min Speed",
-    Min       = 50,
-    Max       = 500,
-    Default   = CourierMinDef,
+    Value     = { Min = 50, Max = 500, Default = 150 },
     Increment = 1,
     Callback  = function(v) _G.CourierSpeedMin = v end,
-}, CourierMinDef, function(v) _G.CourierSpeedMin = v end)
+})
 
-makeSlider(CourierTab, {
+CourierTab:Slider({
     Title     = "Max Speed",
-    Min       = 50,
-    Max       = 500,
-    Default   = CourierMaxDef,
+    Value     = { Min = 50, Max = 500, Default = 330 },
     Increment = 1,
     Callback  = function(v) _G.CourierSpeedMax = v end,
-}, CourierMaxDef, function(v) _G.CourierSpeedMax = v end)
+})
 
+-- ── Barista Tab ───────────────────────────────────────────────────────────────
 local BaristaTab = Window:Tab({ Title = "Barista", Icon = "coffee" })
 
 BaristaTab:Toggle({
@@ -2205,24 +2182,21 @@ BaristaTab:Toggle({
     end,
 })
 
-makeSlider(BaristaTab, {
+BaristaTab:Slider({
     Title     = "Min Speed",
-    Min       = 50,
-    Max       = 500,
-    Default   = BaristaMinDef,
+    Value     = { Min = 50, Max = 500, Default = 200 },
     Increment = 1,
     Callback  = function(v) _G.BaristaSpeedMin = v end,
-}, BaristaMinDef, function(v) _G.BaristaSpeedMin = v end)
+})
 
-makeSlider(BaristaTab, {
+BaristaTab:Slider({
     Title     = "Max Speed",
-    Min       = 50,
-    Max       = 500,
-    Default   = BaristaMaxDef,
+    Value     = { Min = 50, Max = 500, Default = 380 },
     Increment = 1,
     Callback  = function(v) _G.BaristaSpeedMax = v end,
-}, BaristaMaxDef, function(v) _G.BaristaSpeedMax = v end)
+})
 
+-- ── Police Tab ────────────────────────────────────────────────────────────────
 local PoliceTab = Window:Tab({ Title = "Police", Icon = "shield" })
 
 PoliceTab:Toggle({
@@ -2237,24 +2211,21 @@ PoliceTab:Toggle({
     end,
 })
 
-makeSlider(PoliceTab, {
+PoliceTab:Slider({
     Title     = "Teleport Speed Min",
-    Min       = 50,
-    Max       = 600,
-    Default   = PoliceMinDef,
+    Value     = { Min = 50, Max = 600, Default = 200 },
     Increment = 1,
     Callback  = function(v) AutoPoliceConfig.TeleportSpeed.min = v end,
-}, PoliceMinDef, function(v) AutoPoliceConfig.TeleportSpeed.min = v end)
+})
 
-makeSlider(PoliceTab, {
+PoliceTab:Slider({
     Title     = "Teleport Speed Max",
-    Min       = 50,
-    Max       = 600,
-    Default   = PoliceMaxDef,
+    Value     = { Min = 50, Max = 600, Default = 300 },
     Increment = 1,
     Callback  = function(v) AutoPoliceConfig.TeleportSpeed.max = v end,
-}, PoliceMaxDef, function(v) AutoPoliceConfig.TeleportSpeed.max = v end)
+})
 
+-- ── RideGO Tab ────────────────────────────────────────────────────────────────
 local RideTab = Window:Tab({ Title = "RideGO", Icon = "car" })
 
 RideTab:Toggle({
@@ -2265,23 +2236,19 @@ RideTab:Toggle({
     end,
 })
 
-makeSlider(RideTab, {
+RideTab:Slider({
     Title     = "Min Speed",
-    Min       = 30,
-    Max       = 230,
-    Default   = RGMinDef,
+    Value     = { Min = 30, Max = 230, Default = 70 },
     Increment = 1,
     Callback  = function(v) rgState.MinSpeed = v end,
-}, RGMinDef, function(v) rgState.MinSpeed = v end)
+})
 
-makeSlider(RideTab, {
+RideTab:Slider({
     Title     = "Max Speed",
-    Min       = 30,
-    Max       = 230,
-    Default   = RGMaxDef,
+    Value     = { Min = 30, Max = 230, Default = 95 },
     Increment = 1,
     Callback  = function(v) rgState.MaxSpeed = v end,
-}, RGMaxDef, function(v) rgState.MaxSpeed = v end)
+})
 
 local vehicleDropdown = RideTab:Dropdown({
     Title    = "Vehicle",
@@ -2303,6 +2270,7 @@ task.spawn(function()
     end
 end)
 
+-- ── Webhook Tab ───────────────────────────────────────────────────────────────
 local WebhookTab = Window:Tab({ Title = "Webhook", Icon = "link" })
 
 WebhookTab:Toggle({
@@ -2317,6 +2285,7 @@ WebhookTab:Input({
     Callback    = function(v) _G.WebhookURL = v end,
 })
 
+-- ── Misc Tab ──────────────────────────────────────────────────────────────────
 local MiscTab = Window:Tab({ Title = "Misc", Icon = "settings" })
 
 MiscTab:Button({
@@ -2332,18 +2301,14 @@ MiscTab:Button({
     end,
 })
 
--- ── Stats tab ─────────────────────────────────────────────────────────────────
--- Per-session autofarm timer: starts the moment any farm is first enabled,
--- stops (and holds) when all farms are off. Tracks independently of _activeSeconds
--- so we can compute RP/hour over the actual active window.
-local _sessionFarmStart   = nil   -- wall-clock tick() when first farm turned on
-local _sessionFarmSeconds = 0     -- accumulated seconds across on/off cycles
+-- ── Stats Tab ─────────────────────────────────────────────────────────────────
+local _sessionFarmStart   = nil
+local _sessionFarmSeconds = 0
 
 local _origUpdateBlackScreen = updateBlackScreen
 updateBlackScreen = function()
-    local wasAny = _sessionFarmStart ~= nil
-    local isAny  = _G.AutofarmCourier or _G.AutoFarmBarista
-                   or _G.AutoPoliceEnabled or _G.AutoDriveActive or _G.RideGOEnabled
+    local isAny = _G.AutofarmCourier or _G.AutoFarmBarista
+                  or _G.AutoPoliceEnabled or _G.AutoDriveActive or _G.RideGOEnabled
     if isAny and not _sessionFarmStart then
         _sessionFarmStart = tick()
     elseif not isAny and _sessionFarmStart then
@@ -2380,35 +2345,12 @@ end
 
 local StatsTab = Window:Tab({ Title = "Stats", Icon = "bar-chart-2" })
 
-local statsTimer    = nil
-local statsEarning  = nil
-local statsBreakdown= nil
-local statsBalance  = nil
+local statsTimer, statsEarning, statsEarning2, statsBalance, statsBreakdown
 
-pcall(function()
-    statsTimer = StatsTab:Paragraph({
-        Title   = "⏱  Session Timer",
-        Content = "00:00:00",
-    })
-end)
-pcall(function()
-    statsEarning = StatsTab:Paragraph({
-        Title   = "💰  Earning / Hour",
-        Content = "—",
-    })
-end)
-pcall(function()
-    statsEarning2 = StatsTab:Paragraph({
-        Title   = "💵  Total Earned",
-        Content = formatRP(_G.TotalEarning),
-    })
-end)
-pcall(function()
-    statsBalance = StatsTab:Paragraph({
-        Title   = "🏦  Money Balance",
-        Content = getCurrentBalance(),
-    })
-end)
+pcall(function() statsTimer    = StatsTab:Paragraph({ Title = "⏱  Session Timer",   Content = "00:00:00" }) end)
+pcall(function() statsEarning  = StatsTab:Paragraph({ Title = "💰  Earning / Hour",  Content = "—" }) end)
+pcall(function() statsEarning2 = StatsTab:Paragraph({ Title = "💵  Total Earned",    Content = formatRP(_G.TotalEarning) }) end)
+pcall(function() statsBalance  = StatsTab:Paragraph({ Title = "🏦  Money Balance",   Content = getCurrentBalance() }) end)
 pcall(function()
     statsBreakdown = StatsTab:Paragraph({
         Title   = "📊  By Job",
@@ -2421,10 +2363,10 @@ task.spawn(function()
         task.wait(3)
         local farmSecs = getSessionFarmSeconds()
         pcall(function()
-            if statsTimer   then statsTimer:Set(formatTime(farmSecs))    end
-            if statsEarning then statsEarning:Set(computeRPH())          end
+            if statsTimer    then statsTimer:Set(formatTime(farmSecs))    end
+            if statsEarning  then statsEarning:Set(computeRPH())          end
             if statsEarning2 then statsEarning2:Set(formatRP(_G.TotalEarning)) end
-            if statsBalance  then statsBalance:Set(getCurrentBalance())  end
+            if statsBalance  then statsBalance:Set(getCurrentBalance())   end
             if statsBreakdown then
                 statsBreakdown:Set(string.format(
                     "Courier: %s\nBarista: %s\nPolice: %s\nRideGO: %s",
