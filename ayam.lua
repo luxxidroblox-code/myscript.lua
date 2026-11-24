@@ -36,7 +36,7 @@ local function hiadonis()
         IgnoreExecutor = true,
     }, true)
     if not Detected then
-        warn("[projectsion] filtergc miss — Adonis not loaded or constants changed")
+        warn("[projectsion] filtergc miss")
         return false
     end
 
@@ -104,7 +104,7 @@ task.delay(1.5, function()
     if not ok then
         task.delay(3, function()
             local retry = hiadonis()
-            warn("[projectsion] Adonis bypass " .. (retry and "active (retry)." or "failed — check constants."))
+            warn("[projectsion] Adonis bypass " .. (retry and "active (retry)." or "failed."))
         end)
     else
         warn("[projectsion] Adonis bypass active.")
@@ -305,17 +305,84 @@ local function updateBlackScreen()
     BlackScreen.Enabled = _G.blackscreen
 end
 
+local _sessionFarmStart   = nil
+local _sessionFarmSeconds = 0
+
+local _baseUpdateBlackScreen = updateBlackScreen
+updateBlackScreen = function()
+    local isAny = _G.AutofarmCourier or _G.AutoFarmBarista
+                  or _G.AutoPoliceEnabled or _G.AutoDriveActive or _G.RideGOEnabled
+    if isAny and not _sessionFarmStart then
+        _sessionFarmStart = tick()
+    elseif not isAny and _sessionFarmStart then
+        _sessionFarmSeconds = _sessionFarmSeconds + (tick() - _sessionFarmStart)
+        _sessionFarmStart   = nil
+    end
+    _baseUpdateBlackScreen()
+end
+
+local function getSessionFarmSeconds()
+    if _sessionFarmStart then
+        return _sessionFarmSeconds + (tick() - _sessionFarmStart)
+    end
+    return _sessionFarmSeconds
+end
+
+local function formatTime(secs)
+    local h = math.floor(secs / 3600)
+    local m = math.floor((secs % 3600) / 60)
+    local s = math.floor(secs % 60)
+    return string.format("%02d:%02d:%02d", h, m, s)
+end
+
+local function computeRPH()
+    local secs = getSessionFarmSeconds()
+    if secs < 60 then return "—" end
+    return formatRP((_G.TotalEarning / secs) * 3600) .. "/h"
+end
+
+local _lastNotifText = ""
+
+task.spawn(function()
+    local ok, PG = pcall(function()
+        return LP:WaitForChild("PlayerGui", 30)
+            :WaitForChild("MainUI", 30)
+            :WaitForChild("Frame4", 30)
+            :WaitForChild("NOTIF", 30)
+    end)
+    if not ok or not PG then return end
+
+    PG:GetPropertyChangedSignal("Text"):Connect(function()
+        local text = PG.Text
+        if text == "" or text == _lastNotifText then return end
+        _lastNotifText = text
+
+        if text:find("NC_SHIFT_LIMIT")
+            or text:lower():find("shift limit")
+            or text:lower():find("shift kurir") then
+            return
+        end
+
+        local digits = text:gsub("[^%d]", "")
+        if digits ~= "" then
+            local amount = tonumber(digits) or 0
+            if amount > 0 then
+                _G.TotalEarning = _G.TotalEarning + amount
+                if _G.AutofarmCourier      then _G.CourierEarned   = _G.CourierEarned   + amount
+                elseif _G.AutoFarmBarista  then _G.BaristaEarned   = _G.BaristaEarned   + amount
+                elseif _G.AutoPoliceEnabled then _G.PoliceEarned   = _G.PoliceEarned    + amount
+                elseif _G.AutoDriveActive  then _G.AutoDriveEarned = _G.AutoDriveEarned + amount
+                elseif _G.RideGOEnabled    then _G.RideGOEarned    = _G.RideGOEarned    + amount
+                end
+            end
+        end
+    end)
+end)
+
 PlayerData.RPValue.Changed:Connect(function(newMoney)
     if newMoney > lastMoney then
         local gained = newMoney - lastMoney
-        pendingIncome   = pendingIncome + gained
-        _G.TotalEarning = _G.TotalEarning + gained
-        if _G.AutofarmCourier      then _G.CourierEarned    = _G.CourierEarned    + gained
-        elseif _G.AutoFarmBarista  then _G.BaristaEarned    = _G.BaristaEarned    + gained
-        elseif _G.AutoPoliceEnabled then _G.PoliceEarned    = _G.PoliceEarned     + gained
-        elseif _G.AutoDriveActive  then _G.AutoDriveEarned  = _G.AutoDriveEarned  + gained
-        elseif _G.RideGOEnabled    then _G.RideGOEarned     = _G.RideGOEarned     + gained
-        end
+        pendingIncome = pendingIncome + gained
         if not isRunning then
             isRunning = true
             task.spawn(function()
@@ -2120,9 +2187,6 @@ task.spawn(function()
     rgFetchOwnedVehicles()
 end)
 
--- ── UI ────────────────────────────────────────────────────────────────────────
--- FIX: Use OpenButton/draggable pattern from voidline (confirmed working).
---      Acrylic removed — not in public WindUI, causes silent init failure.
 local Wind = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
 ))()
@@ -2136,13 +2200,12 @@ local Window = Wind:CreateWindow({
     Size     = UDim2.fromOffset(580, 460),
     Theme    = "Dark",
     OpenButton = {
-        Enabled  = true,
-        Title    = "Projectsion",
+        Enabled   = true,
+        Title     = "Projectsion",
         Draggable = true,
     },
 })
 
--- ── Courier Tab ───────────────────────────────────────────────────────────────
 local CourierTab = Window:Tab({ Title = "Courier", Icon = "package" })
 
 CourierTab:Toggle({
@@ -2154,8 +2217,6 @@ CourierTab:Toggle({
     end,
 })
 
--- FIX: WindUI Slider uses Value = {Min, Max, Default}, not flat Min/Max/Default.
---      Callback fires on construction with the default — no :Set() trick needed.
 CourierTab:Slider({
     Title     = "Min Speed",
     Value     = { Min = 50, Max = 500, Default = 150 },
@@ -2170,7 +2231,6 @@ CourierTab:Slider({
     Callback  = function(v) _G.CourierSpeedMax = v end,
 })
 
--- ── Barista Tab ───────────────────────────────────────────────────────────────
 local BaristaTab = Window:Tab({ Title = "Barista", Icon = "coffee" })
 
 BaristaTab:Toggle({
@@ -2196,7 +2256,6 @@ BaristaTab:Slider({
     Callback  = function(v) _G.BaristaSpeedMax = v end,
 })
 
--- ── Police Tab ────────────────────────────────────────────────────────────────
 local PoliceTab = Window:Tab({ Title = "Police", Icon = "shield" })
 
 PoliceTab:Toggle({
@@ -2225,7 +2284,6 @@ PoliceTab:Slider({
     Callback  = function(v) AutoPoliceConfig.TeleportSpeed.max = v end,
 })
 
--- ── RideGO Tab ────────────────────────────────────────────────────────────────
 local RideTab = Window:Tab({ Title = "RideGO", Icon = "car" })
 
 RideTab:Toggle({
@@ -2270,7 +2328,6 @@ task.spawn(function()
     end
 end)
 
--- ── Webhook Tab ───────────────────────────────────────────────────────────────
 local WebhookTab = Window:Tab({ Title = "Webhook", Icon = "link" })
 
 WebhookTab:Toggle({
@@ -2285,7 +2342,6 @@ WebhookTab:Input({
     Callback    = function(v) _G.WebhookURL = v end,
 })
 
--- ── Misc Tab ──────────────────────────────────────────────────────────────────
 local MiscTab = Window:Tab({ Title = "Misc", Icon = "settings" })
 
 MiscTab:Button({
@@ -2301,83 +2357,32 @@ MiscTab:Button({
     end,
 })
 
--- ── Stats Tab ─────────────────────────────────────────────────────────────────
-local _sessionFarmStart   = nil
-local _sessionFarmSeconds = 0
-
-local _origUpdateBlackScreen = updateBlackScreen
-updateBlackScreen = function()
-    local isAny = _G.AutofarmCourier or _G.AutoFarmBarista
-                  or _G.AutoPoliceEnabled or _G.AutoDriveActive or _G.RideGOEnabled
-    if isAny and not _sessionFarmStart then
-        _sessionFarmStart = tick()
-    elseif not isAny and _sessionFarmStart then
-        _sessionFarmSeconds = _sessionFarmSeconds + (tick() - _sessionFarmStart)
-        _sessionFarmStart   = nil
-    end
-    _origUpdateBlackScreen()
-end
-
-local function getSessionFarmSeconds()
-    if _sessionFarmStart then
-        return _sessionFarmSeconds + (tick() - _sessionFarmStart)
-    end
-    return _sessionFarmSeconds
-end
-
-local function formatTime(secs)
-    local h = math.floor(secs / 3600)
-    local m = math.floor((secs % 3600) / 60)
-    local s = math.floor(secs % 60)
-    return string.format("%02d:%02d:%02d", h, m, s)
-end
-
-local function computeRPH()
-    local secs = getSessionFarmSeconds()
-    if secs < 60 then return "—" end
-    local rph = (_G.TotalEarning / secs) * 3600
-    return formatRP(rph) .. "/h"
-end
-
-local function getCurrentBalance()
-    return formatRP(PlayerData.RPValue.Value)
-end
-
 local StatsTab = Window:Tab({ Title = "Stats", Icon = "bar-chart-2" })
 
-local statsTimer, statsEarning, statsEarning2, statsBalance, statsBreakdown
-
-pcall(function() statsTimer    = StatsTab:Paragraph({ Title = "⏱  Session Timer",   Content = "00:00:00" }) end)
-pcall(function() statsEarning  = StatsTab:Paragraph({ Title = "💰  Earning / Hour",  Content = "—" }) end)
-pcall(function() statsEarning2 = StatsTab:Paragraph({ Title = "💵  Total Earned",    Content = formatRP(_G.TotalEarning) }) end)
-pcall(function() statsBalance  = StatsTab:Paragraph({ Title = "🏦  Money Balance",   Content = getCurrentBalance() }) end)
-pcall(function()
-    statsBreakdown = StatsTab:Paragraph({
-        Title   = "📊  By Job",
-        Content = "Courier: —\nBarista: —\nPolice: —\nRideGO: —",
-    })
-end)
+local statTimer    = StatsTab:Paragraph({ Title = "Session Timer",   Desc = "00:00:00" })
+local statRPH      = StatsTab:Paragraph({ Title = "Earning / Hour",  Desc = "—" })
+local statTotal    = StatsTab:Paragraph({ Title = "Total Earned",    Desc = "RP. 0" })
+local statBalance  = StatsTab:Paragraph({ Title = "Money Balance",   Desc = formatRP(PlayerData.RPValue.Value) })
+local statBreak    = StatsTab:Paragraph({ Title = "By Job", Desc = "Courier: RP. 0\nBarista: RP. 0\nPolice: RP. 0\nRideGO: RP. 0" })
 
 task.spawn(function()
     while true do
         task.wait(3)
-        local farmSecs = getSessionFarmSeconds()
+        local secs = getSessionFarmSeconds()
+        pcall(function() statTimer:SetDesc(formatTime(secs)) end)
+        pcall(function() statRPH:SetDesc(computeRPH()) end)
+        pcall(function() statTotal:SetDesc(formatRP(_G.TotalEarning)) end)
+        pcall(function() statBalance:SetDesc(formatRP(PlayerData.RPValue.Value)) end)
         pcall(function()
-            if statsTimer    then statsTimer:Set(formatTime(farmSecs))    end
-            if statsEarning  then statsEarning:Set(computeRPH())          end
-            if statsEarning2 then statsEarning2:Set(formatRP(_G.TotalEarning)) end
-            if statsBalance  then statsBalance:Set(getCurrentBalance())   end
-            if statsBreakdown then
-                statsBreakdown:Set(string.format(
-                    "Courier: %s\nBarista: %s\nPolice: %s\nRideGO: %s",
-                    formatRP(_G.CourierEarned),
-                    formatRP(_G.BaristaEarned),
-                    formatRP(_G.PoliceEarned),
-                    formatRP(_G.RideGOEarned)
-                ))
-            end
+            statBreak:SetDesc(string.format(
+                "Courier: %s\nBarista: %s\nPolice: %s\nRideGO: %s",
+                formatRP(_G.CourierEarned),
+                formatRP(_G.BaristaEarned),
+                formatRP(_G.PoliceEarned),
+                formatRP(_G.RideGOEarned)
+            ))
         end)
     end
 end)
 
-warn("[PROJECTSION] Loaded. Adonis bypass queued.")
+warn("[PROJECTSION] Loaded.")
