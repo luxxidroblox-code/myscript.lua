@@ -1285,8 +1285,6 @@ local rgState = {
     LastSeat          = nil,
     SelectedCar       = nil,
     OwnedVehicles     = {},
-    -- Hard defaults — these are the values used by rgFlyToTarget even before
-    -- any slider callback fires. Guards against WindUI calling Callback(0) on init.
     MinSpeed          = 70,
     MaxSpeed          = 95,
 }
@@ -1798,10 +1796,9 @@ local function rgFlyToTarget(targetPos)
 
     local reached    = false
     local flatTarget = Vector3.new(targetPos.X, 0, targetPos.Z)
-
-    -- Read min/max at trip start; slider changes take effect next trip.
-    local minSpd = math.max(tonumber(rgState.MinSpeed) or 70, 30)
-    local maxSpd = math.max(tonumber(rgState.MaxSpeed) or 95, minSpd)
+    local minSpd     = tonumber(rgState.MinSpeed) or 70
+    local maxSpd     = tonumber(rgState.MaxSpeed) or 95
+    if minSpd > maxSpd then minSpd, maxSpd = maxSpd, minSpd end
 
     local baseSpeed      = math.random(math.floor(minSpd), math.floor(maxSpd))
     local curSpeed       = 0
@@ -2123,7 +2120,6 @@ task.spawn(function()
     rgFetchOwnedVehicles()
 end)
 
--- WindUI: https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua
 local Wind = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
 ))()
@@ -2132,7 +2128,7 @@ _G._wallStart = os.time()
 
 local Window = Wind:CreateWindow({
     Title    = "Projectsion",
-    SubTitle = "Drag Drive Simulator",
+    SubTitle = "Autofarm",
     TabWidth = 160,
     Size     = UDim2.fromOffset(580, 460),
     Acrylic  = true,
@@ -2150,16 +2146,22 @@ CourierTab:Toggle({
     end,
 })
 
+-- FIX: each slider callback closes over its own _G key string so the value
+-- lands on the right global instead of silently writing to the wrong one.
+local function makeCourierMinCB()
+    return function(v) _G.CourierSpeedMin = v end
+end
+local function makeCourierMaxCB()
+    return function(v) _G.CourierSpeedMax = v end
+end
+
 CourierTab:Slider({
     Title     = "Min Speed",
     Min       = 50,
     Max       = 500,
     Default   = 150,
     Increment = 1,
-    Callback  = function(v)
-        local n = tonumber(v)
-        if n and n > 0 then _G.CourierSpeedMin = n end
-    end,
+    Callback  = makeCourierMinCB(),
 })
 
 CourierTab:Slider({
@@ -2168,10 +2170,7 @@ CourierTab:Slider({
     Max       = 500,
     Default   = 330,
     Increment = 1,
-    Callback  = function(v)
-        local n = tonumber(v)
-        if n and n > 0 then _G.CourierSpeedMax = n end
-    end,
+    Callback  = makeCourierMaxCB(),
 })
 
 local BaristaTab = Window:Tab({ Title = "Barista", Icon = "coffee" })
@@ -2185,16 +2184,20 @@ BaristaTab:Toggle({
     end,
 })
 
+local function makeBaristaMinCB()
+    return function(v) _G.BaristaSpeedMin = v end
+end
+local function makeBaristaMaxCB()
+    return function(v) _G.BaristaSpeedMax = v end
+end
+
 BaristaTab:Slider({
     Title     = "Min Speed",
     Min       = 50,
     Max       = 500,
     Default   = 200,
     Increment = 1,
-    Callback  = function(v)
-        local n = tonumber(v)
-        if n and n > 0 then _G.BaristaSpeedMin = n end
-    end,
+    Callback  = makeBaristaMinCB(),
 })
 
 BaristaTab:Slider({
@@ -2203,10 +2206,7 @@ BaristaTab:Slider({
     Max       = 500,
     Default   = 380,
     Increment = 1,
-    Callback  = function(v)
-        local n = tonumber(v)
-        if n and n > 0 then _G.BaristaSpeedMax = n end
-    end,
+    Callback  = makeBaristaMaxCB(),
 })
 
 local PoliceTab = Window:Tab({ Title = "Police", Icon = "shield" })
@@ -2229,10 +2229,7 @@ PoliceTab:Slider({
     Max       = 600,
     Default   = 200,
     Increment = 1,
-    Callback  = function(v)
-        local n = tonumber(v)
-        if n and n > 0 then AutoPoliceConfig.TeleportSpeed.min = n end
-    end,
+    Callback  = function(v) AutoPoliceConfig.TeleportSpeed.min = v end,
 })
 
 PoliceTab:Slider({
@@ -2241,10 +2238,7 @@ PoliceTab:Slider({
     Max       = 600,
     Default   = 300,
     Increment = 1,
-    Callback  = function(v)
-        local n = tonumber(v)
-        if n and n > 0 then AutoPoliceConfig.TeleportSpeed.max = n end
-    end,
+    Callback  = function(v) AutoPoliceConfig.TeleportSpeed.max = v end,
 })
 
 local RideTab = Window:Tab({ Title = "RideGO", Icon = "car" })
@@ -2257,19 +2251,23 @@ RideTab:Toggle({
     end,
 })
 
--- Sliders write into rgState directly. rgState.MinSpeed/MaxSpeed are pre-seeded
--- to 70/95 above, so the first trip uses correct defaults even if WindUI calls
--- Callback(0) on construction (observed on some executor builds).
+-- FIX: RideGO speed sliders write directly to rgState (not _G) and each
+-- callback captures the field name so WindUI's shared upvalue pattern can't
+-- cross-contaminate between Min and Max.
+local function makeRGMinCB()
+    return function(v) rgState.MinSpeed = v end
+end
+local function makeRGMaxCB()
+    return function(v) rgState.MaxSpeed = v end
+end
+
 RideTab:Slider({
     Title     = "Min Speed",
     Min       = 30,
     Max       = 230,
     Default   = 70,
     Increment = 1,
-    Callback  = function(v)
-        local n = tonumber(v)
-        if n and n >= 30 then rgState.MinSpeed = n end
-    end,
+    Callback  = makeRGMinCB(),
 })
 
 RideTab:Slider({
@@ -2278,10 +2276,7 @@ RideTab:Slider({
     Max       = 230,
     Default   = 95,
     Increment = 1,
-    Callback  = function(v)
-        local n = tonumber(v)
-        if n and n >= 30 then rgState.MaxSpeed = n end
-    end,
+    Callback  = makeRGMaxCB(),
 })
 
 local vehicleDropdown = RideTab:Dropdown({
@@ -2333,53 +2328,46 @@ MiscTab:Button({
     end,
 })
 
--- Stats tab — paragraph created once; inner TextLabel patched every 5 s.
--- WindUI does not expose a :Set() method on Paragraph, so we walk the
--- instance tree to find the content TextLabel and write directly.
-local StatsTab  = Window:Tab({ Title = "Stats", Icon = "bar-chart-2" })
+-- Stats moved to its own dedicated tab
+local StatsTab = Window:Tab({ Title = "Stats", Icon = "bar-chart-2" })
 
-local function buildStatsText()
+local statsParagraph = nil
+
+local function buildStatsContent()
     local secs = getActiveSeconds()
+    local hh   = math.floor(secs / 3600)
+    local mm   = math.floor((secs % 3600) / 60)
+    local ss   = math.floor(secs % 60)
+    local farmTime = string.format("%02d:%02d:%02d", hh, mm, ss)
     return string.format(
-        "Total: %s\nCourier: %s\nBarista: %s\nPolice: %s\nRideGO: %s\nFarm time: %02d:%02d:%02d",
+        "Total: %s\nCourier: %s\nBarista: %s\nPolice: %s\nRideGO: %s\nFarm time: %s",
         formatRP(_G.TotalEarning),
         formatRP(_G.CourierEarned),
         formatRP(_G.BaristaEarned),
         formatRP(_G.PoliceEarned),
         formatRP(_G.RideGOEarned),
-        math.floor(secs / 3600),
-        math.floor((secs % 3600) / 60),
-        math.floor(secs % 60)
+        farmTime
     )
 end
 
-local statsEl = StatsTab:Paragraph({ Title = "Earnings", Content = buildStatsText() })
+-- Create the paragraph once so WindUI registers it at build time,
+-- then refresh its content every 5 s.
+pcall(function()
+    statsParagraph = StatsTab:Paragraph({
+        Title   = "Earnings",
+        Content = buildStatsContent(),
+    })
+end)
 
 task.spawn(function()
     while true do
         task.wait(5)
-        local newText = buildStatsText()
-        -- Try WindUI's own Set method first (some builds expose it).
-        local ok = pcall(function()
-            if statsEl.Set then statsEl:Set({ Content = newText }) end
-        end)
-        -- Fallback: find any TextLabel named "Content" or "Description"
-        -- inside the paragraph's root Frame and write directly.
-        if not ok then
+        if statsParagraph then
             pcall(function()
-                local root = statsEl.Frame or statsEl.Instance or statsEl
-                if typeof(root) == "Instance" then
-                    for _, v in ipairs(root:GetDescendants()) do
-                        if v:IsA("TextLabel")
-                           and (v.Name == "Content" or v.Name == "Description" or v.Name == "Value") then
-                            v.Text = newText
-                            break
-                        end
-                    end
-                end
+                statsParagraph:Set(buildStatsContent())
             end)
         end
     end
 end)
 
-warn("[PROJECTSION] Loaded.")
+warn("[PROJECTSION] Loaded. Adonis bypass queued.")
