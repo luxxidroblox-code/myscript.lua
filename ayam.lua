@@ -209,10 +209,23 @@ local function getActiveSeconds()
     return _activeSeconds
 end
 
+local function formatTime(secs)
+    local h = math.floor(secs / 3600)
+    local m = math.floor((secs % 3600) / 60)
+    local s = math.floor(secs % 60)
+    return string.format("%02d:%02d:%02d", h, m, s)
+end
+
 local function formatRP(v)
     local s         = string.format("%.0f", v)
     local formatted = s:reverse():gsub("(%d%d%d)", "%1."):reverse():gsub("^%.", "")
     return "RP. " .. formatted
+end
+
+local function computeRPH()
+    local secs = getActiveSeconds()
+    if secs < 60 then return "—" end
+    return formatRP((_G.TotalEarning / secs) * 3600) .. "/h"
 end
 
 local function generateRandomName()
@@ -292,7 +305,7 @@ Frame:GetPropertyChangedSignal("Visible"):Connect(function()
 end)
 
 local function updateBlackScreen()
-    local isAnyFarmActive = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled or _G.AutoDriveActive)
+    local isAnyFarmActive = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled or _G.AutoDriveActive or _G.RideGOEnabled)
     _syncFarmTimer()
     if isAnyFarmActive then
         _G.blackscreen          = true
@@ -305,55 +318,19 @@ local function updateBlackScreen()
     BlackScreen.Enabled = _G.blackscreen
 end
 
-local _sessionFarmStart   = nil
-local _sessionFarmSeconds = 0
-
-local _baseUpdateBlackScreen = updateBlackScreen
-updateBlackScreen = function()
-    local isAny = _G.AutofarmCourier or _G.AutoFarmBarista
-                  or _G.AutoPoliceEnabled or _G.AutoDriveActive or _G.RideGOEnabled
-    if isAny and not _sessionFarmStart then
-        _sessionFarmStart = tick()
-    elseif not isAny and _sessionFarmStart then
-        _sessionFarmSeconds = _sessionFarmSeconds + (tick() - _sessionFarmStart)
-        _sessionFarmStart   = nil
-    end
-    _baseUpdateBlackScreen()
-end
-
-local function getSessionFarmSeconds()
-    if _sessionFarmStart then
-        return _sessionFarmSeconds + (tick() - _sessionFarmStart)
-    end
-    return _sessionFarmSeconds
-end
-
-local function formatTime(secs)
-    local h = math.floor(secs / 3600)
-    local m = math.floor((secs % 3600) / 60)
-    local s = math.floor(secs % 60)
-    return string.format("%02d:%02d:%02d", h, m, s)
-end
-
-local function computeRPH()
-    local secs = getSessionFarmSeconds()
-    if secs < 60 then return "—" end
-    return formatRP((_G.TotalEarning / secs) * 3600) .. "/h"
-end
-
 local _lastNotifText = ""
 
 task.spawn(function()
-    local ok, PG = pcall(function()
+    local ok, NOTIF = pcall(function()
         return LP:WaitForChild("PlayerGui", 30)
             :WaitForChild("MainUI", 30)
             :WaitForChild("Frame4", 30)
             :WaitForChild("NOTIF", 30)
     end)
-    if not ok or not PG then return end
+    if not ok or not NOTIF then return end
 
-    PG:GetPropertyChangedSignal("Text"):Connect(function()
-        local text = PG.Text
+    NOTIF:GetPropertyChangedSignal("Text"):Connect(function()
+        local text = NOTIF.Text
         if text == "" or text == _lastNotifText then return end
         _lastNotifText = text
 
@@ -368,11 +345,11 @@ task.spawn(function()
             local amount = tonumber(digits) or 0
             if amount > 0 then
                 _G.TotalEarning = _G.TotalEarning + amount
-                if _G.AutofarmCourier      then _G.CourierEarned   = _G.CourierEarned   + amount
-                elseif _G.AutoFarmBarista  then _G.BaristaEarned   = _G.BaristaEarned   + amount
-                elseif _G.AutoPoliceEnabled then _G.PoliceEarned   = _G.PoliceEarned    + amount
-                elseif _G.AutoDriveActive  then _G.AutoDriveEarned = _G.AutoDriveEarned + amount
-                elseif _G.RideGOEnabled    then _G.RideGOEarned    = _G.RideGOEarned    + amount
+                if _G.AutofarmCourier       then _G.CourierEarned   = _G.CourierEarned   + amount
+                elseif _G.AutoFarmBarista   then _G.BaristaEarned   = _G.BaristaEarned   + amount
+                elseif _G.AutoPoliceEnabled then _G.PoliceEarned    = _G.PoliceEarned    + amount
+                elseif _G.AutoDriveActive   then _G.AutoDriveEarned = _G.AutoDriveEarned + amount
+                elseif _G.RideGOEnabled     then _G.RideGOEarned    = _G.RideGOEarned    + amount
                 end
             end
         end
@@ -2359,16 +2336,16 @@ MiscTab:Button({
 
 local StatsTab = Window:Tab({ Title = "Stats", Icon = "bar-chart-2" })
 
-local statTimer    = StatsTab:Paragraph({ Title = "Session Timer",   Desc = "00:00:00" })
-local statRPH      = StatsTab:Paragraph({ Title = "Earning / Hour",  Desc = "—" })
-local statTotal    = StatsTab:Paragraph({ Title = "Total Earned",    Desc = "RP. 0" })
-local statBalance  = StatsTab:Paragraph({ Title = "Money Balance",   Desc = formatRP(PlayerData.RPValue.Value) })
-local statBreak    = StatsTab:Paragraph({ Title = "By Job", Desc = "Courier: RP. 0\nBarista: RP. 0\nPolice: RP. 0\nRideGO: RP. 0" })
+local statTimer   = StatsTab:Paragraph({ Title = "Session Timer",  Desc = "00:00:00" })
+local statRPH     = StatsTab:Paragraph({ Title = "Earning / Hour", Desc = "—" })
+local statTotal   = StatsTab:Paragraph({ Title = "Total Earned",   Desc = "RP. 0" })
+local statBalance = StatsTab:Paragraph({ Title = "Money Balance",  Desc = formatRP(PlayerData.RPValue.Value) })
+local statBreak   = StatsTab:Paragraph({ Title = "By Job", Desc = "Courier: RP. 0\nBarista: RP. 0\nPolice: RP. 0\nRideGO: RP. 0" })
 
 task.spawn(function()
     while true do
         task.wait(3)
-        local secs = getSessionFarmSeconds()
+        local secs = getActiveSeconds()
         pcall(function() statTimer:SetDesc(formatTime(secs)) end)
         pcall(function() statRPH:SetDesc(computeRPH()) end)
         pcall(function() statTotal:SetDesc(formatRP(_G.TotalEarning)) end)
