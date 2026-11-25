@@ -129,8 +129,6 @@ local TeleportService   = game:GetService("TeleportService")
 local VIM               = game:GetService("VirtualInputManager")
 
 _G.RideGOEnabled    = false
-_G.blackscreen      = false
-_G.PermanentBlackscreen = false
 _G.RejoinTriggered  = false
 
 _G.AutoWebhook  = false
@@ -231,63 +229,6 @@ local function sendWebhook(income, target)
     end
 end
 
-local BlackScreen = Instance.new("ScreenGui")
-local Frame       = Instance.new("Frame")
-if gethui then
-    BlackScreen.Parent = gethui()
-else
-    BlackScreen.Parent = game:GetService("CoreGui") or LP.PlayerGui
-end
-BlackScreen.Name         = generateRandomName()
-Frame.Name               = generateRandomName()
-BlackScreen.DisplayOrder = -1
-BlackScreen.Enabled      = false
-Frame.Parent             = BlackScreen
-Frame.BackgroundColor3   = Color3.fromRGB(0, 0, 0)
-Frame.Size               = UDim2.new(1.5, 0, 1.5, 0)
-Frame.Position           = UDim2.new(-0.25, 0, -0.25, 0)
-Frame.BorderSizePixel    = 0
-
-Frame:GetPropertyChangedSignal("Size"):Connect(function()
-    if Frame.Size ~= UDim2.new(1.5, 0, 1.5, 0) then Frame.Size = UDim2.new(1.5, 0, 1.5, 0) end
-end)
-Frame:GetPropertyChangedSignal("BackgroundTransparency"):Connect(function()
-    if Frame.BackgroundTransparency ~= 0 then Frame.BackgroundTransparency = 0 end
-end)
-Frame:GetPropertyChangedSignal("Visible"):Connect(function()
-    if Frame.Visible == false and _G.PermanentBlackscreen then Frame.Visible = true end
-end)
-
-local function updateBlackScreen()
-    local isAnyFarmActive = _G.RideGOEnabled
-    _syncFarmTimer()
-    if isAnyFarmActive then
-        _G.blackscreen          = true
-        _G.PermanentBlackscreen = true
-    else
-        _G.blackscreen = false
-        if _G.PermanentBlackscreen then BlackScreen.Enabled = true end
-        return
-    end
-    BlackScreen.Enabled = _G.blackscreen
-end
-
-local statTimer   = nil
-local statRPH     = nil
-local statTotal   = nil
-local statBalance = nil
-local statBreak   = nil
-
-local function pushEarningStats()
-    pcall(function() statTotal:SetDesc(formatRP(_G.TotalEarning)) end)
-    pcall(function() statRPH:SetDesc(computeRPH()) end)
-    pcall(function()
-        statBreak:SetDesc(string.format("RideGO: %s", formatRP(_G.RideGOEarned)))
-    end)
-end
-
-local _lastNotifText = ""
-
 task.spawn(function()
     local ok, NOTIF = pcall(function()
         return LP:WaitForChild("PlayerGui", 30)
@@ -297,6 +238,7 @@ task.spawn(function()
     end)
     if not ok or not NOTIF then return end
 
+    local _lastNotifText = ""
     NOTIF:GetPropertyChangedSignal("Text"):Connect(function()
         local text = NOTIF.Text
         if text == "" or text == _lastNotifText then return end
@@ -308,7 +250,6 @@ task.spawn(function()
             if amount > 0 then
                 _G.TotalEarning = _G.TotalEarning + amount
                 if _G.RideGOEnabled then _G.RideGOEarned = _G.RideGOEarned + amount end
-                pushEarningStats()
             end
         end
     end)
@@ -422,8 +363,6 @@ local o; o = hookfunction(getrenv().debug.info, newcclosure(function(...)
     return o(...)
 end))
 setthreadidentity(7)
-
--- ─── RideGO ───────────────────────────────────────────────────────────────────
 
 local rgState = {
     IsActive          = false,
@@ -1273,8 +1212,6 @@ task.spawn(function()
     rgFetchOwnedVehicles()
 end)
 
--- ─── UI ───────────────────────────────────────────────────────────────────────
-
 local Wind = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
 ))()
@@ -1301,7 +1238,6 @@ RideTab:Toggle({
     Default = false,
     Callback = function(state)
         if state then StartRideGO() else StopRideGO() end
-        updateBlackScreen()
     end,
 })
 
@@ -1360,14 +1296,6 @@ MiscTab:Button({
     Callback = function() RejoinServer() end,
 })
 
-MiscTab:Button({
-    Title    = "Toggle Blackscreen",
-    Callback = function()
-        BlackScreen.Enabled = not BlackScreen.Enabled
-        _G.PermanentBlackscreen = BlackScreen.Enabled
-    end,
-})
-
 local StatsTab = Window:Tab({ Title = "Stats", Icon = "bar-chart-2" })
 
 statTimer   = StatsTab:Paragraph({ Title = "Session Timer",  Desc = "00:00:00" })
@@ -1381,6 +1309,11 @@ task.spawn(function()
         task.wait(1)
         pcall(function() statTimer:SetDesc(formatTime(getActiveSeconds())) end)
         pcall(function() statBalance:SetDesc(formatRP(PlayerData.RPValue.Value)) end)
+        pcall(function() statTotal:SetDesc(formatRP(_G.TotalEarning)) end)
+        pcall(function() statRPH:SetDesc(computeRPH()) end)
+        pcall(function()
+            statBreak:SetDesc(string.format("RideGO: %s", formatRP(_G.RideGOEarned)))
+        end)
     end
 end)
 
