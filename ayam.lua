@@ -148,8 +148,6 @@ _G.AutoFarmBarista      = false
 _G.BaristaSpeedMin      = 200
 _G.BaristaSpeedMax      = 380
 _G.AutoPoliceEnabled    = false
-_G.blackscreen          = false
-_G.PermanentBlackscreen = false
 _G.RejoinTriggered      = false
 
 _G.AutoWebhook  = false
@@ -275,47 +273,6 @@ local function sendWebhook(income, target)
             })
         end)
     end
-end
-
-local BlackScreen = Instance.new("ScreenGui")
-local Frame       = Instance.new("Frame")
-if gethui then
-    BlackScreen.Parent = gethui()
-else
-    BlackScreen.Parent = game:GetService("CoreGui") or LP.PlayerGui
-end
-BlackScreen.Name         = generateRandomName()
-Frame.Name               = generateRandomName()
-BlackScreen.DisplayOrder = -1
-BlackScreen.Enabled      = false
-Frame.Parent             = BlackScreen
-Frame.BackgroundColor3   = Color3.fromRGB(0, 0, 0)
-Frame.Size               = UDim2.new(1.5, 0, 1.5, 0)
-Frame.Position           = UDim2.new(-0.25, 0, -0.25, 0)
-Frame.BorderSizePixel    = 0
-
-Frame:GetPropertyChangedSignal("Size"):Connect(function()
-    if Frame.Size ~= UDim2.new(1.5, 0, 1.5, 0) then Frame.Size = UDim2.new(1.5, 0, 1.5, 0) end
-end)
-Frame:GetPropertyChangedSignal("BackgroundTransparency"):Connect(function()
-    if Frame.BackgroundTransparency ~= 0 then Frame.BackgroundTransparency = 0 end
-end)
-Frame:GetPropertyChangedSignal("Visible"):Connect(function()
-    if Frame.Visible == false and _G.PermanentBlackscreen then Frame.Visible = true end
-end)
-
-local function updateBlackScreen()
-    local isAnyFarmActive = (_G.AutofarmCourier or _G.AutoFarmBarista or _G.AutoPoliceEnabled or _G.AutoDriveActive or _G.RideGOEnabled)
-    _syncFarmTimer()
-    if isAnyFarmActive then
-        _G.blackscreen          = true
-        _G.PermanentBlackscreen = true
-    else
-        _G.blackscreen = false
-        if _G.PermanentBlackscreen then BlackScreen.Enabled = true end
-        return
-    end
-    BlackScreen.Enabled = _G.blackscreen
 end
 
 local statTimer   = nil
@@ -2211,7 +2168,7 @@ CourierTab:Toggle({
     Default = false,
     Callback = function(state)
         _G.AutofarmCourier = state
-        updateBlackScreen()
+        _syncFarmTimer()
     end,
 })
 
@@ -2236,7 +2193,7 @@ BaristaTab:Toggle({
     Default = false,
     Callback = function(state)
         _G.AutoFarmBarista = state
-        updateBlackScreen()
+        _syncFarmTimer()
     end,
 })
 
@@ -2261,7 +2218,7 @@ PoliceTab:Toggle({
     Default = false,
     Callback = function(state)
         _G.AutoPoliceEnabled = state
-        updateBlackScreen()
+        _syncFarmTimer()
         if state and not RequestingJob then
             task.spawn(RequestPoliceJob)
         end
@@ -2345,14 +2302,6 @@ local MiscTab = Window:Tab({ Title = "Misc", Icon = "settings" })
 MiscTab:Button({
     Title    = "Rejoin Server",
     Callback = function() RejoinServer() end,
-})
-
-MiscTab:Button({
-    Title    = "Toggle Blackscreen",
-    Callback = function()
-        BlackScreen.Enabled = not BlackScreen.Enabled
-        _G.PermanentBlackscreen = BlackScreen.Enabled
-    end,
 })
 
 local StatsTab = Window:Tab({ Title = "Stats", Icon = "bar-chart-2" })
