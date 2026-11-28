@@ -1,1440 +1,1154 @@
--- JAWADEOBF NIL NIL NIL 9201ee2jh9ds Instance_224
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
-local v1 = false
-local v2 = false
-local sendWebhook
-v3, v4 = game:GetService("Players")["LocalPlayer"], game:GetService("VirtualUser")
-for v5, v6 in getconnections(v3["Idled"]) do
-    pcall(v6["Disable"], v6)
-    pcall(v6["Disconnect"], v6)
-end
-local v7 = v3["Idled"]:Connect(function()
-    v4:CaptureController()
-    v4:ClickButton2(Vector2["zero"])
+local Window = Rayfield:CreateWindow({
+    Name             = "Projectsion | Bus Explorer Indonesia",
+    LoadingTitle     = "Bus Explorer Indonesia",
+    LoadingSubtitle  = "by .projectsion",
+    Theme            = "Default",
+    ConfigurationSaving = {
+        Enabled  = true,
+        FileName = "VoidlineConfig"
+    },
+    KeySystem = false,
+})
+
+-- ── services ──────────────────────────────────────────────────────────────
+local VirtualUser       = game:GetService("VirtualUser")
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local HttpService       = game:GetService("HttpService")
+
+local LP                = Players.LocalPlayer
+local Remotes           = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
+local StatsFolder       = LP:WaitForChild("PlayerData")
+local OwnedCarsFolder   = StatsFolder:WaitForChild("OwnedCars")
+local CarData           = Remotes.GetClientCustomizationData:InvokeServer()
+local StartUang         = StatsFolder.Uang.Value
+local StartTime         = os.time()
+
+-- ── globals ───────────────────────────────────────────────────────────────
+_G.AutoFull        = false
+_G.AntiAFK         = true
+_G.AutoRejoin      = false
+_G.blackscreen     = false
+_G.HideChar        = false
+_G.SelectedBus     = ""
+_G.WebhookURL      = ""
+_G.TotalEarning    = 0
+_G.CycleCount      = 0
+_G.StartTime       = os.time()
+_G.AutoKickEnabled = false
+_G.WebhookEnabled  = false
+
+-- ── tunables ──────────────────────────────────────────────────────────────
+local TWEEN_SPEED      = 100
+local ARRIVE_DELAY     = 60
+local INCOME_THRESHOLD = 30_000_000
+local STAFF_GROUP_ID   = 269201883
+
+-- ── state ─────────────────────────────────────────────────────────────────
+local isWaitingInZone      = false
+local jobStarted           = false
+local TargetUang           = 0
+local lastMoney            = StatsFolder.Uang.Value
+local SelectedBusToBuy     = ""
+local CarListData          = {}
+local pendingIncome        = 0
+local SelectedAction       = "Dealership"
+local SelectedTP           = "Dealership"
+local isWebhookRunning     = false
+local busOptions           = {}
+local isCycleResetting     = false
+local lockedRootPart       = nil
+
+-- ── recovery state ────────────────────────────────────────────────────────
+local lastCheckpointName   = ""
+local lastCheckpointFolder = "Checkpoints"
+local isRecovering         = false
+
+-- ── route state ───────────────────────────────────────────────────────────
+local RouteData        = {}
+local RouteSortedKeys  = {}
+local SelectedRouteKey = ""
+local LabelToKey       = {}
+
+local StatusLabel, UangLabel, EarningLabel, TimeLabel, FPSLabel, PingLabel
+local RouteRewardLabel
+
+-- ── blackscreen ───────────────────────────────────────────────────────────
+local BlackScreen        = Instance.new("ScreenGui")
+BlackScreen.Name         = "ProjectsionBlackout"
+BlackScreen.Parent       = game:GetService("CoreGui")
+BlackScreen.DisplayOrder = -1
+BlackScreen.Enabled      = false
+
+local BSFrame            = Instance.new("Frame")
+BSFrame.Parent           = BlackScreen
+BSFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+BSFrame.Size             = UDim2.new(1.5, 0, 1.5, 0)
+BSFrame.Position         = UDim2.new(-0.25, 0, -0.25, 0)
+BSFrame.BorderSizePixel  = 0
+
+task.spawn(function()
+    while task.wait(0.5) do
+        BlackScreen.Enabled = _G.blackscreen
+    end
 end)
-local v8 = function()
-    if v7 then
-        v7:Disconnect()
-        v7 = nil
-    end
+
+-- ── anti-afk ─────────────────────────────────────────────────────────────
+for _, c in getconnections(LP.Idled) do
+    pcall(c.Disable, c)
+    pcall(c.Disconnect, c)
 end
-local v9  = game:GetService("Players")
-local v10 = game:GetService("Workspace")
-local v11 = game:GetService("ReplicatedStorage")
-local v12 = game:GetService("VirtualInputManager")
-local v13 = game:GetService("RunService")
-local v14 = game:GetService("TweenService")
-local v15 = v9["LocalPlayer"]
-local v16
-v16 = function(v17)
-    local v18 = v15["Character"]
-    if (v18 and v18:FindFirstChild("HumanoidRootPart")) then
-        v18["HumanoidRootPart"]["CFrame"] = v17
+
+LP.Idled:Connect(function()
+    if _G.AntiAFK then
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.zero)
     end
+end)
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- STAFF GROUP KICK
+-- ══════════════════════════════════════════════════════════════════════════
+local kickedSelf     = true
+local checkedPlayers = {}
+
+local function isStaffMember(player)
+    if checkedPlayers[player.UserId] ~= nil then
+        return checkedPlayers[player.UserId]
+    end
+    local ok, result = pcall(function()
+        return player:IsInGroup(STAFF_GROUP_ID)
+    end)
+    local inGroup = ok and result == true
+    checkedPlayers[player.UserId] = inGroup
+    return inGroup
 end
-local v19
-v19 = function(v20)
-    if v20 then
-        v20["Enabled"] = true
-        if fireproximityprompt then
-            pcall(function()
-                fireproximityprompt(v20)
-            end)
-        else
-            v20:InputHoldBegin()
-            task["wait"]((v20["HoldDuration"] + 0.1))
-            v20:InputHoldEnd()
+
+local function kickSelfIfStaffPresent()
+    if kickedSelf or not _G.AutoKickEnabled then return end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LP then continue end
+        if isStaffMember(p) then
+            kickedSelf = true
+            task.wait(0.2)
+            LP:Kick(
+                "\n[Projectsion]\nStaff member detected in server:\n"
+                .. p.Name .. " (Group " .. STAFF_GROUP_ID .. ")\nExiting safely."
+            )
+            return
         end
     end
 end
-local v21
-v21 = function()
-    local v22 = v10:FindFirstChild("Vehicles")
-    if v22 then
-        local v23 = (v15["Name"] .. "sCar")
-        return v22:FindFirstChild(v23)
+
+Players.PlayerAdded:Connect(function(p)
+    if p == LP then return end
+    task.delay(2, function()
+        if not _G.AutoKickEnabled or kickedSelf then return end
+        if isStaffMember(p) then
+            kickedSelf = true
+            task.wait(0.2)
+            LP:Kick(
+                "\n[Projectsion]\nStaff member detected: "
+                .. p.Name .. "\nExiting safely."
+            )
+        end
+    end)
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    checkedPlayers[p.UserId] = nil
+end)
+
+task.spawn(function()
+    while task.wait(8) do
+        if kickedSelf then break end
+        kickSelfIfStaffPresent()
+    end
+end)
+
+-- ── format helpers ────────────────────────────────────────────────────────
+local function formatRS(amount)
+    local f = tostring(math.floor(amount))
+    local k
+    while true do
+        f, k = string.gsub(f, "^(-?%d+)(%d%d%d)", '%1.%2')
+        if k == 0 then break end
+    end
+    return f
+end
+
+local function formatRP(v) return "Rp " .. formatRS(v) end
+
+local function getRunningTime()
+    local diff = os.time() - _G.StartTime
+    return string.format("%02d:%02d:%02d",
+        math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
+end
+
+local function SetStatus(text)
+    if StatusLabel then StatusLabel:Set("Status: " .. text) end
+end
+
+-- ── unlock helper ─────────────────────────────────────────────────────────
+local function unlockVehicle()
+    if lockedRootPart and lockedRootPart.Parent then
+        lockedRootPart.Anchored                = false
+        lockedRootPart.AssemblyLinearVelocity  = Vector3.zero
+        lockedRootPart.AssemblyAngularVelocity = Vector3.zero
+    end
+    lockedRootPart = nil
+end
+
+-- ── get owned bus from workspace ──────────────────────────────────────────
+local function GetMyBus()
+    local spawnedFolder = workspace:FindFirstChild("SpawnedVehicles")
+    if not spawnedFolder then return nil end
+    for _, veh in ipairs(spawnedFolder:GetChildren()) do
+        local ownerAttr = veh:GetAttribute("Owner")
+        local ownerVal  = veh:FindFirstChild("Owner")
+        if (ownerAttr and tostring(ownerAttr) == LP.Name)
+        or (ownerVal  and tostring(ownerVal.Value) == LP.Name)
+        or veh.Name:find(LP.Name) then
+            return veh
+        end
     end
     return nil
 end
-local v24 = false
-local v25
-v25 = function()
-    v16(CFrame["new"](34938, 135, (-54576)))
-    task["wait"](0.5)
-    pcall(function()
-        local v26 = { { ["name"] = "Base_Malang", ["pos"] = Vector3["new"]((-7851), 380, 46856) }, { ["name"] = "Base_Surabaya", ["pos"] = Vector3["new"](35076, 128, (-54518)) } }
-        local v27 = Vector3["new"](1000, 5, 1000)
-        for v28, v29 in ipairs(v26) do
-            local v30 = v10:FindFirstChild(v29["name"])
-            if (not v30) then
-                v30 = Instance["new"]("Part")
-                v30["Name"] = v29["name"]
-                v30["Anchored"] = true
-                v30["CanCollide"] = true
-                v30["Parent"] = v10
-            end
-            v30["Size"] = v27
-            v30["CFrame"] = CFrame["new"](v29["pos"])
-        end
-    end)
+
+-- ── bus list ──────────────────────────────────────────────────────────────
+for _, car in pairs(OwnedCarsFolder:GetChildren()) do
+    local carID   = car.Name
+    local carInfo = CarData and CarData.CarData_Cars and CarData.CarData_Cars[carID]
+    if carInfo then table.insert(busOptions, carID) end
 end
-local v31
-v31 = function()
-    if v24 then
-        return
+if #busOptions == 0 then table.insert(busOptions, "Jetbus_3_RM _SHD") end
+_G.SelectedBus = busOptions[1]
+
+local ClientData = Remotes.GetClientCustomizationData:InvokeServer()
+if ClientData and ClientData.CarData_Cars then
+    for carID in pairs(ClientData.CarData_Cars) do
+        table.insert(CarListData, carID)
     end
-    v24 = true
-    pcall(function()
-        local v32 = v10:FindFirstChild("Map")
-        if v32 then
-            v32:Destroy()
-        end
-    end)
+    table.sort(CarListData)
 end
-pcall(function()
-    local v33 = (v15:WaitForChild("PlayerGui", 5) or v15:FindFirstChild("PlayerGui"))
-    if (not v33) then
-        return
-    end
-    local v34
-    v34 = function(v35)
-        if (v35 and v35:IsA("ScreenGui")) then
-            v35["Enabled"] = false
-            v35:GetPropertyChangedSignal("Enabled"):Connect(function()
-                if v35["Enabled"] then
-                    v35["Enabled"] = false
-                end
-            end)
-        end
-    end
-    local v36
-    v36 = function(v37)
-        if v37 then
-            v37["Visible"] = false
-            v37:GetPropertyChangedSignal("Visible"):Connect(function()
-                if v37["Visible"] then
-                    v37["Visible"] = false
-                end
-            end)
-        end
-    end
-    local v38 = v33:FindFirstChild("Job")
-    if v38 then
-        v34(v38)
-    end
-    v33["ChildAdded"]:Connect(function(v39)
-        if (v39["Name"] == "Job") then
-            v34(v39)
-        end
-    end)
-    task["spawn"](function()
-        local v40 = v33:WaitForChild("Main", 5)
-        local v41 = (v40 and v40:WaitForChild("Container", 5))
-        local v42 = (v41 and v41:WaitForChild("Hub", 5))
-        local v43 = (v42 and (v42:FindFirstChild("MapFrame") or v42:WaitForChild("MapFrame", 5)))
-        if v43 then
-            v36(v43)
-        end
-    end)
-end)
-local v44 = false
-local v45 = 50
-local v46 = nil
-local v47 = nil
-local v48 = nil
-local v49 = nil
-local v50 = nil
-local v51 = nil
-local v52 = 0
-local v53 = nil
-local v54 = 0
-local v55 = Vector3["new"]((-7845.344), 389.014, 46865.543)
-local v56 = os["clock"]()
-local v57 = nil
-local v58 = 0
-local v59 = 0
-local v60 = {}
-local v61 = 0
-local v62 = require(v11["Shared"]["TruckArea"])
-local v63
-pcall(function()
-    v63 = require(game:GetService("ReplicatedStorage")["Services"]["DataReplication"])
-end)
-local v64
-v64 = function()
-    local v65 = 0
-    pcall(function()
-        if v63 then
-            if v63["GetCash"] then
-                v65 = v63:GetCash()
-            elseif v63["GetData"] then
-                v65 = v63:GetData()["Cash"]
-            end
-        end
-    end)
-    return v65
+
+-- ── TP locations ──────────────────────────────────────────────────────────
+local TP_Locations = {
+    ["Dealership"]    = CFrame.new(19830.625,  266.913116,  -27910.4844,  0.999847949, 0,  0.017436387, 0, 1, 0, -0.017436387, 0,  0.999847949),
+    ["Modifikasi"]    = CFrame.new(12035.499,  -21.3362789,  12740.0605, -0.573599219, 0,  0.81913656,  0, 1, 0, -0.81913656,  0, -0.573599219),
+    ["Teleport City"] = CFrame.new(21795.2461, 292.439026,  -40055.918,   0.707134247, 0, -0.707079291, 0, 1, 0,  0.707079291, 0,  0.707134247),
+}
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- ROUTE FETCH + SORT  (Baranangsiang only)
+-- ══════════════════════════════════════════════════════════════════════════
+local function buildLabelForKey(key)
+    local info = RouteData[key]
+    if not info then return key end
+    return (info.DisplayName or key)
+        .. "  |  " .. formatRP(info.Reward or 0)
+        .. "  (" .. tostring(info.TotalCheckpoints or "?") .. " CP)"
 end
-local v66
-v66 = function(v67)
-    local v68 = math["floor"]((v67 / 3600))
-    local v69 = math["floor"](((v67 % 3600) / 60))
-    local v70 = math["floor"]((v67 % 60))
-    if (v68 > 0) then
-        return string["format"]("%02d:%02d:%02d", v68, v69, v70)
-    else
-        return string["format"]("%02d:%02d", v69, v70)
+
+local function fetchRoutes()
+    RouteData       = {}
+    RouteSortedKeys = {}
+    LabelToKey      = {}
+
+    local ok, result = pcall(function()
+        return Remotes:WaitForChild("GetAvailableBusRoutes"):InvokeServer("Baranangsiang")
+    end)
+
+    if not ok or type(result) ~= "table" then return false end
+
+    for key, info in pairs(result) do
+        RouteData[key] = info
+        table.insert(RouteSortedKeys, key)
     end
+
+    table.sort(RouteSortedKeys, function(a, b)
+        return (RouteData[a].Reward or 0) > (RouteData[b].Reward or 0)
+    end)
+
+    if SelectedRouteKey == "" and #RouteSortedKeys > 0 then
+        SelectedRouteKey = RouteSortedKeys[1]
+    end
+
+    for _, key in ipairs(RouteSortedKeys) do
+        LabelToKey[buildLabelForKey(key)] = key
+    end
+
+    return true
 end
-local v71
-v71 = function(v72)
-    local v73 = tostring(math["floor"]((v72 or 0)))
-    local v74
-    while true do
-        v73, v74 = string["gsub"](v73, "^(-?%d+)(%d%d%d)", "%1.%2")
-        if (v74 == 0) then
+
+local function buildRouteOptions()
+    local opts = {}
+    for _, key in ipairs(RouteSortedKeys) do
+        table.insert(opts, buildLabelForKey(key))
+    end
+    return opts
+end
+
+fetchRoutes()
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- PREPARE VEHICLE
+-- ══════════════════════════════════════════════════════════════════════════
+local function prepareVehicle()
+    Remotes.SpawnCar:FireServer(_G.SelectedBus)
+    task.wait(2)
+
+    local spawnedFolder = workspace:FindFirstChild("SpawnedVehicles")
+    if not spawnedFolder then return end
+
+    local bus = nil
+    for _, veh in ipairs(spawnedFolder:GetChildren()) do
+        local ownerAttr = veh:GetAttribute("Owner")
+        local ownerVal  = veh:FindFirstChild("Owner")
+        if (ownerAttr and tostring(ownerAttr) == LP.Name)
+        or (ownerVal  and tostring(ownerVal.Value) == LP.Name)
+        or veh.Name:find(LP.Name) then
+            bus = veh
             break
         end
     end
-    return ("Rp " .. v73)
-end
-local v75
-v75 = function(v76)
-    local v77 = math["floor"]((v76 or 0))
-    local v78 = (v77 / 1000000000)
-    if (v78 >= 0.1) then
-        return string["format"]("%s (~%.2fM/hr)", v71(v77), v78)
-    else
-        local v79 = (v77 / 1000000)
-        return string["format"]("%s (~%.1fJt/hr)", v71(v77), v79)
+
+    if not bus then
+        local vehicles = spawnedFolder:GetChildren()
+        bus = vehicles[#vehicles]
+    end
+
+    if not bus then return end
+
+    local seat = bus:FindFirstChild("DriveSeat", true)
+    if seat then
+        local char = LP.Character or LP.CharacterAdded:Wait()
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = seat.CFrame + Vector3.new(0, 2, 0)
+        end
+        task.wait(0.3)
+        local prompt = seat:FindFirstChildWhichIsA("ProximityPrompt", true)
+                    or bus:FindFirstChildWhichIsA("ProximityPrompt", true)
+        if prompt and fireproximityprompt then
+            fireproximityprompt(prompt)
+        end
     end
 end
-local v80
-v80 = function()
-    local v81 = 0
-    pcall(function()
-        local v82 = v15["PlayerGui"]["Main"]["Container"]["Hub"]["CashFrame"]["Frame"]["TextLabel"]
-        local v83 = v82["Text"]:gsub("[^%d]", "")
-        v81 = (tonumber(v83) or 0)
-    end)
-    if (v81 == 0) then
-        v81 = v64()
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- moveTo
+-- ══════════════════════════════════════════════════════════════════════════
+local function getPart(name, folderName)
+    local folder = workspace:WaitForChild(folderName, 5)
+    if not folder then return nil end
+    local part = folder:FindFirstChild(name, true)
+    if not part then
+        task.wait(0.3)
+        part = folder:FindFirstChild(name, true)
     end
-    return v81
+    return part
 end
-local v84 = nil
-local v85 = nil
-local v86 = nil
-local v87 = nil
-local v88 = nil
-local v89 = nil
-local v90 = nil
-local v91 = {}
-local v92 = nil
-local v93 = 0
-local v94
-v94 = function(v95)
-    local v96 = "0123456789abcdef"
-    local v97 = {}
-    for v98 = 1, (v95 or 16), 1 do
-        local v99 = math["random"](1, (#v96))
-        table["insert"](v97, v96:sub(v99, v99))
+
+local function moveTo(targetPart)
+    if not targetPart then return end
+
+    unlockVehicle()
+
+    local char = LP.Character or LP.CharacterAdded:Wait()
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    local targetModel = char
+
+    if hum and hum.SeatPart then
+        local veh = hum.SeatPart:FindFirstAncestorOfClass("Model")
+        if veh then targetModel = veh end
     end
-    return table["concat"](v97)
-end
-local v100
-v100 = function()
-    pcall(function()
-        task["spawn"](function()
-            while true do
+
+    local rootPart = targetModel.PrimaryPart or targetModel:FindFirstChildWhichIsA("BasePart")
+    if not rootPart then return end
+
+    local startCFrame  = targetModel:GetPivot()
+    local targetCFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
+    local distance     = (targetCFrame.Position - startCFrame.Position).Magnitude
+    local duration     = math.max(distance / TWEEN_SPEED, 0.1)
+
+    local originalCollisions = {}
+    for _, p in ipairs(targetModel:GetDescendants()) do
+        if p:IsA("BasePart") then
+            originalCollisions[p] = p.CanCollide
+        end
+    end
+
+    rootPart.Anchored = true
+
+    local noclipConn = RunService.Stepped:Connect(function()
+        for p in pairs(originalCollisions) do
+            if p and p.Parent then
+                p.CanCollide              = false
+                p.AssemblyLinearVelocity  = Vector3.zero
+                p.AssemblyAngularVelocity = Vector3.zero
             end
-        end)
+        end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then
+                p.CanCollide = false
+            end
+        end
     end)
-    while true do
+
+    local elapsed = 0
+    while elapsed < duration do
+        if not _G.AutoFull then break end
+        local dt = RunService.Heartbeat:Wait()
+        elapsed  = elapsed + dt
+        local alpha = math.min(elapsed / duration, 1)
+        targetModel:PivotTo(startCFrame:Lerp(targetCFrame, alpha))
     end
-end
-local v101
-v101 = function()
-    if v90 then
-        pcall(function()
-            v90:Cancel()
-        end)
-        v90 = nil
-    end
-    if v91 then
-        for v102, v103 in ipairs(v91) do
-            pcall(v103["Disconnect"], v103)
-        end
-        v91 = {}
-    end
-    if v84 then
-        pcall(v84["Destroy"], v84)
-        v84 = nil
-        v85 = nil
-        v86 = nil
-        v87 = nil
-        v88 = nil
-        v89 = nil
-    end
-end
-local v104
-v104 = function(v105)
-    if v90 then
-        pcall(function()
-            v90:Cancel()
-        end)
-        v90 = nil
-    end
-    if (v105 and (v105 > 0)) then
-        v93 = v105
-        v92 = (os["clock"]() + v105)
-        if v89 then
-            v89["Size"] = UDim2["new"](1, 0, 1, 0)
-            local v106 = TweenInfo["new"](v105, Enum["EasingStyle"]["Linear"], Enum["EasingDirection"]["Out"])
-            v90 = v14:Create(v89, v106, { ["Size"] = UDim2["new"](0, 0, 1, 0) })
-            v90:Play()
-        end
-    else
-        v93 = 0
-        v92 = nil
-        if v89 then
-            v89["Size"] = UDim2["new"](0, 0, 1, 0)
+
+    targetModel:PivotTo(targetCFrame)
+    noclipConn:Disconnect()
+
+    for p, cc in pairs(originalCollisions) do
+        if p and p.Parent then
+            p.CanCollide              = cc
+            p.AssemblyLinearVelocity  = Vector3.zero
+            p.AssemblyAngularVelocity = Vector3.zero
         end
     end
+
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+            p.CanCollide = true
+        end
+    end
+
+    task.wait(0.8)
+    if not isWaitingInZone then
+        targetModel:PivotTo(targetPart.CFrame + Vector3.new(0, 3, 0))
+        task.wait(0.2)
+    end
+
+    rootPart.Anchored                = false
+    rootPart.AssemblyLinearVelocity  = Vector3.zero
+    rootPart.AssemblyAngularVelocity = Vector3.zero
+    task.wait(0.25)
+
+    rootPart.Anchored                = true
+    rootPart.AssemblyLinearVelocity  = Vector3.zero
+    rootPart.AssemblyAngularVelocity = Vector3.zero
+    lockedRootPart = rootPart
 end
-local v107
-v107 = function(v108)
-    if v88 then
-        v88["Text"] = v108
-    end
-end
-local v109
-v109 = function()
-    v92 = nil
-    v93 = 0
-    if v90 then
-        pcall(function()
-            v90:Cancel()
-        end)
-        v90 = nil
-    end
-    if v89 then
-        v89["Size"] = UDim2["new"](0, 0, 1, 0)
-    end
-    if v88 then
-        v88["Text"] = "0s"
-    end
-end
-local v110
-v110 = function()
-    v101()
-    if ((not v2) or (not v44)) then
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- START JOB
+-- ══════════════════════════════════════════════════════════════════════════
+local function startJob()
+    if jobStarted then return end
+    if SelectedRouteKey == "" then
+        SetStatus("No route selected.")
         return
     end
-    local v111 = (v15:WaitForChild("PlayerGui", 5) or v15:FindFirstChild("PlayerGui"))
-    if (not v111) then
-        return
-    end
-    local v112 = Instance["new"]("ScreenGui")
-    v112["Name"] = v94(16)
-    v112["DisplayOrder"] = 2147483646
-    v112["IgnoreGuiInset"] = true
-    v112["ResetOnSpawn"] = false
-    local v113 = Instance["new"]("Frame")
-    v113["Name"] = "Background"
-    v113["Size"] = UDim2["new"](1, 0, 1, 0)
-    v113["Position"] = UDim2["new"](0, 0, 0, 0)
-    v113["BackgroundColor3"] = Color3["fromRGB"](10, 10, 15)
-    v113["BorderSizePixel"] = 0
-    v113["Parent"] = v112
-    local v114 = Instance["new"]("Frame")
-    v114["Name"] = "CenterContainer"
-    v114["Size"] = UDim2["new"](0, 840, 0, 320)
-    v114["AnchorPoint"] = Vector2["new"](0.5, 0.5)
-    v114["Position"] = UDim2["new"](0.5, 0, 0.5, 0)
-    v114["BackgroundTransparency"] = 1
-    v114["Parent"] = v113
-    local v115 = Instance["new"]("ImageLabel")
-    v115["Name"] = "CenterImage"
-    v115["Size"] = UDim2["new"](0, 200, 0, 200)
-    v115["AnchorPoint"] = Vector2["new"](0.5, 0.5)
-    v115["Position"] = UDim2["new"](0.5, 0, 0.35, 0)
-    v115["BackgroundTransparency"] = 1
-    v115["Image"] = "rbxthumb://type=Asset&id=75533822533623&w=420&h=420"
-    v115["ScaleType"] = Enum["ScaleType"]["Fit"]
-    v115["Parent"] = v114
-    local v116 = Instance["new"]("Frame")
-    v116["Name"] = "LeftCard"
-    v116["Size"] = UDim2["new"](0, 270, 0, 95)
-    v116["AnchorPoint"] = Vector2["new"](1, 0.5)
-    v116["Position"] = UDim2["new"](0.5, (-130), 0.35, 0)
-    v116["BackgroundColor3"] = Color3["fromRGB"](15, 20, 30)
-    v116["BorderSizePixel"] = 0
-    v116["Parent"] = v114
-    local v117 = Instance["new"]("UICorner")
-    v117["CornerRadius"] = UDim["new"](0, 14)
-    v117["Parent"] = v116
-    local v118 = Instance["new"]("UIStroke")
-    v118["Color"] = Color3["fromRGB"](16, 185, 129)
-    v118["Thickness"] = 1.5
-    v118["Transparency"] = 0.3
-    v118["Parent"] = v116
-    local v119 = Instance["new"]("TextLabel")
-    v119["Name"] = "Title"
-    v119["Size"] = UDim2["new"](1, (-28), 0, 22)
-    v119["Position"] = UDim2["new"](0, 16, 0, 16)
-    v119["BackgroundTransparency"] = 1
-    v119["Font"] = Enum["Font"]["GothamBold"]
-    v119["Text"] = "TOTAL MONEY"
-    v119["TextColor3"] = Color3["fromRGB"](52, 211, 153)
-    v119["TextSize"] = 13
-    v119["TextXAlignment"] = Enum["TextXAlignment"]["Left"]
-    v119["Parent"] = v116
-    local v120 = Instance["new"]("TextLabel")
-    v120["Name"] = "Value"
-    v120["Size"] = UDim2["new"](1, (-28), 0, 32)
-    v120["Position"] = UDim2["new"](0, 16, 0, 42)
-    v120["BackgroundTransparency"] = 1
-    v120["Font"] = Enum["Font"]["GothamBlack"]
-    v120["Text"] = v71(v80())
-    v120["TextColor3"] = Color3["fromRGB"](240, 253, 244)
-    v120["TextSize"] = 18
-    v120["TextXAlignment"] = Enum["TextXAlignment"]["Left"]
-    v120["Parent"] = v116
-    local v121 = Instance["new"]("Frame")
-    v121["Name"] = "RightCard"
-    v121["Size"] = UDim2["new"](0, 270, 0, 95)
-    v121["AnchorPoint"] = Vector2["new"](0, 0.5)
-    v121["Position"] = UDim2["new"](0.5, 130, 0.35, 0)
-    v121["BackgroundColor3"] = Color3["fromRGB"](15, 20, 30)
-    v121["BorderSizePixel"] = 0
-    v121["Parent"] = v114
-    local v122 = Instance["new"]("UICorner")
-    v122["CornerRadius"] = UDim["new"](0, 14)
-    v122["Parent"] = v121
-    local v123 = Instance["new"]("UIStroke")
-    v123["Color"] = Color3["fromRGB"](255, 255, 255)
-    v123["Thickness"] = 1.5
-    v123["Transparency"] = 0.3
-    v123["Parent"] = v121
-    local v124 = Instance["new"]("TextLabel")
-    v124["Name"] = "Title"
-    v124["Size"] = UDim2["new"](1, (-28), 0, 22)
-    v124["Position"] = UDim2["new"](0, 16, 0, 16)
-    v124["BackgroundTransparency"] = 1
-    v124["Font"] = Enum["Font"]["GothamBold"]
-    v124["Text"] = "ESTIMATE EARNING"
-    v124["TextColor3"] = Color3["fromRGB"](255, 255, 255)
-    v124["TextSize"] = 13
-    v124["TextXAlignment"] = Enum["TextXAlignment"]["Left"]
-    v124["Parent"] = v121
-    local v125 = Instance["new"]("TextLabel")
-    v125["Name"] = "Value"
-    v125["Size"] = UDim2["new"](1, (-28), 0, 32)
-    v125["Position"] = UDim2["new"](0, 16, 0, 42)
-    v125["BackgroundTransparency"] = 1
-    v125["Font"] = Enum["Font"]["GothamBlack"]
-    v125["Text"] = "Rp 0 (~0.0Jt/hr)"
-    v125["TextColor3"] = Color3["fromRGB"](255, 255, 255)
-    v125["TextSize"] = 18
-    v125["TextXAlignment"] = Enum["TextXAlignment"]["Left"]
-    v125["Parent"] = v121
-    local v126 = Instance["new"]("Frame")
-    v126["Name"] = "CountdownGroup"
-    v126["Size"] = UDim2["new"](0, 520, 0, 84)
-    v126["AnchorPoint"] = Vector2["new"](0.5, 0)
-    v126["Position"] = UDim2["new"](0.5, 0, 0, 222)
-    v126["BackgroundTransparency"] = 1
-    v126["Parent"] = v114
-    local v127 = Instance["new"]("TextLabel")
-    v127["Name"] = "CountdownText"
-    v127["Size"] = UDim2["new"](1, 0, 0, 20)
-    v127["Position"] = UDim2["new"](0, 0, 0, 0)
-    v127["BackgroundTransparency"] = 1
-    v127["Font"] = Enum["Font"]["GothamBold"]
-    v127["Text"] = "0s"
-    v127["TextColor3"] = Color3["fromRGB"](255, 255, 255)
-    v127["TextSize"] = 15
-    v127["TextXAlignment"] = Enum["TextXAlignment"]["Center"]
-    v127["Parent"] = v126
-    local v128 = Instance["new"]("Frame")
-    v128["Name"] = "BarBackground"
-    v128["Size"] = UDim2["new"](1, 0, 0, 7)
-    v128["Position"] = UDim2["new"](0, 0, 0, 24)
-    v128["BackgroundColor3"] = Color3["fromRGB"](24, 30, 46)
-    v128["BorderSizePixel"] = 0
-    v128["ClipsDescendants"] = true
-    v128["Parent"] = v126
-    local v129 = Instance["new"]("UICorner")
-    v129["CornerRadius"] = UDim["new"](1, 0)
-    v129["Parent"] = v128
-    local v130 = Instance["new"]("Frame")
-    v130["Name"] = "BarFill"
-    v130["Size"] = UDim2["new"](0, 0, 1, 0)
-    v130["Position"] = UDim2["new"](0, 0, 0, 0)
-    v130["BackgroundColor3"] = Color3["fromRGB"](255, 255, 255)
-    v130["BorderSizePixel"] = 0
-    v130["Parent"] = v128
-    local v131 = Instance["new"]("UICorner")
-    v131["CornerRadius"] = UDim["new"](1, 0)
-    v131["Parent"] = v130
-    local v132 = Instance["new"]("UIGradient")
-    v132["Color"] = ColorSequence["new"]({ ColorSequenceKeypoint["new"](0, Color3["fromRGB"](255, 255, 255)), ColorSequenceKeypoint["new"](1, Color3["fromRGB"](255, 255, 255)) })
-    v132["Parent"] = v130
-    local v133 = Instance["new"]("Frame")
-    v133["Name"] = "TotalEarnedGroup"
-    v133["Size"] = UDim2["new"](1, 0, 0, 40)
-    v133["Position"] = UDim2["new"](0, 0, 0, 39)
-    v133["BackgroundTransparency"] = 1
-    v133["Parent"] = v126
-    local v134 = Instance["new"]("TextLabel")
-    v134["Name"] = "EarnedTitle"
-    v134["Size"] = UDim2["new"](1, 0, 0, 14)
-    v134["Position"] = UDim2["new"](0, 0, 0, 0)
-    v134["BackgroundTransparency"] = 1
-    v134["Font"] = Enum["Font"]["GothamBold"]
-    v134["Text"] = "TOTAL EARNING"
-    v134["TextColor3"] = Color3["fromRGB"](52, 211, 153)
-    v134["TextSize"] = 11
-    v134["TextXAlignment"] = Enum["TextXAlignment"]["Center"]
-    v134["Parent"] = v133
-    local v135 = Instance["new"]("TextLabel")
-    v135["Name"] = "EarnedValue"
-    v135["Size"] = UDim2["new"](1, 0, 0, 22)
-    v135["Position"] = UDim2["new"](0, 0, 0, 16)
-    v135["BackgroundTransparency"] = 1
-    v135["Font"] = Enum["Font"]["GothamBlack"]
-    v135["Text"] = v71(v58)
-    v135["TextColor3"] = Color3["fromRGB"](240, 253, 244)
-    v135["TextSize"] = 16
-    v135["TextXAlignment"] = Enum["TextXAlignment"]["Center"]
-    v135["Parent"] = v133
-    local v136 = v112:GetPropertyChangedSignal("Enabled"):Connect(function()
-        if ((v2 and v44) and (not v112["Enabled"])) then
-            v100()
-        end
-    end)
-    local v137 = v113:GetPropertyChangedSignal("Visible"):Connect(function()
-        if ((v2 and v44) and (not v113["Visible"])) then
-            v100()
-        end
-    end)
-    local v138 = v112["AncestryChanged"]:Connect(function()
-        if ((v2 and v44) and (not v112:IsDescendantOf(game))) then
-            v100()
-        end
-    end)
-    table["insert"](v91, v136)
-    table["insert"](v91, v137)
-    table["insert"](v91, v138)
-    v112["Parent"] = v111
-    v84 = v112
-    v85 = v120
-    v86 = v125
-    v87 = v135
-    v88 = v127
-    v89 = v130
-    if ((v92 and (v92 > os["clock"]())) and (v93 > 0)) then
-        local v139 = (v92 - os["clock"]())
-        v127["Text"] = string["format"]("%ds", math["ceil"](v139))
-        local v140 = math["clamp"]((v139 / v93), 0, 1)
-        v130["Size"] = UDim2["new"](v140, 0, 1, 0)
-        local v141 = TweenInfo["new"](v139, Enum["EasingStyle"]["Linear"], Enum["EasingDirection"]["Out"])
-        v90 = v14:Create(v130, v141, { ["Size"] = UDim2["new"](0, 0, 1, 0) })
-        v90:Play()
+
+    SetStatus("Preparing vehicle...")
+    prepareVehicle()
+    task.wait(2)
+    if not _G.AutoFull then return end
+
+    SetStatus("Invoke job: " .. SelectedRouteKey)
+    local res = Remotes:WaitForChild("StartBusJob"):InvokeServer(SelectedRouteKey, nil)
+
+    if type(res) == "table" and res.success and res.nextCheckpointPartName then
+        jobStarted           = true
+        lastCheckpointName   = res.nextCheckpointPartName
+        lastCheckpointFolder = "Checkpoints"
+        SetStatus("Job started — moving to first checkpoint...")
+        local part = getPart(res.nextCheckpointPartName, "Checkpoints")
+        if part then moveTo(part) end
     else
-        v127["Text"] = "0s"
-        v130["Size"] = UDim2["new"](0, 0, 1, 0)
+        SetStatus("Job invoke failed, retrying...")
+        task.wait(2)
+        if _G.AutoFull then startJob() end
     end
 end
-local v142 = v11:WaitForChild("NetworkContainer", 5)
-local v143 = ((v142 and v142:FindFirstChild("RemoteEvents")) and v142["RemoteEvents"]:FindFirstChild("Job"))
-local v144
-v144 = function(v145)
-    for v146, v147 in ipairs(v62) do
-        if ((v145 - v147["Location"])["Magnitude"] < 50) then
-            return v146, v147["txt"]
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- CYCLE RESET
+--   1. wait 3s
+--   2. destroy bus
+--   3. kill char → wait respawn
+--   4. startJob → prepareVehicle → SpawnCar
+-- ══════════════════════════════════════════════════════════════════════════
+local function doCycleReset()
+    if isCycleResetting then return end
+    isCycleResetting   = true
+    isWaitingInZone    = false
+    jobStarted         = false
+    lastCheckpointName = ""
+
+    unlockVehicle()
+
+    SetStatus("Income detected — waiting 3s...")
+    task.wait(3)
+    if not _G.AutoFull then isCycleResetting = false return end
+
+    SetStatus("Destroying bus...")
+    local bus = GetMyBus()
+    if bus then bus:Destroy() end
+    task.wait(0.5)
+    if not _G.AutoFull then isCycleResetting = false return end
+
+    SetStatus("Resetting character...")
+    local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+    if hum then hum.Health = 0 end
+    LP.CharacterAdded:Wait()
+    task.wait(1.5)
+    if not _G.AutoFull then isCycleResetting = false return end
+
+    SetStatus("Starting next cycle...")
+    isCycleResetting = false
+    startJob()
+end
+
+-- ── detect income → trigger cycle reset ───────────────────────────────────
+StatsFolder.Uang:GetPropertyChangedSignal("Value"):Connect(function()
+    local newMoney = StatsFolder.Uang.Value
+    if newMoney > lastMoney then
+        local income = newMoney - lastMoney
+        pendingIncome = pendingIncome + income
+
+        if not isWebhookRunning and _G.WebhookURL ~= "" and _G.WebhookEnabled then
+            isWebhookRunning = true
+            task.spawn(function()
+                while isWebhookRunning do
+                    task.wait(65)
+                    if pendingIncome > 0 and _G.WebhookURL ~= "" and _G.WebhookEnabled then
+                        pendingIncome = 0
+                    end
+                    if not _G.AutoFull then isWebhookRunning = false end
+                end
+            end)
+        end
+
+        if _G.AutoFull and not isCycleResetting and income >= INCOME_THRESHOLD then
+            task.spawn(doCycleReset)
         end
     end
-    return nil, nil
-end
-if v143 then
-    v143["OnClientEvent"]:Connect(function(v148, v149)
-        if ((v148 == "SetArrow") and (typeof(v149) == "Vector3")) then
-            v54 = (v54 + 1)
-            v53 = v149
-        elseif (v148 == "Cleanup") then
-            v54 = 0
-            v53 = nil
-        end
-    end)
-end
-local v150
-v150 = function()
-    task["spawn"](function()
-        local v151 = CFrame["new"](34938, 135, (-54576))
-        local v152 = Vector3["new"](35161.36, 139, (-54683.41))
-        local v153 = CFrame["new"]((-7848), 386, 46763)
-        local v154
-        v154 = function()
-            local v155 = ((v10:FindFirstChild("Etc") and v10["Etc"]:FindFirstChild("Job")) and v10["Etc"]["Job"]:FindFirstChild("Truck"))
-            local v156 = (v155 and v155:FindFirstChild("Starter"))
-            if v156 then
-                return (v156:FindFirstChild("Prompt", true) or v156:FindFirstChildWhichIsA("ProximityPrompt", true))
-            end
-            return nil
-        end
-        if v143 then
-            v143:FireServer("Truck")
-        end
-        v25()
-        v31()
-        while v44 do
-            local v157 = os["clock"]()
-            local v158 = false
-            while (v44 and (not v158)) do
-                v54 = 0
-                v53 = nil
-                if v143 then
-                    v143:FireServer("Truck")
-                end
-                local v159 = v154()
-                if v159 then
-                    v19(v159)
-                end
-                local v160 = os["clock"]()
-                while (v44 and (v54 < 2)) do
-                    if ((os["clock"]() - v160) > 0.5) then
-                        break
-                    end
-                    task["wait"]()
-                end
-                if (not v44) then
-                    break
-                end
-                if ((v54 < 2) or (not v53)) then
-                    continue
-                end
-                v161, v162 = v144(v53)
-                if (v161 == 4) then
-                    v158 = true
-                end
-            end
-            if ((not v44) or (not v158)) then
-                break
-            end
-            local v163 = os["clock"]()
-            local v164 = v10["Etc"]["Job"]["Truck"]["Spawner"]
-            local v165 = v21()
-            if (not v165) then
-                v16((CFrame["new"](v152) + Vector3["new"](0, 3, 0)))
-                local v166 = (v164:FindFirstChild("Part") or v164:WaitForChild("Part", 3))
-                if v166 then
-                    v16((v166["CFrame"] + Vector3["new"](0, 2, 0)))
-                end
-                local v167 = os["clock"]()
-                while (v44 and (not v165)) do
-                    local v168 = (v166 and (v166:FindFirstChild("Prompt") or v166:FindFirstChildWhichIsA("ProximityPrompt", true)))
-                    if v168 then
-                        v19(v168)
-                    elseif (not v166) then
-                        v166 = v164:FindFirstChild("Part")
-                        if v166 then
-                            v16((v166["CFrame"] + Vector3["new"](0, 2, 0)))
-                        end
-                    end
-                    local v169 = os["clock"]()
-                    while (v44 and ((os["clock"]() - v169) < 0.4)) do
-                        v165 = v21()
-                        if v165 then
+    lastMoney = newMoney
+end)
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- CHECKPOINT RECOVERY MONITOR
+-- ══════════════════════════════════════════════════════════════════════════
+task.spawn(function()
+    while task.wait(0.5) do
+        if not _G.AutoFull or isRecovering or isCycleResetting then continue end
+        if lastCheckpointName == "" then continue end
+
+        local detected = false
+        pcall(function()
+            for _, sg in ipairs(LP.PlayerGui:GetChildren()) do
+                for _, label in ipairs(sg:GetDescendants()) do
+                    if label:IsA("TextLabel") or label:IsA("TextButton") then
+                        if string.find(string.upper(label.Text), "RETURN TO THE CHECKPOINT") then
+                            detected = true
                             break
                         end
-                        task["wait"](0.05)
-                    end
-                    if ((os["clock"]() - v167) > 6) then
-                        if v166 then
-                            v16((v166["CFrame"] + Vector3["new"](0, 2, 0)))
-                        end
-                        v167 = os["clock"]()
                     end
                 end
+                if detected then break end
             end
-            if ((not v44) or (not v165)) then
-                continue
-            end
-            task["wait"](0.7)
-            local v170
-            v170 = v165["ChildAdded"]:Connect(function(v171)
-                if v171["Name"]:lower():find("trailer") then
-                    task["defer"](function()
-                        pcall(v171["Destroy"], v171)
-                    end)
-                end
-            end)
-            for v172, v173 in ipairs(v165:GetChildren()) do
-                if v173["Name"]:lower():find("trailer") then
-                    pcall(v173["Destroy"], v173)
-                end
-            end
-            local v174 = v165:WaitForChild("DriveSeat", 5)
-            if v174 then
-                local v175 = v174:WaitForChild("PromptDriveSeat", 3)
-                if v175 then
-                    v16((v174["CFrame"] + Vector3["new"](0, 3, 0)))
-                    task["wait"](0.2)
-                    v19(v175)
-                end
-            end
-            local v176 = os["clock"]()
-            while v44 do
-                local v177 = v15["Character"]
-                local v178 = (v177 and v177:FindFirstChild("Humanoid"))
-                if (v178 and v178["SeatPart"]) then
-                    if (v174 and (v178["SeatPart"] ~= v174)) then
-                        v178["Sit"] = false
-                        task["wait"](0.1)
-                        local v179 = v174:FindFirstChild("PromptDriveSeat")
-                        if v179 then
-                            v16((v174["CFrame"] + Vector3["new"](0, 3, 0)))
-                            task["wait"](0.1)
-                            v19(v179)
-                        end
-                    else
-                        break
-                    end
-                end
-                if (((os["clock"]() - v176) > 1.5) and v174) then
-                    local v180 = v174:FindFirstChild("PromptDriveSeat")
-                    if v180 then
-                        v16((v174["CFrame"] + Vector3["new"](0, 3, 0)))
-                        task["wait"](0.1)
-                        v19(v180)
-                    end
-                end
-                task["wait"](0.1)
-                if ((os["clock"]() - v176) > 6) then
-                    break
-                end
-            end
-            if v170 then
-                v170:Disconnect()
-                v170 = nil
-            end
-            for v181, v182 in ipairs(v165:GetChildren()) do
-                if v182["Name"]:lower():find("trailer") then
-                    pcall(v182["Destroy"], v182)
-                end
-            end
-            if (not v44) then
-                break
-            end
-            local v183 = 0
-            while (v44 and (v183 < 10)) do
-                v165:PivotTo(v153)
-                task["wait"](0.25)
-                if ((not v165) or (not v165["Parent"])) then
-                    break
-                end
-                local v184 = v165:GetPivot()["Position"]
-                if ((v184 - v153["Position"])["Magnitude"] < 150) then
-                    break
-                end
-                v183 = (v183 + 1)
-                local v185 = v15["Character"]
-                local v186 = (v185 and v185:FindFirstChild("Humanoid"))
-                if v186 then
-                    v186["Sit"] = false
-                end
-                local v187 = os["clock"]()
-                while ((v44 and v186) and v186["SeatPart"]) do
-                    v186["Sit"] = false
-                    task["wait"](0.05)
-                    if ((os["clock"]() - v187) > 1.2) then
-                        break
-                    end
-                end
-                task["wait"](0.15)
-                local v188 = (v165:FindFirstChild("DriveSeat") or v165:WaitForChild("DriveSeat", 2))
-                local v189 = (v188 and (v188:FindFirstChild("PromptDriveSeat") or v188:FindFirstChildWhichIsA("ProximityPrompt", true)))
-                if (v188 and v189) then
-                    v16((v188["CFrame"] + Vector3["new"](0, 3, 0)))
-                    task["wait"](0.1)
-                    v19(v189)
-                end
-                local v190 = os["clock"]()
-                while v44 do
-                    local v191 = v15["Character"]
-                    local v192 = (v191 and v191:FindFirstChild("Humanoid"))
-                    if ((v192 and v192["SeatPart"]) and ((not v188) or (v192["SeatPart"] == v188))) then
-                        break
-                    end
-                    if ((((os["clock"]() - v190) > 1.2) and v188) and v189) then
-                        v16((v188["CFrame"] + Vector3["new"](0, 3, 0)))
-                        task["wait"](0.1)
-                        v19(v189)
-                    end
-                    task["wait"](0.1)
-                    if ((os["clock"]() - v190) > 5) then
-                        break
-                    end
-                end
-                for v193, v194 in ipairs(v165:GetChildren()) do
-                    if v194["Name"]:lower():find("trailer") then
-                        pcall(v194["Destroy"], v194)
-                    end
-                end
-                task["wait"](0.2)
-            end
-            if (((not v44) or (not v165)) or (not v165["Parent"])) then
-                continue
-            end
-            if ((v165:GetPivot()["Position"] - v153["Position"])["Magnitude"] >= 150) then
-                continue
-            end
-            local v195 = nil
-            local v196 = (v45 - (os["clock"]() - v163))
-            if (v196 > 0) then
-                v104(v196)
-                v107(string["format"]("%ds", math["ceil"](v196)))
-            end
-            while v44 do
-                local v197 = (os["clock"]() - v163)
-                local v198 = (v45 - v197)
-                if (v198 <= 0) then
-                    break
-                end
-                local v199 = math["ceil"](v198)
-                if (v199 ~= v195) then
-                    local v200 = string["format"]("%ds", v199)
-                    if v46 then
-                        v46:SetDesc(v200)
-                    end
-                    v107(v200)
-                    v195 = v199
-                end
-                task["wait"](0.1)
-            end
-            if v46 then
-                v46:SetDesc("0s")
-            end
-            v109()
-            if (not v44) then
-                break
-            end
-            local v201 = v64()
-            v165:PivotTo(CFrame["new"]((-7845), 386, 46865))
-            if (v201 > 0) then
-                local v202 = os["clock"]()
-                while v44 do
-                    local v203 = v64()
-                    if (v203 > v201) then
-                        local v204 = (v203 - v201)
-                        local v205 = (os["clock"]() - v157)
-                        v58 = (v58 + v204)
-                        v59 = (v59 + 1)
-                        table["insert"](v60, { ["earned"] = v204, ["duration"] = v205 })
-                        while ((#v60) > 6) do
-                            table["remove"](v60, 1)
-                        end
-                        local v206 = 0
-                        local v207 = 0
-                        for v208, v209 in ipairs(v60) do
-                            v206 = (v206 + v209["earned"])
-                            v207 = (v207 + v209["duration"])
-                        end
-                        if (v207 > 0) then
-                            v61 = ((v206 / v207) * 3600)
-                        end
-                        if v49 then
-                            v49:SetDesc(v71(v58))
-                        end
-                        if v87 then
-                            v87["Text"] = v71(v58)
-                        end
-                        if v85 then
-                            v85["Text"] = v71(v80())
-                        end
-                        if v50 then
-                            v50:SetDesc(v75(v61))
-                        end
-                        v52 = v204
-                        if v51 then
-                            v51:SetDesc(v71(v52))
-                        end
-                        -- fire webhook on cycle completion
-                        if v214 then
-                            task["spawn"](function() sendWebhook(v204) end)
-                        end
-                        break
-                    end
-                    if ((os["clock"]() - v202) > 10) then
-                        break
-                    end
-                    task["wait"]()
-                end
-            end
-            local v210 = v15["Character"]
-            local v211 = (v210 and v210:FindFirstChild("Humanoid"))
-            if v211 then
-                v211["Sit"] = false
-            end
-            v16(v151)
-            if v143 then
-                v143:FireServer("Truck")
-            end
-            local v212 = v154()
-            if v212 then
-                v19(v212)
-            end
+        end)
+
+        if detected then
+            isRecovering = true
+            SetStatus("Off-track — recovering to checkpoint...")
+            local part = getPart(lastCheckpointName, lastCheckpointFolder)
+            if part then moveTo(part) end
+            task.wait(1)
+            isRecovering = false
+            SetStatus("Recovered — continuing...")
         end
-    end)
+    end
+end)
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- BusJobUpdate handler
+-- ══════════════════════════════════════════════════════════════════════════
+Remotes:WaitForChild("BusJobUpdate").OnClientEvent:Connect(function(action, data)
+    if not _G.AutoFull then return end
+
+    if action == "StartCheckpointWait" then
+        isWaitingInZone = true
+        SetStatus("Waiting in zone...")
+        return
+    end
+
+    if action == "JobSuccess" or action == "JobCancelled" then
+        isWaitingInZone    = false
+        jobStarted         = false
+        lastCheckpointName = ""
+        SetStatus(action == "JobSuccess" and "Job success! Restarting..." or "Cancelled. Restarting...")
+        task.wait(1)
+        if _G.AutoFull then startJob() end
+        return
+    end
+
+    if type(data) ~= "table" then return end
+
+    local isFinal    = (action == "FinalDestination" or data.isFinalDestination)
+    local targetName = isFinal and data.endTriggerPartName
+                    or (data.nextCheckpointPartName or data.checkpointPartName)
+    local folder     = isFinal and "BusJobEndTriggers" or "Checkpoints"
+
+    if targetName then
+        lastCheckpointName   = targetName
+        lastCheckpointFolder = folder
+
+        task.spawn(function()
+            isWaitingInZone = false
+
+            if isFinal then
+                local waitStart = os.clock()
+                while _G.AutoFull do
+                    local remaining = ARRIVE_DELAY - (os.clock() - waitStart)
+                    if remaining <= 0 then break end
+                    local secs = math.floor(remaining)
+                    local ms   = math.floor((remaining - secs) * 1000)
+                    SetStatus(string.format("Arrive in: %02d:%03d", secs, ms))
+                    task.wait(0.05)
+                end
+                if not _G.AutoFull then return end
+
+                SetStatus("Moving to final stop...")
+                local part = getPart(targetName, folder)
+                if part then moveTo(part) end
+
+                task.wait(1.5)
+                if _G.AutoFull and not isCycleResetting and not jobStarted then
+                    isWaitingInZone    = false
+                    jobStarted         = false
+                    lastCheckpointName = ""
+                    SetStatus("Cycle done — restarting...")
+                    startJob()
+                end
+            else
+                SetStatus("Moving to: " .. targetName)
+                local part = getPart(targetName, folder)
+                if part then moveTo(part) end
+            end
+        end)
+    end
+end)
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- WEBHOOK
+-- ══════════════════════════════════════════════════════════════════════════
+local function getAvatar()
+    return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. LP.UserId .. "&width=420&height=420&format=png"
 end
 
-local v213 = ""
-local v214 = false
+local function sendWebhook(income)
+    if _G.WebhookURL == "" or not _G.WebhookURL:find("discord.com") then return end
+    _G.CycleCount   = _G.CycleCount + 1
+    _G.TotalEarning = _G.TotalEarning + income
 
--- ================================================================
--- WEBHOOK — ported from Script 2: proper resolver, no expired CDN hash,
--- avatar thumbnail, cycle counter, all stat fields
--- ================================================================
-local _webhookCycleCount = 0
-local _webhookStartTime  = os.time()
+    local http_request = request or http_request
+        or (syn and syn.request) or (fluxus and fluxus.request)
 
-local function _resolveRequest()
-    -- executor-safe resolver: tries every common global in priority order
-    -- *syn.request is nil on modern Synapse X — raw `request` is the global there
-    return request
-        or http_request
-        or (syn and syn.request)
-        or (fluxus and fluxus.request)
-        or (getgenv and getgenv().request)
-end
-
-local function _getAvatar()
-    return "https://www.roblox.com/headshot-thumbnail/image?userId="
-        .. v15.UserId
-        .. "&width=420&height=420&format=png"
-end
-
-local function _fmtRunning()
-    local diff = os.time() - _webhookStartTime
-    return string.format("%02d:%02d:%02d",
-        math.floor(diff / 3600),
-        math.floor((diff % 3600) / 60),
-        diff % 60)
-end
-
-sendWebhook = function(income)
-    -- guard: url must be non-empty and point at discord
-    if type(v213) ~= "string" or v213 == "" then return end
-    if not v213:find("discord%.com") then return end
-
-    local http_req = _resolveRequest()
-    if not http_req then return end
-
-    local HttpService = game:GetService("HttpService")
-
-    _webhookCycleCount = _webhookCycleCount + 1
+    local routeDisplay = (RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].DisplayName)
+                      or SelectedRouteKey
 
     local embed = {
-        author = {
-            name     = "Projectsion Webhook",
-            icon_url = _getAvatar(),
+        ["author"] = { ["name"] = "Projectsion Webhook", ["icon_url"] = getAvatar() },
+        ["title"]  = "Bus Route Completed",
+        ["color"]  = 0xFFFFFF,
+        ["fields"] = {
+            { ["name"] = "Player",        ["value"] = LP.Name,                          ["inline"] = false },
+            { ["name"] = "Cycle Income",  ["value"] = formatRP(income),                 ["inline"] = false },
+            { ["name"] = "Route",         ["value"] = routeDisplay,                     ["inline"] = false },
+            { ["name"] = "Current Money", ["value"] = formatRP(StatsFolder.Uang.Value), ["inline"] = false },
+            { ["name"] = "Total Earning", ["value"] = formatRP(_G.TotalEarning),        ["inline"] = false },
+            { ["name"] = "Cycle Count",   ["value"] = tostring(_G.CycleCount),          ["inline"] = false },
+            { ["name"] = "Running Time",  ["value"] = getRunningTime(),                 ["inline"] = false },
         },
-        title  = "Cycle Completed",
-        color  = 0xFFFFFF,
-        fields = {
-            { name = "Username",      value = v15.Name,                                   inline = false },
-            { name = "Cycle Income",  value = v71(income),                                inline = false },
-            { name = "Current Money", value = v71(v80()) .. " (Est)",                     inline = false },
-            { name = "Total Earning", value = v71(v58) .. " (Est)",                       inline = false },
-            { name = "Cycle Count",   value = tostring(_webhookCycleCount),               inline = false },
-            { name = "Running Time",  value = v57 and v66(os.clock() - v57) or "—",      inline = false },
-            { name = "Est /Hour",     value = v75(v61),                                   inline = false },
-        },
-        -- no CDN hash — just the base attachment URL, stable across time
-        image  = { url = "https://cdn.discordapp.com/attachments/1492837859370074192/1508063383944036433/IMG_20260524_180509.jpg" },
-        footer = { text = "Projectsion | " .. os.date("%m/%d/%Y %I:%M %p") },
+        ["footer"] = { ["text"] = "Made By Projectsion | " .. os.date("%m/%d/%Y %I:%M %p") }
     }
 
-    local body
-    local encodeOk, encodeErr = pcall(function()
-        body = HttpService:JSONEncode({
-            username = "Projectsion Reports",
-            embeds   = { embed },
-        })
-    end)
-    if not encodeOk then return end
+    local payload = HttpService:JSONEncode({
+        ["username"] = "Projectsion Reports",
+        ["embeds"]   = { embed }
+    })
 
-    pcall(function()
-        http_req({
-            Url     = v213,
-            Method  = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body    = body,
-        })
-    end)
-end
-
--- ================================================================
--- RAYFIELD UI
--- ================================================================
-local v216 = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-
-local v217 = v216:CreateWindow({
-    Name             = "CDID",
-    LoadingTitle     = "CDID",
-    LoadingSubtitle  = "Projectsion Hub",
-    ConfigurationSaving = { Enabled = false },
-    KeySystem        = false,
-})
-
-v216:Notify({
-    Title    = "Update log",
-    Content  = "New method autofarm and fixed bugs",
-    Duration = 5,
-    Image    = 4483362458,
-})
-
-local function _rfParagraph(tab, title, defaultDesc)
-    local lbl = tab:CreateLabel(title .. ":  " .. defaultDesc)
-    return {
-        SetDesc = function(self, desc)
-            pcall(function()
-                lbl:Set(title .. ":  " .. desc)
-            end)
-        end,
-    }
-end
-
-local _cfgHttpSvc = game:GetService("HttpService")
-local _cfgFolder  = "Projectsion/config"
-
-local function _cfgEnsureFolder()
-    pcall(function()
-        if isfolder and not isfolder("Projectsion") then makefolder("Projectsion") end
-        if isfolder and not isfolder(_cfgFolder)    then makefolder(_cfgFolder) end
-    end)
-end
-
-local function _cfgGetPath(name)
-    return _cfgFolder .. "/" .. name .. ".json"
-end
-
-local function _cfgAllConfigs()
-    local configs = {}
-    pcall(function()
-        if not listfiles then return end
-        _cfgEnsureFolder()
-        for _, f in ipairs(listfiles(_cfgFolder)) do
-            local name = f:match("([^/\\]+)%.json$")
-            if name then table.insert(configs, name) end
-        end
-    end)
-    return configs
-end
-
-local _rfToggleAutoFarm = nil
-local _rfSliderDelay    = nil
-local _rfToggleWebhook  = nil
-local _rfInputWebhook   = nil
-
-local function _cfgGetCurrentData()
-    return {
-        AutoFarmTruck  = v44,
-        TeleportDelay  = v45,
-        WebhookEnabled = v214,
-        WebhookUrl     = v213,
-    }
-end
-
-local function _cfgApplyData(data)
-    pcall(function()
-        if data.AutoFarmTruck ~= nil and _rfToggleAutoFarm then
-            _rfToggleAutoFarm:Set(data.AutoFarmTruck)
-        end
-    end)
-    pcall(function()
-        if data.TeleportDelay ~= nil and _rfSliderDelay then
-            _rfSliderDelay:Set(data.TeleportDelay)
-        end
-    end)
-    pcall(function()
-        if data.WebhookEnabled ~= nil and _rfToggleWebhook then
-            _rfToggleWebhook:Set(data.WebhookEnabled)
-        end
-    end)
-    pcall(function()
-        if data.WebhookUrl ~= nil and _rfInputWebhook then
-            _rfInputWebhook:Set(data.WebhookUrl)
-        end
-    end)
-end
-
-local function _cfgSave(name)
-    pcall(function()
-        if not writefile then return end
-        _cfgEnsureFolder()
-        writefile(_cfgGetPath(name), _cfgHttpSvc:JSONEncode({
-            __version  = 1.2,
-            __elements = _cfgGetCurrentData(),
-            __autoload = false,
-            __custom   = {},
-        }))
-    end)
-end
-
-local function _cfgLoad(name)
-    local ok, data = false, nil
-    pcall(function()
-        if not (readfile and isfile) then return end
-        local path = _cfgGetPath(name)
-        if isfile(path) then
-            ok, data = pcall(function()
-                return _cfgHttpSvc:JSONDecode(readfile(path))
-            end)
-        end
-    end)
-    if ok and data and data.__elements then
-        _cfgApplyData(data.__elements)
-    end
-    return ok, data
-end
-
-local function _cfgDelete(name)
-    pcall(function()
-        if delfile and isfile then
-            local path = _cfgGetPath(name)
-            if isfile(path) then delfile(path) end
-        end
-    end)
-end
-
--- ================================================================
--- TRUCK TAB
--- ================================================================
-local v219 = v217:CreateTab("Truck", 4483362458)
-v219:CreateSection("Auto Truck")
-
-_rfToggleAutoFarm = v219:CreateToggle({
-    Name         = "Auto farm Truck",
-    CurrentValue = false,
-    Flag         = "AutoFarmTruck",
-    Callback     = function(v221)
-        v44 = v221
-        if v44 then
-            if v1 then
-                pcall(function() v13:Set3dRenderingEnabled(false) end)
-            end
-            if v2 then
-                task["spawn"](v110)
-            end
-            if (not v57) then
-                v57 = os["clock"]()
-            end
-            v150()
-        else
-            pcall(function() v13:Set3dRenderingEnabled(true) end)
-            v101()
-        end
-    end,
-})
-
-_rfSliderDelay = v219:CreateSlider({
-    Name         = "Job delay",
-    Range        = { 0, 50 },
-    Increment    = 1,
-    CurrentValue = v45,
-    Flag         = "TeleportDelay",
-    Callback     = function(v222)
-        v45 = v222
-    end,
-})
-
-_rfToggleWebhook = v219:CreateToggle({
-    Name         = "Enable Webhook",
-    CurrentValue = false,
-    Flag         = "WebhookEnabled",
-    Callback     = function(v223)
-        v214 = v223
-    end,
-})
-
-_rfInputWebhook = v219:CreateInput({
-    Name                     = "Webhook URL",
-    PlaceholderText          = "https://discord.com/api/webhooks/...",
-    RemoveTextAfterFocusLost = false,
-    Flag                     = "WebhookUrl",
-    Callback                 = function(v224)
-        v213 = v224
-    end,
-})
-
-v219:CreateSection("Information")
-
-v46 = _rfParagraph(v219, "Delay Countdown", "0s")
-v47 = _rfParagraph(v219, "Time Elapsed",    "00:00")
-v48 = _rfParagraph(v219, "Current Money",   "Rp 0")
-v49 = _rfParagraph(v219, "Total Earning",   "Rp 0")
-v50 = _rfParagraph(v219, "Earning / Hour",  "Rp 0")
-v51 = _rfParagraph(v219, "You Got",         "Rp 0")
-
-task["spawn"](function()
-    while true do
-        task["wait"](1)
-        local v226 = os["clock"]()
-        if (v44 and v57) then
-            local v227 = (v226 - v57)
-            if v47 then v47:SetDesc(v66(v227)) end
-        elseif (v47 and (v59 == 0)) then
-            v47:SetDesc("00:00")
-        end
-        if v48 then v48:SetDesc(v71(v80())) end
-        if v49 then v49:SetDesc(v71(v58)) end
-        if v50 then
-            if (v61 > 0) then
-                v50:SetDesc(v75(v61))
-            elseif v44 then
-                v50:SetDesc("Calculating...")
-            else
-                v50:SetDesc("Rp 0")
-            end
-        end
-        if (v51 and (v52 > 0)) then
-            v51:SetDesc(v71(v52))
-        end
+    if http_request then
         pcall(function()
-            local v228 = v15:FindFirstChild("PlayerGui")
-            if v228 then
-                local v229 = v228:FindFirstChild("Job")
-                if (v229 and v229["Enabled"]) then
-                    v229["Enabled"] = false
-                end
-                local v230 = (((v228:FindFirstChild("Main") and v228["Main"]:FindFirstChild("Container")) and v228["Main"]["Container"]:FindFirstChild("Hub")) and v228["Main"]["Container"]["Hub"]:FindFirstChild("MapFrame"))
-                if (v230 and v230["Visible"]) then
-                    v230["Visible"] = false
-                end
-            end
+            http_request({ Url = _G.WebhookURL, Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" }, Body = payload })
         end)
-        if (v2 and v44) then
-            if (((not v84) or (not v84:IsDescendantOf(game))) or (not v84["Enabled"])) then
-                v110()
-            end
-            if v85 then v85["Text"] = v71(v80()) end
-            if v86 then
-                if (v61 > 0) then
-                    v86["Text"] = v75(v61)
-                elseif v44 then
-                    v86["Text"] = "Calculating..."
-                else
-                    v86["Text"] = "Rp 0"
-                end
-            end
-            if v87 then v87["Text"] = v71(v58) end
-        elseif v84 then
-            v101()
-        end
-        if (v44 and v1) then
-            pcall(function() v13:Set3dRenderingEnabled(false) end)
+    end
+end
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- STATS LOOP
+-- ══════════════════════════════════════════════════════════════════════════
+task.spawn(function()
+    while task.wait(1) do
+        if UangLabel then
+            pcall(function()
+                local cur = StatsFolder.Uang.Value
+                UangLabel:Set("Uang: Rp " .. formatRS(cur))
+                EarningLabel:Set("Earning: Rp " .. formatRS(cur - StartUang))
+                local diff = os.time() - StartTime
+                TimeLabel:Set(string.format("Time: %02d:%02d:%02d",
+                    math.floor(diff/3600), math.floor((diff%3600)/60), diff%60))
+                local ping = tonumber(
+                    game:GetService("Stats").Network.ServerStatsItem["Data Ping"]
+                        :GetValueString():split(" ")[1]) or 0
+                PingLabel:Set("Ping: " .. math.floor(ping) .. " ms")
+                FPSLabel:Set("FPS: " .. math.floor(1 / task.wait()))
+            end)
         end
     end
 end)
 
--- ================================================================
--- CONFIGURATION TAB
--- ================================================================
-local v268 = v217:CreateTab("Configuration", 4483362458)
-v268:CreateSection("Theme")
+-- ══════════════════════════════════════════════════════════════════════════
+-- UI — MAIN TAB
+-- ══════════════════════════════════════════════════════════════════════════
+local MainTab = Window:CreateTab("Main Farm", "play")
+MainTab:CreateSection("Autofarm Bus")
 
-local v270 = { "Dark", "Light", "Rose", "Plant", "Red", "Indigo", "Sky", "Violet", "Amber", "Emerald", "Midnight", "Crimson", "Monokai Pro", "Cotton Candy", "Mellowsi", "Rainbow" }
-v268:CreateDropdown({
-    Name            = "Select Theme",
-    Options         = v270,
-    CurrentOption   = { "Dark" },
-    MultipleOptions = false,
-    Flag            = "SelectedTheme",
-    Callback        = function(v271)
-        pcall(function() v216:SetTheme(v271) end)
-    end,
+MainTab:CreateParagraph({
+    Title   = "WARNING",
+    Content = "USE JB5 ONLY. Auto-Kick detects group " .. STAFF_GROUP_ID .. " members.",
 })
 
-v268:CreateSection("Config Manager")
-
-local v273 = ""
-local v274 = ""
-local v275
-v275 = function()
-    local v276 = {}
-    pcall(function()
-        local allCfgs = _cfgAllConfigs()
-        if allCfgs then
-            for _, v279 in ipairs(allCfgs) do
-                table.insert(v276, v279)
-            end
-        end
-    end)
-    return v276
-end
-
-local v281 = v268:CreateDropdown({
-    Name            = "Select Config",
-    Options         = v275(),
-    CurrentOption   = {},
-    MultipleOptions = false,
-    Flag            = "SelectedConfigDropdown",
-    Callback        = function(v280)
-        v273 = v280
-    end,
-})
-
-v268:CreateInput({
-    Name                     = "Config Name",
-    PlaceholderText          = "Enter config name...",
-    RemoveTextAfterFocusLost = false,
-    Flag                     = "ConfigNameInput",
-    Callback                 = function(v282)
-        v274 = v282
-    end,
-})
-
-v268:CreateButton({
-    Name     = "Save Config",
-    Callback = function()
-        if (v274 == "") then
-            v216:Notify({ Title = "Config", Content = "Enter config name first!", Duration = 3 })
-            return
-        end
-        pcall(function()
-            v273 = v274
-            pcall(function() v281:Set(v274) end)
-            _cfgSave(v274)
-        end)
-        v216:Notify({ Title = "Config", Content = ("Config '" .. v274 .. "' saved successfully!"), Duration = 3 })
-        pcall(function()
-            v281:Refresh(v275(), v274)
-            v281:Set(v274)
-        end)
-    end,
-})
-
-v268:CreateButton({
-    Name     = "Load Config",
-    Callback = function()
-        if ((v273 == "") or (v273 == "--")) then
-            v216:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 })
-            return
-        end
-        pcall(function()
-            _cfgLoad(v273)
-            pcall(function() v281:Set(v273) end)
-        end)
-        v216:Notify({ Title = "Config", Content = ("Config '" .. v273 .. "' loaded successfully!"), Duration = 3 })
-    end,
-})
-
-v268:CreateButton({
-    Name     = "Rewrite Config",
-    Callback = function()
-        if ((v273 == "") or (v273 == "--")) then
-            v216:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 })
-            return
-        end
-        local v285     = _cfgGetPath(v273)
-        local v286     = game:GetService("HttpService")
-        local v287     = false
-        local v288     = {}
-        if ((isfile and isfile(v285)) and readfile) then
-            pcall(function()
-                local v289 = v286:JSONDecode(readfile(v285))
-                if (type(v289) == "table") then
-                    v287 = (v289["__autoload"] or false)
-                    v288 = (v289["__custom"]   or {})
-                end
-            end)
-        end
-        local v299, v300 = pcall(function()
-            pcall(function() v281:Set(v273) end)
-            local v295 = {
-                ["__version"]  = 1.2,
-                ["__elements"] = _cfgGetCurrentData(),
-                ["__autoload"] = v287,
-                ["__custom"]   = v288,
-            }
-            if writefile then
-                writefile(v285, v286:JSONEncode(v295))
-            end
-        end)
-        if v299 then
-            v216:Notify({ Title = "Config", Content = ("Config '" .. v273 .. "' rewritten successfully! (Not loaded)"), Duration = 3 })
+MainTab:CreateToggle({
+    Name         = "On Autofarm",
+    CurrentValue = false,
+    Callback     = function(Value)
+        _G.AutoFull = Value
+        if Value then
+            isWaitingInZone  = false
+            jobStarted       = false
+            isCycleResetting = false
+            task.spawn(startJob)
         else
-            v216:Notify({ Title = "Config", Content = ("Failed to rewrite config: " .. tostring(v300)), Duration = 3 })
+            unlockVehicle()
+            isWaitingInZone    = false
+            jobStarted         = false
+            isCycleResetting   = false
+            lastCheckpointName = ""
+            SetStatus("Idle")
         end
     end,
 })
 
-v268:CreateButton({
-    Name     = "Delete Config",
-    Callback = function()
-        if ((v273 == "") or (v273 == "--")) then
-            v216:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 })
-            return
-        end
-        pcall(function() _cfgDelete(v273) end)
-        v216:Notify({ Title = "Config", Content = ("Config '" .. v273 .. "' deleted successfully!"), Duration = 3 })
-        v273 = ""
-        pcall(function() v281:Refresh(v275(), nil) end)
+MainTab:CreateSlider({
+    Name         = "Move Speed (studs/s)",
+    Range        = { 50, 500 },
+    Increment    = 10,
+    CurrentValue = TWEEN_SPEED,
+    Flag         = "TweenSpeed",
+    Callback     = function(Value) TWEEN_SPEED = Value end,
+})
+
+MainTab:CreateSlider({
+    Name         = "Arrive Delay (seconds)",
+    Range        = { 5, 120 },
+    Increment    = 5,
+    CurrentValue = ARRIVE_DELAY,
+    Flag         = "ArriveDelay",
+    Callback     = function(Value) ARRIVE_DELAY = Value end,
+})
+
+MainTab:CreateToggle({
+    Name         = "Black Screen",
+    CurrentValue = false,
+    Flag         = "BlackScreen",
+    Callback     = function(Value) _G.blackscreen = Value end,
+})
+
+MainTab:CreateSection("Auto Stop Settings")
+
+MainTab:CreateInput({
+    Name                     = "Set Target Money",
+    PlaceholderText          = "input your target",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        local cleanNumber = Text:gsub("%.", "")
+        TargetUang = tonumber(cleanNumber) or 0
+        Rayfield:Notify({
+            Title    = "Target Set",
+            Content  = "Target: Rp " .. formatRS(TargetUang),
+            Duration = 3,
+        })
     end,
 })
 
-v268:CreateButton({
-    Name     = "Set Auto Load",
-    Callback = function()
-        if ((v273 == "") or (v273 == "--")) then
-            v216:Notify({ Title = "Config", Content = "Select config first!", Duration = 3 })
-            return
-        end
-        pcall(function()
-            local v302  = game:GetService("HttpService")
-            local v303  = _cfgAllConfigs()
-            if (((v303 and isfile) and readfile) and writefile) then
-                for _, v305 in ipairs(v303) do
-                    local v306 = _cfgGetPath(v305)
-                    if isfile(v306) then
-                        pcall(function()
-                            local v307 = v302:JSONDecode(readfile(v306))
-                            if (type(v307) == "table") then
-                                v307["__autoload"] = (v305 == v273)
-                                writefile(v306, v302:JSONEncode(v307))
-                            end
-                        end)
+MainTab:CreateToggle({
+    Name         = "Enable Auto-Kick on Target",
+    CurrentValue = false,
+    Flag         = "AutoKick",
+    Callback     = function(Value)
+        _G.AutoKickEnabled = Value
+        if Value then
+            task.spawn(function()
+                while _G.AutoKickEnabled do
+                    if TargetUang > 0 and StatsFolder.Uang.Value >= TargetUang then
+                        LP:Kick("\n[Projectsion]\nTarget reached!\nTotal: Rp " .. formatRS(StatsFolder.Uang.Value))
+                        break
                     end
+                    task.wait(2)
                 end
-            end
-            pcall(function() v281:Set(v273) end)
-        end)
-        v216:Notify({ Title = "Config", Content = ("Auto load set to '" .. v273 .. "'!"), Duration = 3 })
+            end)
+        end
     end,
 })
 
--- auto-load on startup
-pcall(function()
-    local v310 = game:GetService("HttpService")
-    local v311 = _cfgAllConfigs()
-    if ((v311 and readfile) and isfile) then
-        for _, v313 in ipairs(v311) do
-            local v314 = _cfgGetPath(v313)
-            if isfile(v314) then
-                local v315, v316 = pcall(function()
-                    return v310:JSONDecode(readfile(v314))
-                end)
-                if ((v315 and (type(v316) == "table")) and v316["__autoload"]) then
-                    _cfgLoad(v313)
-                    v273 = v313
-                    task["defer"](function()
-                        pcall(function() v281:Set(v313) end)
-                    end)
-                    break
+-- ══════════════════════════════════════════════════════════════════════════
+-- UI — ROUTE TAB
+-- ══════════════════════════════════════════════════════════════════════════
+local RouteTab = Window:CreateTab("Routes", "map-pin")
+RouteTab:CreateSection("Select Bus Route")
+
+RouteTab:CreateParagraph({
+    Title   = "Route Info",
+    Content = "Routes sorted by reward (highest first). Refresh to reload.",
+})
+
+local routeOpts    = buildRouteOptions()
+local defaultLabel = routeOpts[1] or "No routes loaded"
+
+local RouteDropdown = RouteTab:CreateDropdown({
+    Name            = "Available Routes",
+    Options         = routeOpts,
+    CurrentOption   = { defaultLabel },
+    MultipleOptions = false,
+    Callback        = function(Option)
+        local label = Option[1]
+        local key   = LabelToKey[label]
+        if key then
+            SelectedRouteKey = key
+            local info = RouteData[key]
+            if RouteRewardLabel then
+                RouteRewardLabel:Set(
+                    "Selected: " .. (info.DisplayName or key)
+                    .. "  |  Reward: " .. formatRP(info.Reward or 0)
+                    .. "  |  " .. tostring(info.TotalCheckpoints or "?") .. " checkpoints"
+                )
+            end
+            SetStatus("Route: " .. (info.DisplayName or key))
+            Rayfield:Notify({
+                Title    = "Route Selected",
+                Content  = (info.DisplayName or key)
+                        .. "\nReward: " .. formatRP(info.Reward or 0)
+                        .. "\nCheckpoints: " .. tostring(info.TotalCheckpoints or "?"),
+                Duration = 4,
+                Image    = "map-pin",
+            })
+        end
+    end,
+})
+
+RouteRewardLabel = RouteTab:CreateLabel(
+    #RouteSortedKeys > 0
+        and ("Selected: "
+            .. (RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].DisplayName or SelectedRouteKey)
+            .. "  |  Reward: " .. formatRP(RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].Reward or 0)
+            .. "  |  " .. tostring(RouteData[SelectedRouteKey] and RouteData[SelectedRouteKey].TotalCheckpoints or "?") .. " checkpoints")
+        or "No route loaded.",
+    "coins"
+)
+
+RouteTab:CreateButton({
+    Name     = "Refresh Route List",
+    Callback = function()
+        if fetchRoutes() then
+            local newOpts = buildRouteOptions()
+            RouteDropdown:Set(newOpts)
+            if RouteRewardLabel and SelectedRouteKey ~= "" and RouteData[SelectedRouteKey] then
+                local info = RouteData[SelectedRouteKey]
+                RouteRewardLabel:Set(
+                    "Selected: " .. (info.DisplayName or SelectedRouteKey)
+                    .. "  |  Reward: " .. formatRP(info.Reward or 0)
+                    .. "  |  " .. tostring(info.TotalCheckpoints or "?") .. " checkpoints"
+                )
+            end
+            Rayfield:Notify({
+                Title    = "Routes Refreshed",
+                Content  = tostring(#RouteSortedKeys) .. " routes loaded.",
+                Duration = 3,
+                Image    = "refresh-cw",
+            })
+        else
+            Rayfield:Notify({
+                Title    = "Fetch Failed",
+                Content  = "Could not reach GetAvailableBusRoutes.",
+                Duration = 4,
+                Image    = "alert-triangle",
+            })
+        end
+    end,
+})
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- UI — CONFIGURATION TAB
+-- ══════════════════════════════════════════════════════════════════════════
+local ConfigTab = Window:CreateTab("Configuration", "settings")
+ConfigTab:CreateSection("Select Vehicle")
+
+local BusDropdown = ConfigTab:CreateDropdown({
+    Name            = "Select Owned Bus",
+    Options         = busOptions,
+    CurrentOption   = { busOptions[1] },
+    MultipleOptions = false,
+    Callback        = function(Option)
+        _G.SelectedBus = Option[1]
+        SetStatus("Selected: " .. _G.SelectedBus)
+    end,
+})
+
+ConfigTab:CreateButton({
+    Name     = "Refresh Garage List",
+    Callback = function()
+        local newOptions = {}
+        for _, car in pairs(OwnedCarsFolder:GetChildren()) do
+            table.insert(newOptions, car.Name)
+        end
+        BusDropdown:Set(newOptions)
+    end,
+})
+
+ConfigTab:CreateSection("Webhook")
+
+ConfigTab:CreateInput({
+    Name                     = "Discord Webhook URL",
+    PlaceholderText          = "Paste URL Here",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        _G.WebhookURL = Text
+        Rayfield:Notify({ Title = "Webhook Updated", Content = "URL saved.", Duration = 3, Image = "link" })
+    end,
+})
+
+ConfigTab:CreateToggle({
+    Name         = "Enable Webhook Report",
+    CurrentValue = false,
+    Callback     = function(Value)
+        _G.WebhookEnabled = Value
+        if Value and (_G.WebhookURL == "" or not _G.WebhookURL:find("discord.com")) then
+            Rayfield:Notify({
+                Title    = "Webhook Error",
+                Content  = "Enter a valid Discord Webhook URL first!",
+                Duration = 5,
+                Image    = "alert-triangle",
+            })
+        end
+    end,
+})
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- UI — SAFETY TAB
+-- ══════════════════════════════════════════════════════════════════════════
+local SafetyTab = Window:CreateTab("Safety", "shield")
+SafetyTab:CreateSection("Staff Detection")
+
+SafetyTab:CreateParagraph({
+    Title   = "How It Works",
+    Content = "Monitors all players for membership in group "
+        .. STAFF_GROUP_ID
+        .. ". When detected, kicks YOU out of the server safely.",
+})
+
+SafetyTab:CreateToggle({
+    Name         = "Auto-Kick on Staff Detection",
+    CurrentValue = true,
+    Flag         = "StaffKick",
+    Callback     = function(Value)
+        _G.AutoKickEnabled = Value
+        kickedSelf = false
+        if Value then
+            SetStatus("Staff detection: ACTIVE")
+            task.spawn(kickSelfIfStaffPresent)
+        else
+            SetStatus("Staff detection: OFF")
+        end
+    end,
+})
+
+SafetyTab:CreateButton({
+    Name     = "Scan Now",
+    Callback = function()
+        if not _G.AutoKickEnabled then
+            Rayfield:Notify({
+                Title    = "Detection Off",
+                Content  = "Enable the toggle first.",
+                Duration = 3,
+                Image    = "alert-triangle",
+            })
+            return
+        end
+        kickSelfIfStaffPresent()
+        Rayfield:Notify({
+            Title    = "Scan Complete",
+            Content  = "No staff members found.",
+            Duration = 3,
+            Image    = "shield",
+        })
+    end,
+})
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- UI — STATS TAB
+-- ══════════════════════════════════════════════════════════════════════════
+local StatsTab = Window:CreateTab("Stats", "trending-up")
+StatsTab:CreateSection("Info Farm")
+StatusLabel  = StatsTab:CreateLabel("Status: Waiting",                    "clock")
+UangLabel    = StatsTab:CreateLabel("Uang: Rp " .. formatRS(StartUang),   "banknote")
+EarningLabel = StatsTab:CreateLabel("Earning: Rp 0",                      "coins")
+TimeLabel    = StatsTab:CreateLabel("Time: 00:00:00",                      "timer")
+
+StatsTab:CreateSection("System Info")
+FPSLabel  = StatsTab:CreateLabel("FPS: Scanning...",  "monitor")
+PingLabel = StatsTab:CreateLabel("Ping: Scanning...", "wifi")
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- UI — MORE FEATURES TAB
+-- ══════════════════════════════════════════════════════════════════════════
+local MoreTab = Window:CreateTab("More Features", "plus-circle")
+MoreTab:CreateSection("Important Features")
+
+MoreTab:CreateToggle({
+    Name         = "Anti-AFK System",
+    CurrentValue = true,
+    Flag         = "AntiAFK",
+    Callback     = function(Value)
+        _G.AntiAFK = Value
+        SetStatus(_G.AntiAFK and "Anti-AFK Enabled" or "Anti-AFK Disabled")
+    end,
+})
+
+MoreTab:CreateToggle({
+    Name         = "Auto Rejoin",
+    CurrentValue = false,
+    Flag         = "AutoRejoin",
+    Callback     = function(Value) _G.AutoRejoin = Value end,
+})
+
+MoreTab:CreateSection("Visual & Performance")
+
+MoreTab:CreateButton({
+    Name     = "Hide All Names",
+    Callback = function()
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("BillboardGui") then v:Destroy() end
+        end
+        SetStatus("Names Hidden")
+    end,
+})
+
+MoreTab:CreateToggle({
+    Name         = "Hide Character",
+    CurrentValue = false,
+    Flag         = "HideChar",
+    Callback     = function(Value)
+        local char = LP.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") or part:IsA("Decal") then
+                    part.Transparency = Value and 1 or 0
                 end
             end
         end
-    end
-end)
+    end,
+})
+
+MoreTab:CreateButton({
+    Name     = "FPS Boost",
+    Callback = function()
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v:IsA("Part") or v:IsA("UnionOperation") or v:IsA("MeshPart") then
+                v.Material = Enum.Material.SmoothPlastic
+            elseif v:IsA("Decal") or v:IsA("Texture") then
+                v:Destroy()
+            end
+        end
+        SetStatus("FPS Boosted")
+    end,
+})
+
+MoreTab:CreateSection("Auto Buy Bus")
+
+MoreTab:CreateDropdown({
+    Name            = "Select Bus to Purchase",
+    Options         = CarListData,
+    CurrentOption   = { CarListData[1] or "None" },
+    MultipleOptions = false,
+    Callback        = function(Option) SelectedBusToBuy = Option[1] end,
+})
+
+MoreTab:CreateButton({
+    Name     = "Purchase Selected Bus",
+    Callback = function()
+        if SelectedBusToBuy == "" or SelectedBusToBuy == "None" then
+            Rayfield:Notify({ Title = "Error", Content = "Select a bus first!", Duration = 3 })
+            return
+        end
+        local success, err = pcall(function()
+            Remotes:WaitForChild("BuyCar"):FireServer(SelectedBusToBuy)
+        end)
+        SetStatus(success and ("Bought: " .. SelectedBusToBuy) or "Purchase Failed!")
+        if not success then warn("Purchase error: " .. tostring(err)) end
+    end,
+})
+
+MoreTab:CreateSection("World Teleport")
+
+MoreTab:CreateDropdown({
+    Name            = "Select TP Destination",
+    Options         = { "Dealership", "Modifikasi", "Teleport City" },
+    CurrentOption   = { "Dealership" },
+    MultipleOptions = false,
+    Callback        = function(Option) SelectedTP = Option[1] end,
+})
+
+MoreTab:CreateButton({
+    Name     = "Teleport Now",
+    Callback = function()
+        local targetCF = TP_Locations[SelectedTP]
+        if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
+            LP.Character:PivotTo(targetCF)
+            SetStatus("Teleported to " .. SelectedTP)
+        end
+    end,
+})
+
+MoreTab:CreateSection("Open UI / Actions")
+
+MoreTab:CreateDropdown({
+    Name            = "Select Menu to Open",
+    Options         = { "Dealership", "Modifikasi", "Teleport City" },
+    CurrentOption   = { "Dealership" },
+    MultipleOptions = false,
+    Callback        = function(Option) SelectedAction = Option[1] end,
+})
+
+MoreTab:CreateButton({
+    Name     = "Open Selected Menu",
+    Callback = function()
+        if SelectedAction == "Dealership" then
+            local p = workspace:FindFirstChild("BigBus_DealershipPart")
+                   and workspace.BigBus_DealershipPart:FindFirstChild("ProximityPrompt")
+            if p then fireproximityprompt(p) end
+        elseif SelectedAction == "Modifikasi" then
+            local p = workspace.Modif.ModificationTriggerPart:FindFirstChild("ProximityPrompt")
+            if p then fireproximityprompt(p) end
+        elseif SelectedAction == "Teleport City" then
+            local p = workspace:FindFirstChild("Telportpart")
+                   and workspace.Telportpart:FindFirstChild("ProximityPrompt")
+            if p then fireproximityprompt(p) end
+        end
+        SetStatus("Opening " .. SelectedAction)
+    end,
+})
